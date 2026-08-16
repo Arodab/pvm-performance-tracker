@@ -134,6 +134,12 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
+		// The tile alone can't separate two players stacked on it, so also
+		// require the projectile to target the NPC I'm actually attacking.
+		if (me.getInteracting() != target)
+		{
+			return;
+		}
 		if (!countedProjectiles.add(projectile))
 		{
 			return; // this projectile was already counted on an earlier frame
