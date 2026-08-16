@@ -97,8 +97,14 @@ public class PvmPerformancePlugin extends Plugin
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private CombatCalc combatCalc;
+
 	private PvmPerformancePanel panel;
 	private NavigationButton navButton;
+
+	// Expected melee max hit for the current loadout, recomputed each tick.
+	private int expectedMeleeMaxHit;
 
 	// The fight currently in progress, or null between fights.
 	private Fight current;
@@ -255,6 +261,8 @@ public class PvmPerformancePlugin extends Plugin
 		// Drop projectiles that have landed so the set doesn't retain them.
 		countedProjectiles.removeIf(p -> p.getRemainingCycles() <= 0);
 
+		expectedMeleeMaxHit = combatCalc.meleeMaxHit();
+
 		if (current != null && !current.isEnded())
 		{
 			final long idle = System.currentTimeMillis() - current.getLastActivityMillis();
@@ -379,6 +387,12 @@ public class PvmPerformancePlugin extends Plugin
 	Fight getDisplayFight()
 	{
 		return current != null ? current : lastFinished;
+	}
+
+	/** Expected melee max hit for the current loadout (0 if unknown). */
+	int getExpectedMeleeMaxHit()
+	{
+		return expectedMeleeMaxHit;
 	}
 
 	/** Per-NPC aggregates in most-recently-fought order; optionally bosses only. */

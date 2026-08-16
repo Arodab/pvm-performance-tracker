@@ -40,6 +40,15 @@ class PvmPerformanceOverlay extends OverlayPanel
 			.text(fight.getTargetName())
 			.build());
 
+		final int maxHit = plugin.getExpectedMeleeMaxHit();
+		if (maxHit > 0)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("Max hit")
+				.right("~" + maxHit)
+				.build());
+		}
+
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Damage")
 			.right(QuantityFormatter.formatNumber(fight.getDamageDealt()))
