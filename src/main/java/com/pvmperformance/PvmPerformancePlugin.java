@@ -28,6 +28,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.GraphicID;
@@ -43,6 +44,7 @@ import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.ProjectileMoved;
 import net.runelite.client.RuneLite;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.NPCManager;
@@ -99,6 +101,9 @@ public class PvmPerformancePlugin extends Plugin
 
 	@Inject
 	private CombatCalc combatCalc;
+
+	@Inject
+	private ClientThread clientThread;
 
 	private PvmPerformancePanel panel;
 	private NavigationButton navButton;
@@ -410,9 +415,9 @@ public class PvmPerformancePlugin extends Plugin
 		return new ArrayList<>(byName.values());
 	}
 
-	private boolean isBoss(Fight fight)
+	boolean isBoss(Fight fight)
 	{
-		return BOSS_NAMES.contains(normalizeName(fight.getTargetName()));
+		return fight != null && BOSS_NAMES.contains(normalizeName(fight.getTargetName()));
 	}
 
 	private static Set<String> buildBossNames()
@@ -490,7 +495,10 @@ public class PvmPerformancePlugin extends Plugin
 						writer.write(csvRow(fight));
 					}
 				}
-				setStatus("Exported " + fights.size() + " fights: " + out.getName());
+				final String path = out.getAbsolutePath();
+				setStatus("Exported " + fights.size() + " fights → " + path);
+				clientThread.invoke(() -> client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
+					"PvM Performance: exported " + fights.size() + " fights to " + path, null));
 			}
 			catch (IOException e)
 			{

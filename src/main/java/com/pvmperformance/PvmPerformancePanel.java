@@ -111,7 +111,11 @@ class PvmPerformancePanel extends PluginPanel
 
 	void setStatus(String text)
 	{
-		SwingUtilities.invokeLater(() -> status.setText(text));
+		SwingUtilities.invokeLater(() ->
+		{
+			status.setText(text);
+			status.setToolTipText(text);
+		});
 	}
 
 	void refresh()

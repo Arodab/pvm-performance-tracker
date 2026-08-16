@@ -21,10 +21,21 @@ public interface PvmPerformanceConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "overlayBossesOnly",
+		name = "Overlay: bosses only",
+		description = "Only show the overlay while fighting a boss (from the hiscores list)",
+		position = 2
+	)
+	default boolean overlayBossesOnly()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "fightTimeoutTicks",
 		name = "Fight timeout (ticks)",
 		description = "End the current fight after this many game ticks with no damage dealt",
-		position = 2
+		position = 3
 	)
 	default int fightTimeoutTicks()
 	{

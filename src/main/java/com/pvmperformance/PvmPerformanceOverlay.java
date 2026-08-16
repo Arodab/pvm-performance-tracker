@@ -35,6 +35,10 @@ class PvmPerformanceOverlay extends OverlayPanel
 		{
 			return null;
 		}
+		if (config.overlayBossesOnly() && !plugin.isBoss(fight))
+		{
+			return null;
+		}
 
 		panelComponent.getChildren().add(TitleComponent.builder()
 			.text(fight.getTargetName())
