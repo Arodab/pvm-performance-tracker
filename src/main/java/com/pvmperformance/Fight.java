@@ -47,6 +47,13 @@ class Fight
 		lastActivityMillis = now;
 	}
 
+	/** A magic splash on the target: a missed attempt with no hitsplat. */
+	void recordSplash(long now)
+	{
+		attempts++;
+		lastActivityMillis = now;
+	}
+
 	void recordDamageTaken(int amount, long now)
 	{
 		damageTaken += amount;
