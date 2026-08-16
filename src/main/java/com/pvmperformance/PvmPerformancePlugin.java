@@ -1,5 +1,6 @@
 package com.pvmperformance;
 
+import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
 import java.io.BufferedWriter;
@@ -8,6 +9,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -21,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -91,6 +94,9 @@ public class PvmPerformancePlugin extends Plugin
 	@Inject
 	private ScheduledExecutorService executor;
 
+	@Inject
+	private Gson gson;
+
 	private PvmPerformancePanel panel;
 	private NavigationButton navButton;
 
@@ -98,8 +104,9 @@ public class PvmPerformancePlugin extends Plugin
 	private Fight current;
 	// The most recently finished fight, kept so the overlay lingers briefly.
 	private Fight lastFinished;
-	// Session history, most-recent first.
-	private final List<Fight> history = new ArrayList<>();
+	// Persisted history, most-recent first. Copy-on-write so the panel (EDT) can
+	// iterate it safely while combat events (client thread) append to it.
+	private final List<Fight> history = new CopyOnWriteArrayList<>();
 
 	// My in-flight projectiles, so each is credited only once (identity set).
 	private final Set<Projectile> countedProjectiles = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -128,6 +135,8 @@ public class PvmPerformancePlugin extends Plugin
 			.panel(panel)
 			.build();
 		clientToolbar.addNavigation(navButton);
+
+		executor.execute(this::loadHistory);
 	}
 
 	@Override
@@ -295,6 +304,63 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			panel.refresh();
 		}
+		saveHistory();
+	}
+
+	private Path historyFile()
+	{
+		return new File(new File(RuneLite.RUNELITE_DIR, EXPORT_DIR), "history.json").toPath();
+	}
+
+	private void loadHistory()
+	{
+		final Path file = historyFile();
+		if (!Files.exists(file))
+		{
+			return;
+		}
+		try
+		{
+			final String json = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+			final Fight[] loaded = gson.fromJson(json, Fight[].class);
+			if (loaded != null)
+			{
+				for (Fight fight : loaded)
+				{
+					if (history.size() < MAX_HISTORY)
+					{
+						history.add(fight);
+					}
+				}
+			}
+		}
+		catch (Exception e)
+		{
+			log.warn("PvM Performance: could not load history", e);
+		}
+		if (panel != null)
+		{
+			panel.refresh();
+		}
+	}
+
+	private void saveHistory()
+	{
+		// Snapshot now so a later shutdown/clear can't race the write.
+		final List<Fight> snapshot = new ArrayList<>(history);
+		executor.execute(() ->
+		{
+			try
+			{
+				final Path file = historyFile();
+				Files.createDirectories(file.getParent());
+				Files.write(file, gson.toJson(snapshot).getBytes(StandardCharsets.UTF_8));
+			}
+			catch (IOException e)
+			{
+				log.warn("PvM Performance: could not save history", e);
+			}
+		});
 	}
 
 	/** Consumes one of my pending attacks on the NPC; false if none were pending. */
@@ -357,6 +423,7 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		history.clear();
 		lastFinished = null;
+		saveHistory();
 	}
 
 	void exportNpc(String name)
