@@ -40,7 +40,7 @@ class PvmPerformanceOverlay extends OverlayPanel
 			.text(fight.getTargetName())
 			.build());
 
-		final int maxHit = plugin.getExpectedMeleeMaxHit();
+		final int maxHit = plugin.getExpectedMaxHit();
 		if (maxHit > 0)
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
