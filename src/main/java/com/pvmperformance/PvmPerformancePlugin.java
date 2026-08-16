@@ -1,13 +1,27 @@
 package com.pvmperformance;
 
 import com.google.inject.Provides;
+import java.awt.image.BufferedImage;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.IOException;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
@@ -25,11 +39,18 @@ import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.ProjectileMoved;
+import net.runelite.client.RuneLite;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.game.NPCManager;
+import net.runelite.client.hiscore.HiscoreSkill;
+import net.runelite.client.hiscore.HiscoreSkillType;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.ImageUtil;
 
 @Slf4j
 @PluginDescriptor(
@@ -40,6 +61,14 @@ import net.runelite.client.ui.overlay.OverlayManager;
 public class PvmPerformancePlugin extends Plugin
 {
 	private static final int MAX_HISTORY = 500;
+	private static final String EXPORT_DIR = "pvm-performance-tracker";
+	// Single-NPC bosses taken from the RuneLite hiscore list. Raid/minigame
+	// entries (Chambers of Xeric, Theatre of Blood, Tempoross, ...) are also on
+	// that list but their names never match a combat NPC, so they're naturally
+	// excluded here and handled separately later.
+	private static final Set<String> BOSS_NAMES = buildBossNames();
+	private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+	private static final DateTimeFormatter ROW_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
 	@Inject
 	private Client client;
@@ -52,6 +81,18 @@ public class PvmPerformancePlugin extends Plugin
 
 	@Inject
 	private PvmPerformanceConfig config;
+
+	@Inject
+	private ClientToolbar clientToolbar;
+
+	@Inject
+	private NPCManager npcManager;
+
+	@Inject
+	private ScheduledExecutorService executor;
+
+	private PvmPerformancePanel panel;
+	private NavigationButton navButton;
 
 	// The fight currently in progress, or null between fights.
 	private Fight current;
@@ -77,12 +118,25 @@ public class PvmPerformancePlugin extends Plugin
 	protected void startUp()
 	{
 		overlayManager.add(overlay);
+
+		panel = new PvmPerformancePanel(this);
+		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/com/pvmperformance/panel_icon.png");
+		navButton = NavigationButton.builder()
+			.tooltip("PvM Performance Tracker")
+			.icon(icon)
+			.priority(7)
+			.panel(panel)
+			.build();
+		clientToolbar.addNavigation(navButton);
 	}
 
 	@Override
 	protected void shutDown()
 	{
 		overlayManager.remove(overlay);
+		clientToolbar.removeNavigation(navButton);
+		panel = null;
+		navButton = null;
 		current = null;
 		lastFinished = null;
 		history.clear();
@@ -223,7 +277,7 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			finalizeFight(false, now);
 		}
-		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), now);
+		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), npcManager.getHealth(npc.getId()), now);
 	}
 
 	private void finalizeFight(boolean died, long now)
@@ -237,6 +291,10 @@ public class PvmPerformancePlugin extends Plugin
 		lastFinished = current;
 		current = null;
 		pendingMineHits.clear();
+		if (panel != null)
+		{
+			panel.refresh();
+		}
 	}
 
 	/** Consumes one of my pending attacks on the NPC; false if none were pending. */
@@ -257,8 +315,139 @@ public class PvmPerformancePlugin extends Plugin
 		return current != null ? current : lastFinished;
 	}
 
-	List<Fight> getHistory()
+	/** Per-NPC aggregates in most-recently-fought order; optionally bosses only. */
+	List<NpcStats> getNpcStats(boolean bossOnly)
 	{
-		return Collections.unmodifiableList(history);
+		final Map<String, NpcStats> byName = new LinkedHashMap<>();
+		for (Fight fight : history)
+		{
+			if (bossOnly && !isBoss(fight))
+			{
+				continue;
+			}
+			byName.computeIfAbsent(fight.getTargetName(), NpcStats::new).add(fight);
+		}
+		return new ArrayList<>(byName.values());
+	}
+
+	private boolean isBoss(Fight fight)
+	{
+		return BOSS_NAMES.contains(normalizeName(fight.getTargetName()));
+	}
+
+	private static Set<String> buildBossNames()
+	{
+		final Set<String> names = new HashSet<>();
+		for (HiscoreSkill skill : HiscoreSkill.values())
+		{
+			if (skill.getType() == HiscoreSkillType.BOSS)
+			{
+				names.add(normalizeName(skill.getName()));
+			}
+		}
+		return names;
+	}
+
+	private static String normalizeName(String name)
+	{
+		return name == null ? "" : name.toLowerCase().replace("'", "").replace("’", "").replace("`", "").trim();
+	}
+
+	void clearHistory()
+	{
+		history.clear();
+		lastFinished = null;
+	}
+
+	void exportNpc(String name)
+	{
+		final List<Fight> fights = new ArrayList<>();
+		for (Fight fight : history)
+		{
+			if (fight.getTargetName().equals(name))
+			{
+				fights.add(fight);
+			}
+		}
+		writeCsvAsync(sanitize(name), fights);
+	}
+
+	void exportAll(boolean bossOnly)
+	{
+		final List<Fight> fights = new ArrayList<>();
+		for (Fight fight : history)
+		{
+			if (!bossOnly || isBoss(fight))
+			{
+				fights.add(fight);
+			}
+		}
+		writeCsvAsync(bossOnly ? "bosses" : "all", fights);
+	}
+
+	private void writeCsvAsync(String label, List<Fight> fights)
+	{
+		if (fights.isEmpty())
+		{
+			setStatus("Nothing to export.");
+			return;
+		}
+		// Disk IO off the client thread.
+		executor.execute(() ->
+		{
+			try
+			{
+				final File dir = new File(RuneLite.RUNELITE_DIR, EXPORT_DIR);
+				Files.createDirectories(dir.toPath());
+				final File out = new File(dir, "pvm-" + label + "-" + FILE_TS.format(LocalDateTime.now()) + ".csv");
+				try (Writer writer = new BufferedWriter(new java.io.OutputStreamWriter(
+					Files.newOutputStream(out.toPath()), StandardCharsets.UTF_8)))
+				{
+					writer.write("started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,accuracyPct,durationSec,dps\n");
+					for (Fight fight : fights)
+					{
+						writer.write(csvRow(fight));
+					}
+				}
+				setStatus("Exported " + fights.size() + " fights: " + out.getName());
+			}
+			catch (IOException e)
+			{
+				log.warn("PvM Performance export failed", e);
+				setStatus("Export failed: " + e.getMessage());
+			}
+		});
+	}
+
+	private static String csvRow(Fight fight)
+	{
+		final String started = ROW_TS.format(LocalDateTime.ofInstant(
+			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
+		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f%n",
+			started,
+			fight.getTargetName().replace('"', '\''),
+			fight.getTargetId(),
+			fight.getMaxHp(),
+			fight.isTargetDied(),
+			fight.getDamageDealt(),
+			fight.getDamageTaken(),
+			fight.getAttempts(),
+			fight.getHits(),
+			fight.accuracy() * 100,
+			fight.durationMillis() / 1000.0,
+			fight.dps());
+	}
+
+	private static String sanitize(String name)
+	{
+		return name.replaceAll("[^a-zA-Z0-9]+", "_");
+	}
+
+	private void setStatus(String text)
+	{
+		if (panel != null)
+		{
+			panel.setStatus(text);
+		}
 	}
 }

@@ -14,6 +14,8 @@ class Fight
 	private final String targetName;
 	private final int targetId;
 	private final int targetIndex;
+	// The NPC's max HP (from NPCManager), or -1 if unknown; used to classify bosses.
+	private final int maxHp;
 	private final long startMillis;
 
 	private long lastActivityMillis;
@@ -27,11 +29,12 @@ class Fight
 	private boolean targetDied;
 	private long endMillis;
 
-	Fight(String targetName, int targetId, int targetIndex, long now)
+	Fight(String targetName, int targetId, int targetIndex, int maxHp, long now)
 	{
 		this.targetName = targetName == null ? "NPC" : targetName;
 		this.targetId = targetId;
 		this.targetIndex = targetIndex;
+		this.maxHp = maxHp;
 		this.startMillis = now;
 		this.lastActivityMillis = now;
 	}
