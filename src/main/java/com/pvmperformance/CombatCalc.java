@@ -58,20 +58,6 @@ class CombatCalc
 		}
 	}
 
-	/** DEV ONLY (remove before publishing): the melee max-hit inputs, for debugging. */
-	String meleeBreakdown()
-	{
-		final int strLvl = client.getBoostedSkillLevel(Skill.STRENGTH);
-		final int mode = client.getVarpValue(VarPlayerID.COM_MODE);
-		final int styleBonus = mode == 1 ? 3 : 0;
-		final double prayer = meleePrayer();
-		final int effStr = (int) Math.floor(strLvl * prayer) + styleBonus + 8;
-		final int strBonus = equipmentBonus(true);
-		return String.format(
-			"style=%s boostedStr=%d prayerx=%.2f comMode=%d styleBonus=%d effStr=%d gearStrBonus=%d -> maxHit=%d",
-			weaponStyle(), strLvl, prayer, mode, styleBonus, effStr, strBonus, maxHitFromStrength(effStr, strBonus));
-	}
-
 	private int meleeMaxHit()
 	{
 		final int level = client.getBoostedSkillLevel(Skill.STRENGTH);
