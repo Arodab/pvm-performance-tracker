@@ -20,6 +20,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 		this.plugin = plugin;
 		this.config = config;
 		setPosition(OverlayPosition.TOP_LEFT);
+		// The default width wraps the longer "actual (exp ...)" values onto a second line.
+		setPreferredSize(new Dimension(160, 0));
 	}
 
 	@Override
@@ -66,17 +68,17 @@ class PvmPerformanceOverlay extends OverlayPanel
 				: String.format("%.2f", fight.dps()))
 			.build());
 
+		panelComponent.getChildren().add(LineComponent.builder()
+			.left("Hits")
+			.right(String.format("%d/%d", fight.getHits(), fight.getAttempts()))
+			.build());
+
 		final double expAcc = plugin.getExpectedAccuracy();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Accuracy")
 			.right(expAcc >= 0
-				? String.format("%d/%d %.0f%% (exp %.0f%%)", fight.getHits(), fight.getAttempts(), fight.accuracy() * 100, expAcc * 100)
-				: String.format("%d/%d (%.1f%%)", fight.getHits(), fight.getAttempts(), fight.accuracy() * 100))
-			.build());
-
-		panelComponent.getChildren().add(LineComponent.builder()
-			.left("Taken")
-			.right(QuantityFormatter.formatNumber(fight.getDamageTaken()))
+				? String.format("%.0f%% (exp %.0f%%)", fight.accuracy() * 100, expAcc * 100)
+				: String.format("%.0f%%", fight.accuracy() * 100))
 			.build());
 
 		panelComponent.getChildren().add(LineComponent.builder()
