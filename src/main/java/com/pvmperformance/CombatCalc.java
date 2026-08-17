@@ -94,12 +94,14 @@ class CombatCalc
 	double dps(int npcId)
 	{
 		final double accuracy = hitChance(npcId);
-		final int max = maxHit(npcId);
-		if (accuracy < 0 || max <= 0)
+		// Averages, not best cases: a keris crit or an ahrim's proc raises the max
+		// hit but only lifts sustained damage by a few percent.
+		final double averageMax = baseMaxHit() * gearBonus(npcId).getExpectedDamage();
+		if (accuracy < 0 || averageMax <= 0)
 		{
 			return -1;
 		}
-		return accuracy * (max / 2.0) / (weaponSpeedTicks() * 0.6);
+		return accuracy * (averageMax / 2.0) / (weaponSpeedTicks() * 0.6);
 	}
 
 	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)

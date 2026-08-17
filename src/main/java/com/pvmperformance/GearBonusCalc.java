@@ -30,16 +30,18 @@ import net.runelite.client.game.ItemManager;
  * actually distinguishes the tiers that change the multiplier: "(i)", "(e)",
  * "(ei)", "(inactive)", "(u)".
  *
- * <p>Not modelled: holy water, the keris crit chance, and the additive rather
- * than multiplicative stacking that the dragon hunter crossbow and scorching
- * bow have with the black mask specifically.
+ * <p>Not modelled: holy water, and the additive rather than multiplicative
+ * stacking that the dragon hunter crossbow and scorching bow have with the
+ * black mask specifically — the wiki states both stack additively with the
+ * slayer helmet's 15% while stacking multiplicatively with everything else.
+ * That only matters when the slayer task switch is on.
  */
 @Singleton
 class GearBonusCalc
 {
-	private static final GearBonus SALVE_UNENHANCED_MELEE_RANGED = GearBonus.symmetric(7.0 / 6.0);
-	private static final GearBonus SALVE_UNENHANCED_MAGIC = GearBonus.symmetric(1.15);
-	private static final GearBonus SALVE_ENHANCED = GearBonus.symmetric(6.0 / 5.0);
+	private static final GearBonus SALVE_16 = GearBonus.symmetric(7.0 / 6.0);
+	private static final GearBonus SALVE_15 = GearBonus.symmetric(1.15);
+	private static final GearBonus SALVE_20 = GearBonus.symmetric(6.0 / 5.0);
 	private static final GearBonus BLACK_MASK_MELEE = GearBonus.symmetric(7.0 / 6.0);
 	private static final GearBonus BLACK_MASK_RANGED_MAGIC = GearBonus.symmetric(1.15);
 
@@ -115,23 +117,24 @@ class GearBonusCalc
 		{
 			return GearBonus.NONE;
 		}
-		// "(e)" and "(ei)" are enhanced; "(i)" and "(ei)" are imbued.
+		// "(e)" and "(ei)" are enhanced; "(i)" and "(ei)" are imbued. Only the
+		// imbued versions do anything at all for ranged and magic, so plain
+		// enhanced is 20% on melee and nothing elsewhere.
 		final boolean enhanced = amulet.contains("(e");
 		final boolean imbued = amulet.contains("i)");
-		if (enhanced)
-		{
-			return SALVE_ENHANCED;
-		}
 		if (type.isMelee())
 		{
-			return SALVE_UNENHANCED_MELEE_RANGED;
+			return enhanced ? SALVE_20 : SALVE_16;
 		}
-		// Unimbued salve does nothing for ranged or magic.
 		if (!imbued)
 		{
 			return GearBonus.NONE;
 		}
-		return type == AttackType.MAGIC ? SALVE_UNENHANCED_MAGIC : SALVE_UNENHANCED_MELEE_RANGED;
+		if (enhanced)
+		{
+			return SALVE_20;
+		}
+		return type == AttackType.MAGIC ? SALVE_15 : SALVE_16;
 	}
 
 	private GearBonus blackMaskBonus(AttackType type, Loadout gear, boolean onSlayerTask)
@@ -173,8 +176,9 @@ class GearBonusCalc
 		switch (type)
 		{
 			case MAGIC:
+				// Regular mage void is accuracy only; elite adds 5% damage.
 				return head.startsWith("Void mage helm")
-					? GearBonus.of(1.45, elite ? 1.025 : 1.0) : GearBonus.NONE;
+					? GearBonus.of(1.45, elite ? 1.05 : 1.0) : GearBonus.NONE;
 			case RANGED:
 				return head.startsWith("Void ranger helm")
 					? GearBonus.of(1.1, elite ? 1.125 : 1.1) : GearBonus.NONE;
@@ -218,14 +222,22 @@ class GearBonusCalc
 		{
 			return GearBonus.NONE;
 		}
-		final boolean helm = gear.id(EquipmentInventorySlot.HEAD) == ItemID.INQUISITORS_HELM;
-		final boolean body = gear.id(EquipmentInventorySlot.BODY) == ItemID.INQUISITORS_BODY;
-		final boolean legs = gear.id(EquipmentInventorySlot.LEGS) == ItemID.INQUISITORS_SKIRT;
-		if (helm && body && legs)
+		// The July 2026 update folded the old separate set effect into the
+		// hauberk and plateskirt, so the pieces are now purely additive: 0.5%
+		// for the helm and 1% each for the other two, 2.5% for all three.
+		double bonus = 0.0;
+		if (gear.id(EquipmentInventorySlot.HEAD) == ItemID.INQUISITORS_HELM)
 		{
-			return GearBonus.symmetric(1.025); // full set beats the per-piece total
+			bonus += 0.005;
 		}
-		final double bonus = (helm ? 0.005 : 0.0) + (body ? 0.005 : 0.0) + (legs ? 0.005 : 0.0);
+		if (gear.id(EquipmentInventorySlot.BODY) == ItemID.INQUISITORS_BODY)
+		{
+			bonus += 0.01;
+		}
+		if (gear.id(EquipmentInventorySlot.LEGS) == ItemID.INQUISITORS_SKIRT)
+		{
+			bonus += 0.01;
+		}
 		return bonus == 0.0 ? GearBonus.NONE : GearBonus.symmetric(1.0 + bonus);
 	}
 
@@ -339,13 +351,26 @@ class GearBonusCalc
 			1.0 + (raw.getDamage() - 1.0) * effectiveness);
 	}
 
+	/**
+	 * The keris family deals 33% more damage to kalphites, and has a 1/51 chance
+	 * of tripling that. The triple is reachable, so it counts towards the max
+	 * hit, but it only averages out to a few percent.
+	 *
+	 * <p>The wiki also names scabarites, but the monster data carries no tag for
+	 * them, so only kalphites are covered.
+	 */
 	private GearBonus kerisBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
 		if (npc == null || !npc.hasAttribute("kalphite") || !type.isMelee())
 		{
 			return GearBonus.NONE;
 		}
-		return isKeris(gear.id(EquipmentInventorySlot.WEAPON)) ? GearBonus.of(1.0, 1.33) : GearBonus.NONE;
+		if (!isKeris(gear.id(EquipmentInventorySlot.WEAPON)))
+		{
+			return GearBonus.NONE;
+		}
+		final double base = 1.33;
+		return GearBonus.chance(1.0, base * 3.0, base * (1.0 + 2.0 / 51.0));
 	}
 
 	private static boolean isKeris(int weapon)
@@ -391,10 +416,17 @@ class GearBonusCalc
 		return (base + linear - quadratic) / 100.0;
 	}
 
-	/** Tome of fire boosts fire spells, tome of water water spells. */
+	/**
+	 * Tome of fire boosts fire spells and tome of water water spells, both from
+	 * the standard spellbook only.
+	 *
+	 * <p>These are 10% against NPCs. The 50% and 20% the reference carries are
+	 * the against-players figures, which do not apply to anything this plugin
+	 * tracks. Fire is damage only; water boosts accuracy as well.
+	 */
 	private GearBonus tomeBonus(AttackType type, Spell spell, Loadout gear)
 	{
-		if (type != AttackType.MAGIC || spell == null)
+		if (type != AttackType.MAGIC || spell == null || spell.getSpellbook() != Spellbook.STANDARD)
 		{
 			return GearBonus.NONE;
 		}
@@ -406,11 +438,11 @@ class GearBonusCalc
 		final String spellName = spell.getDisplayName();
 		if ("Tome of fire".equals(offHand) && spellName.startsWith("Fire"))
 		{
-			return GearBonus.of(1.0, 1.5);
+			return GearBonus.of(1.0, 1.1);
 		}
 		if ("Tome of water".equals(offHand) && spellName.startsWith("Water"))
 		{
-			return GearBonus.symmetric(1.2);
+			return GearBonus.symmetric(1.1);
 		}
 		return GearBonus.NONE;
 	}
@@ -489,9 +521,20 @@ class GearBonusCalc
 		}
 	}
 
+	/**
+	 * Vampyrebane weapons. The monster data tags vampyres by tier — "vampyre1"
+	 * through "vampyre3" — rather than with a single "vampyre" tag, and the tier
+	 * decides what can hurt them: blisterwood works on all three, the ivandis
+	 * flail only up to tier 2.
+	 */
 	private GearBonus vampyreBaneBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
-		if (npc == null || !npc.hasAttribute("vampyre") || !type.isMelee())
+		if (npc == null || !type.isMelee())
+		{
+			return GearBonus.NONE;
+		}
+		final boolean tier3 = npc.hasAttribute("vampyre3");
+		if (!tier3 && !npc.hasAttribute("vampyre1") && !npc.hasAttribute("vampyre2"))
 		{
 			return GearBonus.NONE;
 		}
@@ -508,13 +551,22 @@ class GearBonusCalc
 		{
 			return GearBonus.of(1.05, 1.15);
 		}
-		return weapon.startsWith("Ivandis flail") ? GearBonus.of(1.0, 1.20) : GearBonus.NONE;
+		if (weapon.startsWith("Ivandis flail"))
+		{
+			return tier3 ? GearBonus.NONE : GearBonus.of(1.0, 1.20);
+		}
+		return GearBonus.NONE;
 	}
 
-	/** Full ahrim's plus the amulet of the damned, autocasting only. */
+	/**
+	 * Full ahrim's plus the amulet of the damned gives a 25% chance of 30% extra
+	 * damage — not a flat 30%, which is what the reference models. Since the
+	 * October 2024 update it applies to manual casts as well as autocasts, so
+	 * the style is not checked beyond it being magic.
+	 */
 	private GearBonus ahrimsBonus(AttackStyle style, Loadout gear)
 	{
-		if (style.getAttackType() != AttackType.MAGIC || style.getCombatStyle() != CombatStyle.AUTOCAST)
+		if (style.getAttackType() != AttackType.MAGIC)
 		{
 			return GearBonus.NONE;
 		}
@@ -523,7 +575,7 @@ class GearBonusCalc
 			&& startsWith(gear.name(EquipmentInventorySlot.BODY), "Ahrim's robetop")
 			&& startsWith(gear.name(EquipmentInventorySlot.LEGS), "Ahrim's robeskirt")
 			&& startsWith(gear.name(EquipmentInventorySlot.AMULET), "Amulet of the damned");
-		return set ? GearBonus.of(1.0, 1.3) : GearBonus.NONE;
+		return set ? GearBonus.chance(1.0, 1.3, 1.0 + 0.25 * 0.3) : GearBonus.NONE;
 	}
 
 	/**
