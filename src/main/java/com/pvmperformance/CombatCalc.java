@@ -10,6 +10,7 @@ import net.runelite.api.ItemID;
 import net.runelite.api.Prayer;
 import net.runelite.api.Skill;
 import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.game.ItemEquipmentStats;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
@@ -22,9 +23,14 @@ import net.runelite.client.game.ItemStats;
  * not on the target, so it needs no NPC data. Magic max hit, plus the
  * target-dependent expected accuracy and DPS, come later.
  *
+ * <p>The combat option the player has actually selected is resolved by
+ * {@link #attackStyle()} and drives both the attack type rolled against and the
+ * invisible level boosts, so switching a weapon's attack option is reflected
+ * here.
+ *
  * <p>Formulae and prayer multipliers follow the LlemonDuck dps-calculator
- * (BSD-2). Not yet modelled: void, the controlled/longrange styles, magic, and
- * set/weapon multipliers (Salve, slayer helm, DHL, crystal, ...).
+ * (BSD-2). Not yet modelled: void, and set/weapon multipliers (Salve, slayer
+ * helm, DHL, crystal, ...).
  */
 class CombatCalc
 {
@@ -59,11 +65,13 @@ class CombatCalc
 		{
 			return -1;
 		}
-		final int sub = meleeSubType();
+		final AttackStyle style = attackStyle();
+		final AttackType type = style.getAttackType();
 		final int effAtk = (int) Math.floor(client.getBoostedSkillLevel(Skill.ATTACK) * meleeAccuracyPrayer())
-			+ (client.getVarpValue(VarPlayerID.COM_MODE) == 0 ? 3 : 0) + 8; // accurate style
-		final int attRoll = effAtk * (meleeAttackBonus(sub) + 64);
-		final int defBonus = sub == 0 ? npc.getDefStab() : sub == 1 ? npc.getDefSlash() : npc.getDefCrush();
+			+ style.attackLevelBonus() + 8;
+		final int attRoll = effAtk * (meleeAttackBonus(type) + 64);
+		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
+			: type == AttackType.SLASH ? npc.getDefSlash() : npc.getDefCrush();
 		final int defRoll = (npc.getDefenceLevel() + 9) * (defBonus + 64);
 		return hitChanceFrom(attRoll, defRoll);
 	}
@@ -114,22 +122,81 @@ class CombatCalc
 		return 1.0;
 	}
 
-	/** 0 = stab, 1 = slash, 2 = crush, from the weapon's dominant attack bonus. */
-	private int meleeSubType()
+	/**
+	 * The combat option the player currently has selected, from the pairing of
+	 * the equipped weapon's category with the selected option index.
+	 *
+	 * <p>Never null: categories missing from {@link WeaponCategory} fall back to
+	 * {@link #fallbackStyle()}.
+	 */
+	private AttackStyle attackStyle()
+	{
+		final int varp = client.getVarpValue(VarPlayerID.COM_MODE);
+		final WeaponCategory category = WeaponCategory.forVarbit(client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY));
+		if (category != null)
+		{
+			final AttackStyle style = category.styleFor(varp);
+			if (style != null)
+			{
+				return style;
+			}
+		}
+		return fallbackStyle(varp);
+	}
+
+	/**
+	 * Best guess for a weapon category we don't have a table for: the attack
+	 * type comes from the weapon's dominant attack bonus and the combat style
+	 * from the layout the great majority of categories share.
+	 */
+	private AttackStyle fallbackStyle(int varp)
+	{
+		final AttackType type = dominantAttackType();
+		final CombatStyle style;
+		if (type == AttackType.RANGED)
+		{
+			style = varp == 0 ? CombatStyle.ACCURATE
+				: varp == 1 ? CombatStyle.RAPID
+				: varp == 3 ? CombatStyle.LONGRANGE : CombatStyle.DEFENSIVE;
+		}
+		else if (type == AttackType.MAGIC)
+		{
+			style = varp == 3 ? CombatStyle.LONGRANGE : CombatStyle.ACCURATE;
+		}
+		else
+		{
+			style = varp == 0 ? CombatStyle.ACCURATE
+				: varp == 1 ? CombatStyle.AGGRESSIVE
+				: varp == 2 ? CombatStyle.CONTROLLED : CombatStyle.DEFENSIVE;
+		}
+		return new AttackStyle(varp, "Unknown", type, style);
+	}
+
+	/** The attack type the equipped weapon is strongest in. */
+	private AttackType dominantAttackType()
 	{
 		final ItemEquipmentStats w = weaponStats();
 		if (w == null)
 		{
-			return 2; // unarmed punches are crush
+			return AttackType.CRUSH; // unarmed punches are crush
+		}
+		final int melee = Math.max(w.getAstab(), Math.max(w.getAslash(), w.getAcrush()));
+		if (w.getArange() > melee && w.getArange() >= w.getAmagic())
+		{
+			return AttackType.RANGED;
+		}
+		if (w.getAmagic() > melee && w.getAmagic() > w.getArange())
+		{
+			return AttackType.MAGIC;
 		}
 		if (w.getAstab() >= w.getAslash() && w.getAstab() >= w.getAcrush())
 		{
-			return 0;
+			return AttackType.STAB;
 		}
-		return w.getAslash() >= w.getAcrush() ? 1 : 2;
+		return w.getAslash() >= w.getAcrush() ? AttackType.SLASH : AttackType.CRUSH;
 	}
 
-	private int meleeAttackBonus(int sub)
+	private int meleeAttackBonus(AttackType type)
 	{
 		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
 		if (equipment == null)
@@ -143,7 +210,8 @@ class CombatCalc
 			if (stats != null && stats.getEquipment() != null)
 			{
 				final ItemEquipmentStats e = stats.getEquipment();
-				total += sub == 0 ? e.getAstab() : sub == 1 ? e.getAslash() : e.getAcrush();
+				total += type == AttackType.STAB ? e.getAstab()
+					: type == AttackType.SLASH ? e.getAslash() : e.getAcrush();
 			}
 		}
 		return total;
@@ -193,8 +261,7 @@ class CombatCalc
 		{
 			return 0;
 		}
-		final int styleBonus = client.getVarpValue(VarPlayerID.COM_MODE) == 1 ? 3 : 0; // aggressive
-		final int effective = (int) Math.floor(level * meleePrayer()) + styleBonus + 8;
+		final int effective = (int) Math.floor(level * meleePrayer()) + attackStyle().strengthLevelBonus() + 8;
 		return maxHitFromStrength(effective, equipmentBonus(true));
 	}
 
@@ -205,8 +272,7 @@ class CombatCalc
 		{
 			return 0;
 		}
-		final int styleBonus = client.getVarpValue(VarPlayerID.COM_MODE) == 0 ? 3 : 0; // accurate
-		final int effective = (int) Math.floor(level * rangedPrayer()) + styleBonus + 8;
+		final int effective = (int) Math.floor(level * rangedPrayer()) + attackStyle().strengthLevelBonus() + 8;
 		return maxHitFromStrength(effective, equipmentBonus(false));
 	}
 
@@ -325,36 +391,17 @@ class CombatCalc
 		return total;
 	}
 
-	/** Rough attack style from the equipped weapon's dominant attack bonus. */
+	/** Which of the three combat styles the selected combat option attacks with. */
 	private Style weaponStyle()
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
-		if (equipment == null)
+		switch (attackStyle().getAttackType())
 		{
-			return Style.MELEE;
+			case RANGED:
+				return Style.RANGED;
+			case MAGIC:
+				return Style.MAGIC;
+			default:
+				return Style.MELEE;
 		}
-		final Item weapon = equipment.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
-		if (weapon == null)
-		{
-			return Style.MELEE; // unarmed
-		}
-		final ItemStats stats = itemManager.getItemStats(weapon.getId());
-		if (stats == null || stats.getEquipment() == null)
-		{
-			return Style.MELEE;
-		}
-		final ItemEquipmentStats e = stats.getEquipment();
-		final int melee = Math.max(e.getAstab(), Math.max(e.getAslash(), e.getAcrush()));
-		final int ranged = e.getArange();
-		final int magic = e.getAmagic();
-		if (ranged > melee && ranged >= magic)
-		{
-			return Style.RANGED;
-		}
-		if (magic > melee && magic > ranged)
-		{
-			return Style.MAGIC;
-		}
-		return Style.MELEE;
 	}
 }
