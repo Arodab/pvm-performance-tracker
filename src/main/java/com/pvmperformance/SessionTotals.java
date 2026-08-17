@@ -20,7 +20,8 @@ class SessionTotals
 	private int damageDealt;
 	private int attempts;
 	private int hits;
-	private int ticksLost;
+	private int ticksLostEating;
+	private int ticksLostOther;
 	private int combatTicks;
 
 	private double sumExpectedMaxHit;
@@ -44,7 +45,8 @@ class SessionTotals
 		damageDealt = 0;
 		attempts = 0;
 		hits = 0;
-		ticksLost = 0;
+		ticksLostEating = 0;
+		ticksLostOther = 0;
 		combatTicks = 0;
 		sumExpectedMaxHit = 0;
 		expectedMaxHitSamples = 0;
@@ -67,7 +69,8 @@ class SessionTotals
 		}
 		// Tick loss is only meaningful per fight, since the gap between one
 		// fight's last attack and the next fight's first is travel, not waste.
-		ticksLost += fight.getTicksLost();
+		ticksLostEating += fight.getTicksLostEating();
+		ticksLostOther += fight.getTicksLostOther();
 		combatTicks += fight.getCombatTicks();
 		lastActivityMillis = now;
 	}
@@ -128,8 +131,13 @@ class SessionTotals
 		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
 	}
 
+	int getTicksLost()
+	{
+		return ticksLostEating + ticksLostOther;
+	}
+
 	double ticksLostShare()
 	{
-		return combatTicks <= 0 ? -1 : (double) ticksLost / combatTicks;
+		return combatTicks <= 0 ? -1 : (double) getTicksLost() / combatTicks;
 	}
 }

@@ -7,53 +7,37 @@ import java.util.Set;
 import net.runelite.api.gameval.AnimationID;
 
 /**
- * Animations that are not attacks, used to tell a real attack apart from the
- * other things a player does mid-fight.
+ * Tells a real attack apart from the other things a player does mid-fight.
  *
- * <p>An attack is recognised by the player having a target and playing any
- * animation at all, rather than by matching against a list of attack
- * animations. Walking and idling leave {@code getAnimation()} at -1, since they
- * run as pose animations, so anything else is an action — which makes a short
- * blocklist enough and means new weapons work without being added anywhere.
+ * <p>The primary test is not this list. Once an attack has been corroborated for
+ * the equipped weapon — by a hitsplat landing the same tick for melee, or a
+ * projectile being created the same tick for ranged and magic — the animation
+ * that was playing is remembered, and from then on only that animation counts as
+ * an attack for that weapon. That is learnt from what the game actually did, so
+ * no animation added in a future update can be mistaken for an attack.
  *
- * <p>The bulk of the list is defensive animations. Taking a hit plays a block
- * animation for whatever is wielded, and without excluding those, being hit
- * while off cooldown would read as an attack.
+ * <p>This list only covers the gap before a weapon has been corroborated, where
+ * the test falls back to "has a target and is playing some animation": walking
+ * and idling run as pose animations and leave {@code getAnimation()} at -1, so
+ * anything else is an action of some kind.
+ *
+ * <p>Block animations are deliberately absent even though taking a hit plays
+ * one. They are caught by noticing that damage was taken on the same tick,
+ * which needs no list and so cannot go stale as new weapons arrive — that was
+ * the largest and fastest-growing part of the list this replaces.
  *
  * <p>Blocklist ported from the AttackTimer plugin (BSD-2), (c) Matsyir, Mazhar
- * and Lexer747, whose approach this follows.
+ * and Lexer747, whose animation approach this follows.
  */
 final class AttackAnimations
 {
-	private static final Set<Integer> NOT_ATTACKS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-		// Taking a hit: one block animation per weapon type
-		AnimationID.HUMAN_AXE_BLOCK,
-		AnimationID.HUMAN_DHSWORD_BLOCK,
-		AnimationID.BRAIN_PLAYER_ANCHOR_DEFEND,
-		AnimationID.IVANDIS_FLAIL_DEFEND,
-		AnimationID.HUMAN_SPEAR_BLOCK,
-		AnimationID.HUMAN_DINHS_BULWARK_BLOCK,
-		AnimationID.WILD_CAVE_CHAINMACE_DEFEND,
-		AnimationID.HUMAN_CHINCHOMPA_DEFEND,
-		AnimationID.HUMAN_DDAGGER_BLOCK,
-		AnimationID.WARGUILD_PARRY_DEFEND,
-		AnimationID.HUMAN_SWORD_DEF,
-		AnimationID.DH_SWORD_UPDATE_DEFEND,
-		AnimationID.HUMAN_DSPEAR_BLOCK,
-		AnimationID.HUMAN_STAFFORB_BLOCK,
-		AnimationID.HUMAN_BLUNT_BLOCK,
-		AnimationID.SLAYER_GRANITE_MAUL_DEFEND,
-		AnimationID.HUMAN_SCYTHE_BLOCK,
-		AnimationID.HUMAN_SHIELD_DEFENCE,
-		AnimationID.HUMAN_ZAMORAKSPEAR_BLOCK,
-		AnimationID.HUMAN_STAFF_BLOCK,
-		AnimationID.HUMAN_UNARMEDBLOCK,
-		AnimationID.BARROW_GUTHAN_DEFEND,
-		AnimationID.SLAYER_ABYSSAL_WHIP_DEFEND,
-		AnimationID.HUMAN_WEAPONS_CRIMSON_KISTEN_DEF,
-		AnimationID.HUMAN_HALLOWFELL_DEFEND,
+	/** Eating and drinking, which cost attack ticks and are counted on their own. */
+	private static final Set<Integer> CONSUMING = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+		AnimationID.HUMAN_EAT,
+		AnimationID.HUMAN_KILLERWATT_ELECTRICSHOCK
+	)));
 
-		// Eating, drinking and the overload hit
+	private static final Set<Integer> NOT_ATTACKS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
 		AnimationID.HUMAN_EAT,
 		AnimationID.HUMAN_KILLERWATT_ELECTRICSHOCK,
 
@@ -104,12 +88,17 @@ final class AttackAnimations
 	}
 
 	/**
-	 * Whether this animation could be an attack. Idle and walking report -1,
-	 * which is not an attack, and everything on the blocklist is something else
-	 * the player did.
+	 * Whether this animation could be an attack, for a weapon whose real attack
+	 * animation hasn't been observed yet. Idle and walking report -1.
 	 */
 	static boolean couldBeAttack(int animationId)
 	{
 		return animationId != -1 && !NOT_ATTACKS.contains(animationId);
+	}
+
+	/** Whether the player is eating or drinking, which costs attack ticks. */
+	static boolean isConsuming(int animationId)
+	{
+		return CONSUMING.contains(animationId);
 	}
 }

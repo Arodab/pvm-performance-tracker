@@ -113,6 +113,15 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.left("Ticks lost")
 				.right(String.format("%d (%.0f%%)", lost, lostShare * 100))
 				.build());
+
+			final int eating = trip ? session.getTicksLostEating() : fight.getTicksLostEating();
+			if (eating > 0)
+			{
+				panelComponent.getChildren().add(LineComponent.builder()
+					.left("  to eating")
+					.right(String.valueOf(eating))
+					.build());
+			}
 		}
 
 		final long millis = trip ? session.durationMillis() : fight.durationMillis();

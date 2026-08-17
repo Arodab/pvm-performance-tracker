@@ -42,8 +42,10 @@ class Fight
 	private int expectedTargetSamples;
 
 	// Ticks the weapon was off cooldown but no attack was made, against the
-	// ticks elapsed since the first attack.
-	private int ticksLost;
+	// ticks elapsed since the first attack. Eating is separated out because it
+	// is a choice with a known cost, unlike the rest of the idle time.
+	private int ticksLostEating;
+	private int ticksLostOther;
 	private int combatTicks;
 	private boolean attacking;
 
@@ -174,13 +176,27 @@ class Fight
 	 * Ignored before the first attack, since waiting to reach a boss isn't
 	 * wasted combat time.
 	 */
-	void recordTickLost()
+	void recordTickLost(boolean eating)
 	{
-		if (attacking)
+		if (!attacking)
 		{
-			ticksLost++;
-			combatTicks++;
+			return;
 		}
+		if (eating)
+		{
+			ticksLostEating++;
+		}
+		else
+		{
+			ticksLostOther++;
+		}
+		combatTicks++;
+	}
+
+	/** Every tick off cooldown with no attack, whatever the reason. */
+	int getTicksLost()
+	{
+		return ticksLostEating + ticksLostOther;
 	}
 
 	/** A tick that passed while the weapon was still on cooldown. */
@@ -198,7 +214,7 @@ class Fight
 	 */
 	double ticksLostShare()
 	{
-		return combatTicks <= 0 ? -1 : (double) ticksLost / combatTicks;
+		return combatTicks <= 0 ? -1 : (double) getTicksLost() / combatTicks;
 	}
 
 	int getCombatTicks()

@@ -123,6 +123,12 @@ public class PvmPerformancePlugin extends Plugin
 	private int expectedForNpcId = -1;
 	// Ticks left before the weapon can attack again; 0 means it is ready.
 	private int attackCooldown;
+	// weapon item id -> the animations seen to actually produce an attack with
+	// it. Learned from corroborated attacks, so detection stops depending on a
+	// hand-maintained list as soon as a weapon has swung once.
+	private final Map<Integer, Set<Integer>> attackAnimations = new HashMap<>();
+	// The tick damage was last taken on, which is when a block animation plays.
+	private int lastDamageTakenTick = -1;
 
 	// Running totals for the trip, shown instead of the current fight when the
 	// overlay is set to whole-trip mode.
@@ -200,13 +206,24 @@ public class PvmPerformancePlugin extends Plugin
 			session.recordAttempt(hitsplat.getAmount(), now);
 			sampleExpected(current);
 			// A landed hit resolves one of my pending attacks so it can't later
-			// be mistaken for another player's splash.
-			consumePending(npc.getIndex());
+			// be mistaken for another player's splash. When there was none, no
+			// projectile was involved, so this was melee and landed on the tick
+			// it was thrown — which makes the animation playing now an attack.
+			if (!consumePending(npc.getIndex()))
+			{
+				learnAttackAnimation();
+			}
 		}
-		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
+		else if (actor == client.getLocalPlayer())
 		{
-			// Damage on us during an active fight is attributed to it.
-			current.recordDamageTaken(hitsplat.getAmount(), now);
+			// Taking a hit plays a block animation, which must not be read as an
+			// attack. Noting the tick catches every weapon's, present or future.
+			lastDamageTakenTick = client.getTickCount();
+			if (current != null && !current.isEnded())
+			{
+				// Damage on us during an active fight is attributed to it.
+				current.recordDamageTaken(hitsplat.getAmount(), now);
+			}
 		}
 	}
 
@@ -246,6 +263,9 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(npc, now);
 		}
 		pendingMineHits.merge(npc.getIndex(), 1, Integer::sum);
+		// A projectile is created on the tick the attack is fired, so whatever
+		// animation is playing now is this weapon's ranged or magic attack.
+		learnAttackAnimation();
 	}
 
 	@Subscribe
@@ -346,7 +366,9 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		else
 		{
-			current.recordTickLost();
+			final Player me = client.getLocalPlayer();
+			final boolean eating = me != null && AttackAnimations.isConsuming(me.getAnimation());
+			current.recordTickLost(eating);
 		}
 	}
 
@@ -368,7 +390,34 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return false;
 		}
-		return AttackAnimations.couldBeAttack(me.getAnimation());
+		final int animation = me.getAnimation();
+		final Set<Integer> known = attackAnimations.get(combatCalc.equippedWeaponId());
+		if (known != null && !known.isEmpty())
+		{
+			// This weapon has been seen to attack, so accept nothing else.
+			return known.contains(animation);
+		}
+		// Not seen yet: fall back to any action animation, minus the ones known
+		// to be something else, and minus a block from a hit taken this tick.
+		return AttackAnimations.couldBeAttack(animation) && lastDamageTakenTick != client.getTickCount();
+	}
+
+	/**
+	 * Remembers the animation that was playing when an attack provably happened,
+	 * so it can be recognised on its own from then on.
+	 *
+	 * <p>Only called where the tick is certain: a melee hitsplat lands on the
+	 * tick it was thrown, and a projectile is created on the tick it was fired.
+	 */
+	private void learnAttackAnimation()
+	{
+		final Player me = client.getLocalPlayer();
+		if (me == null || me.getAnimation() == -1)
+		{
+			return;
+		}
+		attackAnimations.computeIfAbsent(combatCalc.equippedWeaponId(), id -> new HashSet<>())
+			.add(me.getAnimation());
 	}
 
 	@Subscribe
@@ -668,7 +717,7 @@ public class PvmPerformancePlugin extends Plugin
 				{
 					writer.write("started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
 						+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
-						+ "ticksLost,ticksLostPct\n");
+						+ "ticksLost,ticksLostPct,ticksLostEating\n");
 					for (Fight fight : fights)
 					{
 						writer.write(csvRow(fight));
@@ -691,7 +740,7 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
-		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s%n",
+		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d%n",
 			started,
 			fight.getTargetName().replace('"', '\''),
 			fight.getTargetId(),
@@ -709,7 +758,8 @@ public class PvmPerformancePlugin extends Plugin
 			csvExpected(fight.expectedAccuracy() * 100, 1),
 			csvExpected(fight.expectedAverageHit(), 2),
 			fight.getTicksLost(),
-			csvExpected(fight.ticksLostShare() * 100, 1));
+			csvExpected(fight.ticksLostShare() * 100, 1),
+			fight.getTicksLostEating());
 	}
 
 	/**

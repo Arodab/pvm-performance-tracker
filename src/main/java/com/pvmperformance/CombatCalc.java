@@ -770,9 +770,15 @@ class CombatCalc
 		}
 	}
 
-	private int weaponItemId()
+	/** The equipped weapon's item id, or -1 when unarmed. */
+	int equippedWeaponId()
 	{
 		return equippedItemId(EquipmentInventorySlot.WEAPON);
+	}
+
+	private int weaponItemId()
+	{
+		return equippedWeaponId();
 	}
 
 	private int equippedItemId(EquipmentInventorySlot slot)
