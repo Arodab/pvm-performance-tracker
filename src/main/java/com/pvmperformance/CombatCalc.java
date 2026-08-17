@@ -134,7 +134,47 @@ class CombatCalc
 			+ style.attackLevelBonus() + 9;
 		final int attRoll = (int) (effMagic * (attackBonus(AttackType.MAGIC) + 64) * gear);
 		final int defRoll = (npc.getMagicLevel() + 9) * (npc.getDefMagic() + 64);
-		return hitChanceFrom(attRoll, defRoll);
+		if (!hasConflictionGauntlets())
+		{
+			return hitChanceFrom(attRoll, defRoll);
+		}
+		return conflictionHitChance(attRoll, defRoll);
+	}
+
+	/**
+	 * Confliction gauntlets give the double accuracy roll only on the attack
+	 * following a splash, so the rate depends on how often you are splashing —
+	 * which itself depends on the rate. Averaged over a fight it settles into a
+	 * steady state.
+	 *
+	 * <p>Attacks alternate between two states: a normal roll after a hit, and a
+	 * doubled roll after a miss. Missing at {@code 1-p} moves you into the
+	 * doubled state and missing again at {@code 1-q} keeps you there, so the
+	 * share of attacks that get the bonus settles at {@code (1-p)/(1-p+q)}. The
+	 * returned figure is the two states weighted by that share.
+	 *
+	 * <p>With no bonus ({@code q == p}) this reduces to {@code p}, as it should.
+	 */
+	private static double conflictionHitChance(int attRoll, int defRoll)
+	{
+		final double p = hitChanceFrom(attRoll, defRoll);
+		final double q = 1.0 - sharedDefenceMissChance(attRoll, defRoll);
+		final double doubledShare = (1.0 - p) / (1.0 - p + q);
+		return (1.0 - doubledShare) * p + doubledShare * q;
+	}
+
+	/**
+	 * Whether the confliction gauntlets are worn and able to work: their effect
+	 * is disabled entirely by a two-handed weapon.
+	 */
+	private boolean hasConflictionGauntlets()
+	{
+		if (equippedItemId(EquipmentInventorySlot.GLOVES) != ItemID.CONFLICTION_GAUNTLETS)
+		{
+			return false;
+		}
+		final ItemEquipmentStats weapon = weaponStats();
+		return weapon == null || !weapon.isTwoHanded();
 	}
 
 	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
@@ -533,7 +573,9 @@ class CombatCalc
 		{
 			return baseMaxHit;
 		}
-		int percent = 0;
+		// Magic damage is a float: several items carry fractions of a percent, so
+		// summing into an int would truncate each one away.
+		double percent = 0;
 		for (Item item : equipment.getItems())
 		{
 			final ItemStats stats = itemManager.getItemStats(item.getId());
@@ -547,7 +589,7 @@ class CombatCalc
 		percent *= multiplier;
 		if (multiplier > 1)
 		{
-			percent = Math.min(100, percent);
+			percent = Math.min(100.0, percent);
 		}
 		return (int) Math.floor(baseMaxHit * (1.0 + percent / 100.0));
 	}
@@ -583,13 +625,18 @@ class CombatCalc
 
 	private int weaponItemId()
 	{
+		return equippedItemId(EquipmentInventorySlot.WEAPON);
+	}
+
+	private int equippedItemId(EquipmentInventorySlot slot)
+	{
 		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
 		{
 			return -1;
 		}
-		final Item weapon = equipment.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
-		return weapon == null ? -1 : weapon.getId();
+		final Item item = equipment.getItem(slot.getSlotIdx());
+		return item == null ? -1 : item.getId();
 	}
 
 	private double meleePrayer()
