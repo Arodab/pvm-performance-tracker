@@ -4,7 +4,6 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.GridLayout;
-import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -14,9 +13,12 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextField;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
@@ -27,6 +29,7 @@ class PvmPerformancePanel extends PluginPanel
 	private final PvmPerformancePlugin plugin;
 
 	private final JCheckBox bossOnly = new JCheckBox("Boss only");
+	private final JTextField search = new JTextField();
 	private final JLabel status = new JLabel(" ");
 	private final JPanel list = new JPanel();
 
@@ -69,6 +72,30 @@ class PvmPerformancePanel extends PluginPanel
 		title.setAlignmentX(LEFT_ALIGNMENT);
 		header.add(title);
 		header.add(Box.createVerticalStrut(8));
+
+		search.setToolTipText("Filter the list by NPC name");
+		search.getDocument().addDocumentListener(new DocumentListener()
+		{
+			@Override
+			public void insertUpdate(DocumentEvent e)
+			{
+				refresh();
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent e)
+			{
+				refresh();
+			}
+
+			@Override
+			public void changedUpdate(DocumentEvent e)
+			{
+				refresh();
+			}
+		});
+		fullWidth(header, search);
+		header.add(Box.createVerticalStrut(6));
 
 		final JButton exportAll = new JButton("Export all");
 		exportAll.setToolTipText("Export every tracked fight to a CSV file");
@@ -123,21 +150,26 @@ class PvmPerformancePanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			list.removeAll();
-			final List<NpcStats> stats = plugin.getNpcStats(bossOnly.isSelected());
-			if (stats.isEmpty())
+			final String query = search.getText().trim().toLowerCase();
+			int shown = 0;
+			for (NpcStats s : plugin.getNpcStats(bossOnly.isSelected()))
 			{
-				final JLabel empty = new JLabel("<html>No fights tracked yet. Fight an NPC and it will show up here.</html>");
+				if (!query.isEmpty() && !s.getName().toLowerCase().contains(query))
+				{
+					continue;
+				}
+				list.add(buildRow(s));
+				list.add(Box.createVerticalStrut(4));
+				shown++;
+			}
+			if (shown == 0)
+			{
+				final JLabel empty = new JLabel(query.isEmpty()
+					? "<html>No fights tracked yet. Fight an NPC and it will show up here.</html>"
+					: "<html>No tracked NPC matches that name.</html>");
 				empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 				empty.setBorder(new EmptyBorder(4, 2, 4, 2));
 				list.add(empty);
-			}
-			else
-			{
-				for (NpcStats s : stats)
-				{
-					list.add(buildRow(s));
-					list.add(Box.createVerticalStrut(4));
-				}
 			}
 			list.revalidate();
 			list.repaint();
