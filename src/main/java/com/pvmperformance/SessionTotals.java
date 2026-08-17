@@ -24,11 +24,10 @@ class SessionTotals
 	private int ticksLostOther;
 	private int combatTicks;
 
-	private double sumExpectedMaxHit;
-	private int expectedMaxHitSamples;
+	// Running totals of what each attack was expected to do, so the measured
+	// side can be compared against the sum of every weapon's own contribution.
 	private double sumExpectedAccuracy;
 	private double sumExpectedAverageHit;
-	private int expectedTargetSamples;
 
 	SessionTotals(long now)
 	{
@@ -48,11 +47,8 @@ class SessionTotals
 		ticksLostEating = 0;
 		ticksLostOther = 0;
 		combatTicks = 0;
-		sumExpectedMaxHit = 0;
-		expectedMaxHitSamples = 0;
 		sumExpectedAccuracy = 0;
 		sumExpectedAverageHit = 0;
-		expectedTargetSamples = 0;
 	}
 
 	void recordFightStarted(long now)
@@ -86,49 +82,23 @@ class SessionTotals
 		lastActivityMillis = now;
 	}
 
-	void recordExpected(int maxHit, double accuracy, double averageHit)
+	/**
+	 * Adds what this attack was expected to do. The max hit isn't accumulated:
+	 * it is a property of the loadout rather than something that adds up, and
+	 * the overlay shows it live for whatever is held now.
+	 */
+	void recordExpected(double accuracy, double averageHit)
 	{
-		if (maxHit > 0)
-		{
-			sumExpectedMaxHit += maxHit;
-			expectedMaxHitSamples++;
-		}
 		if (accuracy >= 0 && averageHit >= 0)
 		{
 			sumExpectedAccuracy += accuracy;
 			sumExpectedAverageHit += averageHit;
-			expectedTargetSamples++;
 		}
 	}
 
 	long durationMillis()
 	{
 		return Math.max(0, lastActivityMillis - startMillis);
-	}
-
-	double accuracy()
-	{
-		return attempts == 0 ? 0 : (double) hits / attempts;
-	}
-
-	double averageHit()
-	{
-		return attempts == 0 ? 0 : (double) damageDealt / attempts;
-	}
-
-	double expectedMaxHit()
-	{
-		return expectedMaxHitSamples == 0 ? -1 : sumExpectedMaxHit / expectedMaxHitSamples;
-	}
-
-	double expectedAccuracy()
-	{
-		return expectedTargetSamples == 0 ? -1 : sumExpectedAccuracy / expectedTargetSamples;
-	}
-
-	double expectedAverageHit()
-	{
-		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
 	}
 
 	int getTicksLost()

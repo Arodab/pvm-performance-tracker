@@ -53,6 +53,12 @@ class CombatCalc
 	private final PvmPerformanceConfig config;
 	private final NPCManager npcManager;
 
+	// A manual cast counts for a few ticks past the click, so it survives the
+	// gap between casts while the player keeps going.
+	private static final int MANUAL_CAST_TICKS = 8;
+	private Spell manualCastSpell;
+	private int manualCastTick = Integer.MIN_VALUE;
+
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
 		GearBonusCalc gearBonuses, PvmPerformanceConfig config, NPCManager npcManager)
@@ -68,7 +74,7 @@ class CombatCalc
 	/** The gear multipliers for the current loadout against this target. */
 	private GearBonus gearBonus(int npcId)
 	{
-		return gearBonuses.compute(attackStyle(), monsters.get(npcId), autocastSpell(), config.assumeSlayerTask());
+		return gearBonuses.compute(attackStyle(), monsters.get(npcId), activeSpell(), config.assumeSlayerTask());
 	}
 
 	/**
@@ -398,6 +404,39 @@ class CombatCalc
 		return Spell.forVarbit(client.getVarbitValue(VarbitID.AUTOCAST_SPELL));
 	}
 
+	/**
+	 * Notes that the player clicked a spell onto an NPC. A manual cast overrides
+	 * whatever the weapon would otherwise do, so a trident held while barraging
+	 * reports the barrage rather than the trident's own attack.
+	 */
+	void recordManualCast(Spell spell)
+	{
+		manualCastSpell = spell;
+		manualCastTick = client.getTickCount();
+	}
+
+	/**
+	 * The manually cast spell, if one was cast recently enough to still be what
+	 * the player is doing. Casting takes 5 ticks, so a window slightly wider than
+	 * that stays lit while the player keeps clicking and lapses back to the
+	 * weapon once they stop.
+	 */
+	private Spell activeManualCast()
+	{
+		if (manualCastSpell == null || client.getTickCount() - manualCastTick > MANUAL_CAST_TICKS)
+		{
+			return null;
+		}
+		return manualCastSpell;
+	}
+
+	/** The spell being cast, manual taking priority over autocast. */
+	private Spell activeSpell()
+	{
+		final Spell manual = activeManualCast();
+		return manual != null ? manual : autocastSpell();
+	}
+
 	private AttackStyle attackStyle()
 	{
 		final int varp = client.getVarpValue(VarPlayerID.COM_MODE);
@@ -551,11 +590,14 @@ class CombatCalc
 	private int castSpeedTicks(int weaponTicks)
 	{
 		final WeaponCategory category = weaponCategory();
-		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
+		// A manual cast runs on the spell's clock even from a powered staff, so
+		// a trident being barraged off is 5 ticks, not the trident's own speed.
+		if (activeManualCast() == null
+			&& (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER))
 		{
 			return weaponTicks;
 		}
-		final Spell spell = autocastSpell();
+		final Spell spell = activeSpell();
 		if (weaponItemId() == ItemID.NIGHTMARE_STAFF_HARMONISED
 			&& spell != null && spell.getSpellbook() == Spellbook.STANDARD)
 		{
@@ -694,6 +736,13 @@ class CombatCalc
 	 */
 	private int magicMaxHit()
 	{
+		// A manual cast is what the player is actually doing, whatever is held,
+		// so it wins over the weapon's own attack.
+		final Spell manual = activeManualCast();
+		if (manual != null)
+		{
+			return applyMagicDamage(manual.getBaseMaxHit(), manual);
+		}
 		final WeaponCategory category = weaponCategory();
 		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
 		{
@@ -767,23 +816,28 @@ class CombatCalc
 		final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
 		// Trident of the seas is floor(magic / 3) - 5; the rest are offsets of it.
 		final int seas = magic / 3 - 5;
-		if (name.startsWith("Trident of the seas"))
+		final String lower = name.toLowerCase();
+		if (lower.startsWith("trident of the seas"))
 		{
 			return Math.max(1, seas);
 		}
-		if (name.startsWith("Trident of the swamp"))
+		if (lower.startsWith("trident of the swamp"))
 		{
 			return Math.max(1, seas + 3);
 		}
-		if (name.endsWith("Sanguinesti staff"))
+		if (lower.endsWith("sanguinesti staff"))
 		{
 			return Math.max(1, seas + 4);
 		}
-		if (name.startsWith("Tumeken's shadow"))
+		if (lower.startsWith("tumeken's shadow"))
 		{
-			return Math.max(1, magic / 3 + 1);
+			return Math.max(1, seas + 6);
 		}
-		if (name.startsWith("Warped sceptre"))
+		if (lower.startsWith("eye of ayak"))
+		{
+			return Math.max(1, seas - 1);
+		}
+		if (lower.startsWith("warped sceptre"))
 		{
 			return Math.max(1, (8 * magic + 96) / 37);
 		}

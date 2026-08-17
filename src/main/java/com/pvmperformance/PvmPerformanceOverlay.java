@@ -74,35 +74,50 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 		}
 
+		// Top half: what the loadout in hand does against this target. These hold
+		// still through a fight, so they read as the stats of what is being used
+		// rather than as a running score.
+		final double expAcc = plugin.getExpectedAccuracy();
+		if (expAcc >= 0)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("Accuracy")
+				.right(String.format("%.0f%%", expAcc * 100))
+				.build());
+		}
+
+		final double expAvgHit = plugin.getExpectedAverageHit();
+		if (expAvgHit >= 0)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("Avg hit")
+				.right(String.format("%.2f", expAvgHit))
+				.build());
+		}
+
+		// Bottom half: what has actually happened, against what the model said to
+		// expect of it. The expected side is a running total of each attack's own
+		// figure, so swapping weapons mid-fight adds each weapon's own share.
+		panelComponent.getChildren().add(LineComponent.builder().left("").right("").build());
+
 		final int damage = trip ? session.getDamageDealt() : fight.getDamageDealt();
+		final double expDamage = trip
+			? session.getSumExpectedAverageHit() : fight.getSumExpectedAverageHit();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Damage")
-			.right(QuantityFormatter.formatNumber(damage))
+			.right(expDamage > 0
+				? String.format("%s / %.0f", QuantityFormatter.formatNumber(damage), expDamage)
+				: QuantityFormatter.formatNumber(damage))
 			.build());
 
-		final double avgHit = trip ? session.averageHit() : fight.averageHit();
-		final double expAvgHit = trip ? session.expectedAverageHit() : plugin.getExpectedAverageHit();
-		panelComponent.getChildren().add(LineComponent.builder()
-			.left("Avg hit")
-			.right(expAvgHit >= 0
-				? String.format("%.2f (exp %.2f)", avgHit, expAvgHit)
-				: String.format("%.2f", avgHit))
-			.build());
-
+		final int hits = trip ? session.getHits() : fight.getHits();
+		final double expHits = trip
+			? session.getSumExpectedAccuracy() : fight.getSumExpectedAccuracy();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Hits")
-			.right(trip
-				? String.format("%d/%d", session.getHits(), session.getAttempts())
-				: String.format("%d/%d", fight.getHits(), fight.getAttempts()))
-			.build());
-
-		final double accuracy = trip ? session.accuracy() : fight.accuracy();
-		final double expAcc = trip ? session.expectedAccuracy() : plugin.getExpectedAccuracy();
-		panelComponent.getChildren().add(LineComponent.builder()
-			.left("Accuracy")
-			.right(expAcc >= 0
-				? String.format("%.0f%% (exp %.0f%%)", accuracy * 100, expAcc * 100)
-				: String.format("%.0f%%", accuracy * 100))
+			.right(expHits > 0
+				? String.format("%d / %.1f", hits, expHits)
+				: String.valueOf(hits))
 			.build());
 
 		final double lostShare = trip ? session.ticksLostShare() : fight.ticksLostShare();

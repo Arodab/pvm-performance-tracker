@@ -103,4 +103,25 @@ enum Spell
 	{
 		return BY_VARBIT.get(varbitValue);
 	}
+
+	/**
+	 * The spell with this name, or null if it isn't a combat spell. Used to read
+	 * a manual cast off the spell widget the player clicked, which carries the
+	 * spell's name but no id this table could be keyed by.
+	 */
+	static Spell forDisplayName(String name)
+	{
+		if (name == null)
+		{
+			return null;
+		}
+		for (Spell spell : values())
+		{
+			if (spell.displayName.equalsIgnoreCase(name))
+			{
+				return spell;
+			}
+		}
+		return null;
+	}
 }

@@ -33,6 +33,7 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Hitsplat;
+import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
@@ -41,8 +42,10 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
+import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.ProjectileMoved;
+import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.SpotanimID;
 import net.runelite.client.RuneLite;
@@ -58,6 +61,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.Text;
 
 @Slf4j
 @PluginDescriptor(
@@ -226,6 +230,33 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Catches a spell cast by hand onto an NPC. The autocast varbit only knows
+	 * about autocasting, so without this a spell clicked while holding a powered
+	 * staff would be reported as the staff's own attack.
+	 *
+	 * <p>The clicked widget carries the spell's name but no id this could be
+	 * keyed by, so the name is what identifies it.
+	 */
+	@Subscribe
+	public void onMenuOptionClicked(MenuOptionClicked event)
+	{
+		if (event.getMenuAction() != MenuAction.WIDGET_TARGET_ON_NPC || !client.isWidgetSelected())
+		{
+			return;
+		}
+		final Widget selected = client.getSelectedWidget();
+		if (selected == null)
+		{
+			return;
+		}
+		final Spell spell = Spell.forDisplayName(Text.removeTags(selected.getName()));
+		if (spell != null)
+		{
+			combatCalc.recordManualCast(spell);
+		}
+	}
+
 	@Subscribe
 	public void onProjectileMoved(ProjectileMoved event)
 	{
@@ -307,7 +338,7 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		fight.recordExpected(expectedMaxHit, expectedAccuracy, expectedAverageHit);
-		session.recordExpected(expectedMaxHit, expectedAccuracy, expectedAverageHit);
+		session.recordExpected(expectedAccuracy, expectedAverageHit);
 	}
 
 	/** The trip totals shown when the overlay is set to whole-trip mode. */
