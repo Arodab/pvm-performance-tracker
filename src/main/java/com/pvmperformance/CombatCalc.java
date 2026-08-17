@@ -16,9 +16,8 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 
 /**
- * Expected combat figures computed from the player's live loadout: max hit for
- * all three styles, and hit chance and DPS against a given NPC for melee and
- * ranged.
+ * Expected combat figures computed from the player's live loadout: max hit, hit
+ * chance and DPS against a given NPC, for all three combat styles.
  *
  * <p>Max hit depends only on the attacker (levels, prayer, style, gear strength),
  * not on the target, so it needs no NPC data. Hit chance and DPS additionally
@@ -76,7 +75,7 @@ class CombatCalc
 		{
 			return rangedHitChance(style, npc);
 		}
-		return -1; // magic accuracy needs the spell and magic damage %, not modelled yet
+		return magicHitChance(style, npc);
 	}
 
 	/** Expected DPS vs the NPC, or -1 when the hit chance or max hit is unavailable. */
@@ -99,6 +98,20 @@ class CombatCalc
 		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
 			: type == AttackType.SLASH ? npc.getDefSlash() : npc.getDefCrush();
 		final int defRoll = (npc.getDefenceLevel() + 9) * (defBonus + 64);
+		return hitChanceFrom(attRoll, defRoll);
+	}
+
+	/**
+	 * Magic rolls against the target's magic level rather than its defence
+	 * level, and its effective level starts from +9 rather than the +8 melee and
+	 * ranged use.
+	 */
+	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc)
+	{
+		final int effMagic = (int) Math.floor(client.getBoostedSkillLevel(Skill.MAGIC) * magicAccuracyPrayer())
+			+ style.attackLevelBonus() + 9;
+		final int attRoll = effMagic * (attackBonus(AttackType.MAGIC) + 64);
+		final int defRoll = (npc.getMagicLevel() + 9) * (npc.getDefMagic() + 64);
 		return hitChanceFrom(attRoll, defRoll);
 	}
 
@@ -152,10 +165,21 @@ class CombatCalc
 	 * <p>Never null: categories missing from {@link WeaponCategory} fall back to
 	 * {@link #fallbackStyle()}.
 	 */
+	private WeaponCategory weaponCategory()
+	{
+		return WeaponCategory.forVarbit(client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY));
+	}
+
+	/** The spell currently set to autocast, or null if none is. */
+	private Spell autocastSpell()
+	{
+		return Spell.forVarbit(client.getVarbitValue(VarbitID.AUTOCAST_SPELL));
+	}
+
 	private AttackStyle attackStyle()
 	{
 		final int varp = client.getVarpValue(VarPlayerID.COM_MODE);
-		final WeaponCategory category = WeaponCategory.forVarbit(client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY));
+		final WeaponCategory category = weaponCategory();
 		if (category != null)
 		{
 			final AttackStyle style = category.styleFor(varp);
@@ -278,11 +302,38 @@ class CombatCalc
 		final ItemEquipmentStats w = weaponStats();
 		final int speed = w == null ? 4 : w.getAspeed();
 		final int ticks = speed <= 0 ? 4 : speed;
+		final AttackStyle style = attackStyle();
+		if (style.getAttackType() == AttackType.MAGIC)
+		{
+			return castSpeedTicks(ticks);
+		}
 		// Rapid fires a tick sooner; it is the only style that alters attack speed.
-		return attackStyle().getCombatStyle() == CombatStyle.RAPID ? Math.max(1, ticks - 1) : ticks;
+		return style.getCombatStyle() == CombatStyle.RAPID ? Math.max(1, ticks - 1) : ticks;
 	}
 
-	/** Max hit for the current loadout and weapon style, or 0 if unavailable/magic. */
+	/**
+	 * Casting runs on its own clock: the weapon's speed applies only to powered
+	 * staves and salamanders, which fire their own attack rather than a spell.
+	 * Everything else casts in 5 ticks, or 4 for the harmonised staff on the
+	 * standard spellbook.
+	 */
+	private int castSpeedTicks(int weaponTicks)
+	{
+		final WeaponCategory category = weaponCategory();
+		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
+		{
+			return weaponTicks;
+		}
+		final Spell spell = autocastSpell();
+		if (weaponItemId() == ItemID.HARMONISED_NIGHTMARE_STAFF
+			&& spell != null && spell.getSpellbook() == Spellbook.STANDARD)
+		{
+			return 4;
+		}
+		return 5;
+	}
+
+	/** Max hit for the current loadout and weapon style, or 0 if unavailable. */
 	int maxHit()
 	{
 		switch (weaponStyle())
@@ -324,13 +375,55 @@ class CombatCalc
 	}
 
 	/**
-	 * Powered-staff magic max hit from the magic level. Base value only for now:
-	 * magic-damage % gear (occult, tormented, Shadow's tripling, tome of fire)
-	 * and standard-spell casting are not applied yet, so it reads low with such
-	 * gear. Returns 0 for anything not a supported powered staff. Formulae from
-	 * the LlemonDuck dps-calculator (BSD-2).
+	 * Magic max hit: the autocast spell's base hit for a casting staff, or the
+	 * staff's own attack for a powered staff, either way scaled by the magic
+	 * damage bonus of the worn gear.
+	 *
+	 * <p>Returns 0 when nothing is set to autocast and the weapon isn't a
+	 * supported powered staff, since the spell being cast manually can't be
+	 * read. Formulae from the LlemonDuck dps-calculator (BSD-2).
+	 *
+	 * <p>The combat option does not enter this: a spell's max hit is the same on
+	 * autocast and defensive autocast.
 	 */
 	private int magicMaxHit()
+	{
+		final int base = poweredStaffMaxHit();
+		if (base > 0)
+		{
+			return applyMagicDamage(base);
+		}
+		final Spell spell = autocastSpell();
+		return spell == null ? 0 : applyMagicDamage(spell.getBaseMaxHit());
+	}
+
+	/**
+	 * Scales a base magic hit by the summed magic damage % of the worn gear
+	 * (occult, tormented, ancestral, ...). Not modelled: Tumeken's Shadow
+	 * tripling its own gear bonus, the tomes' elemental bonuses, and the
+	 * smoke staff's standard-spell bonus, so those setups still read low.
+	 */
+	private int applyMagicDamage(int baseMaxHit)
+	{
+		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		if (equipment == null)
+		{
+			return baseMaxHit;
+		}
+		int percent = 0;
+		for (Item item : equipment.getItems())
+		{
+			final ItemStats stats = itemManager.getItemStats(item.getId());
+			if (stats != null && stats.getEquipment() != null)
+			{
+				percent += stats.getEquipment().getMdmg();
+			}
+		}
+		return (int) Math.floor(baseMaxHit * (1.0 + percent / 100.0));
+	}
+
+	/** The staff's own attack, for powered staves, or 0 if this isn't one. */
+	private int poweredStaffMaxHit()
 	{
 		final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
 		final int seas = Math.max(1, (magic - 75) / 3 + 20);
@@ -386,6 +479,28 @@ class CombatCalc
 			return 1.10;
 		}
 		if (client.isPrayerActive(Prayer.BURST_OF_STRENGTH))
+		{
+			return 1.05;
+		}
+		return 1.0;
+	}
+
+	/** Magic attack prayer multiplier. The magic prayers boost accuracy only, not damage. */
+	private double magicAccuracyPrayer()
+	{
+		if (client.isPrayerActive(Prayer.AUGURY))
+		{
+			return 1.25;
+		}
+		if (client.isPrayerActive(Prayer.MYSTIC_MIGHT))
+		{
+			return 1.15;
+		}
+		if (client.isPrayerActive(Prayer.MYSTIC_LORE))
+		{
+			return 1.10;
+		}
+		if (client.isPrayerActive(Prayer.MYSTIC_WILL))
 		{
 			return 1.05;
 		}
