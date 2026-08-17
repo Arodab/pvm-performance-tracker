@@ -250,6 +250,22 @@ class CombatCalc
 
 	private double meleeAccuracyPrayer()
 	{
+		if (prayerActive(Prayer.RP_INTENSIFY))
+		{
+			return 1.50;
+		}
+		if (prayerActive(Prayer.RP_DECIMATE))
+		{
+			return 1.30;
+		}
+		if (prayerActive(Prayer.RP_ANCIENT_STRENGTH))
+		{
+			return 1.20;
+		}
+		if (prayerActive(Prayer.RP_TRINITAS))
+		{
+			return 1.15;
+		}
 		if (prayerActive(Prayer.PIETY))
 		{
 			return 1.20;
@@ -491,7 +507,8 @@ class CombatCalc
 		if (weapon == ItemID.NIGHTMARE_STAFF_VOLATILE || weapon == ItemID.DEADMAN_BLIGHTED_VOLATILE_STAFF)
 		{
 			final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
-			return applyMagicDamage(Math.min(58, 58 * magic / 99 + 1));
+			// The spec is its own attack, not a spell, so no ancient bonus applies.
+			return applyMagicDamage(Math.min(58, 58 * magic / 99 + 1), null);
 		}
 		final SpecialAttack spec = specialAttack();
 		return spec == null ? 0 : spec.maxTotal(maxHit(npcId));
@@ -554,10 +571,10 @@ class CombatCalc
 		final int base = poweredStaffMaxHit();
 		if (base > 0)
 		{
-			return applyMagicDamage(base);
+			return applyMagicDamage(base, null);
 		}
 		final Spell spell = autocastSpell();
-		return spell == null ? 0 : applyMagicDamage(spell.getBaseMaxHit());
+		return spell == null ? 0 : applyMagicDamage(spell.getBaseMaxHit(), spell);
 	}
 
 	/**
@@ -566,7 +583,7 @@ class CombatCalc
 	 * Not modelled: the tomes' elemental bonuses and the smoke staff's
 	 * standard-spell bonus, so those setups still read low.
 	 */
-	private int applyMagicDamage(int baseMaxHit)
+	private int applyMagicDamage(int baseMaxHit, Spell spell)
 	{
 		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
@@ -584,6 +601,7 @@ class CombatCalc
 				percent += stats.getEquipment().getMdmg();
 			}
 		}
+		percent += gearBonuses.virtusAncientDamagePercent(spell);
 		// The shadow's multiplied magic damage is capped at 100%.
 		final int multiplier = gearBonuses.shadowMultiplier();
 		percent *= multiplier;
@@ -591,6 +609,9 @@ class CombatCalc
 		{
 			percent = Math.min(100.0, percent);
 		}
+		// Prayer magic damage is not worn equipment, so the shadow doesn't
+		// multiply it and the equipment cap doesn't apply to it.
+		percent += magicDamagePrayerPercent();
 		return (int) Math.floor(baseMaxHit * (1.0 + percent / 100.0));
 	}
 
@@ -641,6 +662,18 @@ class CombatCalc
 
 	private double meleePrayer()
 	{
+		if (prayerActive(Prayer.RP_DECIMATE))
+		{
+			return 1.27;
+		}
+		if (prayerActive(Prayer.RP_ANCIENT_STRENGTH))
+		{
+			return 1.20;
+		}
+		if (prayerActive(Prayer.RP_TRINITAS))
+		{
+			return 1.15;
+		}
 		if (prayerActive(Prayer.PIETY))
 		{
 			return 1.23;
@@ -673,12 +706,38 @@ class CombatCalc
 		return client.getVarbitValue(prayer.getVarbit()) == 1;
 	}
 
-	/** Magic attack prayer multiplier. The magic prayers boost accuracy only, not damage. */
+	/**
+	 * Magic attack prayer multiplier.
+	 *
+	 * <p>The Ruinous Powers are checked first. They are a separate prayer book,
+	 * so they cannot be active alongside the standard ones, and Intensify is
+	 * mutually exclusive with the other offensive Ruinous prayers.
+	 */
 	private double magicAccuracyPrayer()
 	{
+		if (prayerActive(Prayer.RP_INTENSIFY))
+		{
+			return 1.50;
+		}
+		if (prayerActive(Prayer.RP_VAPORISE))
+		{
+			return 1.30;
+		}
+		if (prayerActive(Prayer.RP_ANCIENT_WILL))
+		{
+			return 1.20;
+		}
+		if (prayerActive(Prayer.RP_TRINITAS))
+		{
+			return 1.15;
+		}
 		if (prayerActive(Prayer.AUGURY))
 		{
 			return 1.25;
+		}
+		if (prayerActive(Prayer.MYSTIC_VIGOUR))
+		{
+			return 1.18;
 		}
 		if (prayerActive(Prayer.MYSTIC_MIGHT))
 		{
@@ -695,12 +754,57 @@ class CombatCalc
 		return 1.0;
 	}
 
+	/**
+	 * Magic damage granted by prayer, in percent. Unlike the other styles, some
+	 * magic prayers add damage as well as accuracy.
+	 */
+	private double magicDamagePrayerPercent()
+	{
+		if (prayerActive(Prayer.RP_VAPORISE))
+		{
+			return 4.0;
+		}
+		if (prayerActive(Prayer.RP_ANCIENT_WILL))
+		{
+			return 3.0;
+		}
+		if (prayerActive(Prayer.RP_TRINITAS))
+		{
+			return 2.0;
+		}
+		if (prayerActive(Prayer.MYSTIC_VIGOUR))
+		{
+			return 3.0;
+		}
+		return 0.0;
+	}
+
 	/** Ranged attack prayer multiplier. Rigour gives less here than it does to strength. */
 	private double rangedAccuracyPrayer()
 	{
+		if (prayerActive(Prayer.RP_INTENSIFY))
+		{
+			return 1.50;
+		}
+		if (prayerActive(Prayer.RP_ANNIHILATE))
+		{
+			return 1.30;
+		}
+		if (prayerActive(Prayer.RP_ANCIENT_SIGHT))
+		{
+			return 1.20;
+		}
+		if (prayerActive(Prayer.RP_TRINITAS))
+		{
+			return 1.15;
+		}
 		if (prayerActive(Prayer.RIGOUR))
 		{
 			return 1.20;
+		}
+		if (prayerActive(Prayer.DEADEYE))
+		{
+			return 1.18;
 		}
 		if (prayerActive(Prayer.EAGLE_EYE))
 		{
@@ -719,9 +823,25 @@ class CombatCalc
 
 	private double rangedPrayer()
 	{
+		if (prayerActive(Prayer.RP_ANNIHILATE))
+		{
+			return 1.27;
+		}
+		if (prayerActive(Prayer.RP_ANCIENT_SIGHT))
+		{
+			return 1.20;
+		}
+		if (prayerActive(Prayer.RP_TRINITAS))
+		{
+			return 1.15;
+		}
 		if (prayerActive(Prayer.RIGOUR))
 		{
 			return 1.23;
+		}
+		if (prayerActive(Prayer.DEADEYE))
+		{
+			return 1.18;
 		}
 		if (prayerActive(Prayer.EAGLE_EYE))
 		{

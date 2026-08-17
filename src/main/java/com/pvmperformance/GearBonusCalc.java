@@ -661,6 +661,38 @@ class GearBonusCalc
 	}
 
 	/**
+	 * Extra magic damage from Virtus when casting Ancient Magicks: 3% per piece
+	 * on top of the 2% each already carries as a plain stat, so a full set is
+	 * 15% rather than 6%. Nothing outside the ancient spellbook benefits.
+	 */
+	double virtusAncientDamagePercent(Spell spell)
+	{
+		if (spell == null || spell.getSpellbook() != Spellbook.ANCIENT)
+		{
+			return 0.0;
+		}
+		final Loadout gear = snapshot();
+		if (gear == null)
+		{
+			return 0.0;
+		}
+		double percent = 0.0;
+		if (startsWith(gear.name(EquipmentInventorySlot.HEAD), "Virtus mask"))
+		{
+			percent += 3.0;
+		}
+		if (startsWith(gear.name(EquipmentInventorySlot.BODY), "Virtus robe top"))
+		{
+			percent += 3.0;
+		}
+		if (startsWith(gear.name(EquipmentInventorySlot.LEGS), "Virtus robe bottom"))
+		{
+			percent += 3.0;
+		}
+		return percent;
+	}
+
+	/**
 	 * Tumeken's Shadow multiplies the magic accuracy and magic damage of the
 	 * rest of the loadout, by 3 normally and by 4 inside the Tombs of Amascut.
 	 * Returns 1 when the shadow isn't equipped.
