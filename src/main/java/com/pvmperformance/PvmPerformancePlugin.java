@@ -116,6 +116,8 @@ public class PvmPerformancePlugin extends Plugin
 	private int expectedMaxHit;
 	private double expectedAccuracy = -1;
 	private double expectedDps = -1;
+	private int expectedSpecMaxHit;
+	private SpecialAttack specialAttack;
 
 	// The fight currently in progress, or null between fights.
 	private Fight current;
@@ -275,18 +277,21 @@ public class PvmPerformancePlugin extends Plugin
 		countedProjectiles.removeIf(p -> p.getRemainingCycles() <= 0);
 
 		final Fight shown = getDisplayFight();
+		specialAttack = combatCalc.specialAttack();
 		if (shown != null)
 		{
 			// Pass the target so salve, dragon hunter and the rest can apply.
 			expectedMaxHit = combatCalc.maxHit(shown.getTargetId());
 			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
 			expectedDps = combatCalc.dps(shown.getTargetId());
+			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(shown.getTargetId());
 		}
 		else
 		{
 			expectedMaxHit = combatCalc.maxHit(-1);
 			expectedAccuracy = -1;
 			expectedDps = -1;
+			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(-1);
 		}
 
 		if (current != null && !current.isEnded())
@@ -421,16 +426,28 @@ public class PvmPerformancePlugin extends Plugin
 		return expectedMaxHit;
 	}
 
-	/** Expected melee hit chance vs the shown target (0..1), or -1 if unavailable. */
+	/** Expected hit chance vs the shown target (0..1), or -1 if unavailable. */
 	double getExpectedAccuracy()
 	{
 		return expectedAccuracy;
 	}
 
-	/** Expected melee DPS vs the shown target, or -1 if unavailable. */
+	/** Expected DPS vs the shown target, or -1 if unavailable. */
 	double getExpectedDps()
 	{
 		return expectedDps;
+	}
+
+	/** Max total damage of one special attack activation (0 if the weapon has none). */
+	int getExpectedSpecMaxHit()
+	{
+		return expectedSpecMaxHit;
+	}
+
+	/** The equipped weapon's special attack, or null if it has none that hits. */
+	SpecialAttack getSpecialAttack()
+	{
+		return specialAttack;
 	}
 
 	/** Per-NPC aggregates in most-recently-fought order; optionally bosses only. */

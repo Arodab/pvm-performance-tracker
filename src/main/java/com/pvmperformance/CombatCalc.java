@@ -363,6 +363,22 @@ class CombatCalc
 		return (int) (base * gear);
 	}
 
+	/** The equipped weapon's special attack, or null if it has none that hits. */
+	SpecialAttack specialAttack()
+	{
+		return SpecialAttack.forItem(weaponItemId());
+	}
+
+	/**
+	 * The most one special attack activation can deal against this target, or 0
+	 * when the weapon has no damaging spec. Multi-hit specs are totalled.
+	 */
+	int specialAttackMaxHit(int npcId)
+	{
+		final SpecialAttack spec = specialAttack();
+		return spec == null ? 0 : spec.maxTotal(maxHit(npcId));
+	}
+
 	private int baseMaxHit()
 	{
 		switch (weaponStyle())

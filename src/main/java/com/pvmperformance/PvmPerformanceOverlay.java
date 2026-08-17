@@ -55,6 +55,18 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 		}
 
+		final SpecialAttack spec = plugin.getSpecialAttack();
+		final int specMaxHit = plugin.getExpectedSpecMaxHit();
+		if (spec != null && specMaxHit > 0)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("Spec max")
+				.right(spec.hits() > 1
+					? "~" + specMaxHit + " (" + spec.hits() + ")"
+					: "~" + specMaxHit)
+				.build());
+		}
+
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Damage")
 			.right(QuantityFormatter.formatNumber(fight.getDamageDealt()))
