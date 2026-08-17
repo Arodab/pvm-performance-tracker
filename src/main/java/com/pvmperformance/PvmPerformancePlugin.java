@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,6 +43,7 @@ import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.ProjectileMoved;
+import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.SpotanimID;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
@@ -73,6 +75,11 @@ public class PvmPerformancePlugin extends Plugin
 	// excluded here and handled separately later.
 	private static final Set<String> BOSS_NAMES = buildBossNames();
 	private static final List<String> BOSS_DISPLAY_NAMES = buildBossDisplayNames();
+	// Eating and drinking, the one thing worth telling apart from idle time.
+	// Getting this wrong only mislabels part of the breakdown; the total tick
+	// loss is measured from the attacks themselves and is unaffected.
+	private static final Set<Integer> CONSUME_ANIMATIONS = Collections.unmodifiableSet(new HashSet<>(
+		Arrays.asList(AnimationID.HUMAN_EAT, AnimationID.HUMAN_KILLERWATT_ELECTRICSHOCK)));
 	private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 	private static final DateTimeFormatter ROW_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -123,12 +130,9 @@ public class PvmPerformancePlugin extends Plugin
 	private int expectedForNpcId = -1;
 	// Ticks left before the weapon can attack again; 0 means it is ready.
 	private int attackCooldown;
-	// weapon item id -> the animations seen to actually produce an attack with
-	// it. Learned from corroborated attacks, so detection stops depending on a
-	// hand-maintained list as soon as a weapon has swung once.
-	private final Map<Integer, Set<Integer>> attackAnimations = new HashMap<>();
-	// The tick damage was last taken on, which is when a block animation plays.
-	private int lastDamageTakenTick = -1;
+	// The tick an attack was last seen going out on, set from the events that
+	// prove one happened rather than from what the player looks like.
+	private int attackObservedTick = -1;
 
 	// Running totals for the trip, shown instead of the current fight when the
 	// overlay is set to whole-trip mode.
@@ -206,24 +210,19 @@ public class PvmPerformancePlugin extends Plugin
 			session.recordAttempt(hitsplat.getAmount(), now);
 			sampleExpected(current);
 			// A landed hit resolves one of my pending attacks so it can't later
-			// be mistaken for another player's splash. When there was none, no
-			// projectile was involved, so this was melee and landed on the tick
-			// it was thrown — which makes the animation playing now an attack.
-			if (!consumePending(npc.getIndex()))
+			// be mistaken for another player's splash.
+			consumePending(npc.getIndex());
+			// Only melee lands on the tick it was thrown. A ranged or magic hit
+			// arrives late, so its tick comes from the projectile instead.
+			if (combatCalc.isMeleeEquipped())
 			{
-				learnAttackAnimation();
+				recordAttackObserved();
 			}
 		}
-		else if (actor == client.getLocalPlayer())
+		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
 		{
-			// Taking a hit plays a block animation, which must not be read as an
-			// attack. Noting the tick catches every weapon's, present or future.
-			lastDamageTakenTick = client.getTickCount();
-			if (current != null && !current.isEnded())
-			{
-				// Damage on us during an active fight is attributed to it.
-				current.recordDamageTaken(hitsplat.getAmount(), now);
-			}
+			// Damage on us during an active fight is attributed to it.
+			current.recordDamageTaken(hitsplat.getAmount(), now);
 		}
 	}
 
@@ -263,9 +262,8 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(npc, now);
 		}
 		pendingMineHits.merge(npc.getIndex(), 1, Integer::sum);
-		// A projectile is created on the tick the attack is fired, so whatever
-		// animation is playing now is this weapon's ranged or magic attack.
-		learnAttackAnimation();
+		// The projectile is created on the tick the attack was fired.
+		recordAttackObserved();
 	}
 
 	@Subscribe
@@ -338,18 +336,31 @@ public class PvmPerformancePlugin extends Plugin
 	 * Advances the attack cooldown by a tick and books the tick as an attack, as
 	 * wasted, or as still on cooldown.
 	 *
-	 * <p>Reading the animation rather than the landed hit is what makes this work
-	 * for every style: a melee hit lands on the tick it is thrown, but a ranged
-	 * or magic one lands however many ticks the projectile takes to fly, which
-	 * varies with distance and would invent tick loss that never happened. The
-	 * animation plays on the tick the attack is made, whatever the style, and
-	 * whether or not the attack goes on to hit.
+	 * <p>An attack is taken from the events that prove one happened, never from
+	 * what the player looks like. Animations cannot answer this: they can be
+	 * stalled or replaced, so an attack made on the same tick as an eat shows
+	 * the eat, and reading the animation there would both miss the attack and,
+	 * if the animation were being learned, poison the weapon's entry with it.
+	 *
+	 * <p>The tick is exact for both styles. A melee hitsplat lands on the tick it
+	 * was thrown, and a ranged or magic projectile is created on the tick it was
+	 * fired, well before it lands — so the weapon in hand decides which of the
+	 * two events to believe.
 	 */
 	private void trackAttackCooldown()
 	{
+		final boolean attacked = attackObservedTick == client.getTickCount();
+		attackObservedTick = -1;
+
 		if (current == null || current.isEnded())
 		{
 			attackCooldown = 0;
+			return;
+		}
+		if (attacked)
+		{
+			current.recordAttackMade();
+			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
 			return;
 		}
 		if (attackCooldown > 0)
@@ -358,18 +369,14 @@ public class PvmPerformancePlugin extends Plugin
 			current.recordTickSpent();
 			return;
 		}
-		// Off cooldown: either an attack goes out this tick, or it is wasted.
-		if (isAttackingTarget())
-		{
-			current.recordAttackMade();
-			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
-		}
-		else
-		{
-			final Player me = client.getLocalPlayer();
-			final boolean eating = me != null && AttackAnimations.isConsuming(me.getAnimation());
-			current.recordTickLost(eating);
-		}
+		current.recordTickLost(isConsuming());
+	}
+
+	/** Whether the player is eating or drinking, which costs attack ticks. */
+	private boolean isConsuming()
+	{
+		final Player me = client.getLocalPlayer();
+		return me != null && CONSUME_ANIMATIONS.contains(me.getAnimation());
 	}
 
 	/**
@@ -378,46 +385,14 @@ public class PvmPerformancePlugin extends Plugin
 	 * other animation while targeting the NPC is an attack, barring the things
 	 * on the blocklist such as eating or being hit.
 	 */
-	private boolean isAttackingTarget()
-	{
-		final Player me = client.getLocalPlayer();
-		if (me == null)
-		{
-			return false;
-		}
-		final Actor target = me.getInteracting();
-		if (!(target instanceof NPC) || ((NPC) target).getIndex() != current.getTargetIndex())
-		{
-			return false;
-		}
-		final int animation = me.getAnimation();
-		final Set<Integer> known = attackAnimations.get(combatCalc.equippedWeaponId());
-		if (known != null && !known.isEmpty())
-		{
-			// This weapon has been seen to attack, so accept nothing else.
-			return known.contains(animation);
-		}
-		// Not seen yet: fall back to any action animation, minus the ones known
-		// to be something else, and minus a block from a hit taken this tick.
-		return AttackAnimations.couldBeAttack(animation) && lastDamageTakenTick != client.getTickCount();
-	}
-
 	/**
-	 * Remembers the animation that was playing when an attack provably happened,
-	 * so it can be recognised on its own from then on.
-	 *
-	 * <p>Only called where the tick is certain: a melee hitsplat lands on the
+	 * Notes that an attack went out this tick. Called only from the two events
+	 * that prove one did, and whose tick is exact: a melee hitsplat lands on the
 	 * tick it was thrown, and a projectile is created on the tick it was fired.
 	 */
-	private void learnAttackAnimation()
+	private void recordAttackObserved()
 	{
-		final Player me = client.getLocalPlayer();
-		if (me == null || me.getAnimation() == -1)
-		{
-			return;
-		}
-		attackAnimations.computeIfAbsent(combatCalc.equippedWeaponId(), id -> new HashSet<>())
-			.add(me.getAnimation());
+		attackObservedTick = client.getTickCount();
 	}
 
 	@Subscribe

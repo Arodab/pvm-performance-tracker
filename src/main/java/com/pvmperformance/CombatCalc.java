@@ -776,6 +776,16 @@ class CombatCalc
 		return equippedItemId(EquipmentInventorySlot.WEAPON);
 	}
 
+	/**
+	 * Whether the selected combat option attacks in melee, which decides where
+	 * an attack's tick can be read from: melee lands on the tick it is thrown,
+	 * while ranged and magic fly for a while first.
+	 */
+	boolean isMeleeEquipped()
+	{
+		return attackStyle().getAttackType().isMelee();
+	}
+
 	private int weaponItemId()
 	{
 		return equippedWeaponId();
