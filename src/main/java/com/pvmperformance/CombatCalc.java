@@ -37,12 +37,139 @@ class CombatCalc
 
 	private final Client client;
 	private final ItemManager itemManager;
+	private final MonsterStatsProvider monsters;
 
 	@Inject
-	CombatCalc(Client client, ItemManager itemManager)
+	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters)
 	{
 		this.client = client;
 		this.itemManager = itemManager;
+		this.monsters = monsters;
+	}
+
+	/** Expected melee hit chance (0..1) vs the NPC, or -1 if not melee / no data. */
+	double meleeHitChance(int npcId)
+	{
+		if (weaponStyle() != Style.MELEE)
+		{
+			return -1;
+		}
+		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		if (npc == null)
+		{
+			return -1;
+		}
+		final int sub = meleeSubType();
+		final int effAtk = (int) Math.floor(client.getBoostedSkillLevel(Skill.ATTACK) * meleeAccuracyPrayer())
+			+ (client.getVarpValue(VarPlayerID.COM_MODE) == 0 ? 3 : 0) + 8; // accurate style
+		final int attRoll = effAtk * (meleeAttackBonus(sub) + 64);
+		final int defBonus = sub == 0 ? npc.getDefStab() : sub == 1 ? npc.getDefSlash() : npc.getDefCrush();
+		final int defRoll = (npc.getDefenceLevel() + 9) * (defBonus + 64);
+		return hitChanceFrom(attRoll, defRoll);
+	}
+
+	/** Expected melee DPS vs the NPC, or -1 if not melee / no data. */
+	double meleeDps(int npcId)
+	{
+		final double accuracy = meleeHitChance(npcId);
+		if (accuracy < 0)
+		{
+			return -1;
+		}
+		final double interval = weaponSpeedTicks() * 0.6;
+		return accuracy * (meleeMaxHit() / 2.0) / interval;
+	}
+
+	private static double hitChanceFrom(int attRoll, int defRoll)
+	{
+		if (attRoll > defRoll)
+		{
+			return 1.0 - (defRoll + 2.0) / (2.0 * (attRoll + 1.0));
+		}
+		return attRoll / (2.0 * (defRoll + 1.0));
+	}
+
+	private double meleeAccuracyPrayer()
+	{
+		if (client.isPrayerActive(Prayer.PIETY))
+		{
+			return 1.20;
+		}
+		if (client.isPrayerActive(Prayer.CHIVALRY))
+		{
+			return 1.15;
+		}
+		if (client.isPrayerActive(Prayer.INCREDIBLE_REFLEXES))
+		{
+			return 1.15;
+		}
+		if (client.isPrayerActive(Prayer.IMPROVED_REFLEXES))
+		{
+			return 1.10;
+		}
+		if (client.isPrayerActive(Prayer.CLARITY_OF_THOUGHT))
+		{
+			return 1.05;
+		}
+		return 1.0;
+	}
+
+	/** 0 = stab, 1 = slash, 2 = crush, from the weapon's dominant attack bonus. */
+	private int meleeSubType()
+	{
+		final ItemEquipmentStats w = weaponStats();
+		if (w == null)
+		{
+			return 2; // unarmed punches are crush
+		}
+		if (w.getAstab() >= w.getAslash() && w.getAstab() >= w.getAcrush())
+		{
+			return 0;
+		}
+		return w.getAslash() >= w.getAcrush() ? 1 : 2;
+	}
+
+	private int meleeAttackBonus(int sub)
+	{
+		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		if (equipment == null)
+		{
+			return 0;
+		}
+		int total = 0;
+		for (Item item : equipment.getItems())
+		{
+			final ItemStats stats = itemManager.getItemStats(item.getId());
+			if (stats != null && stats.getEquipment() != null)
+			{
+				final ItemEquipmentStats e = stats.getEquipment();
+				total += sub == 0 ? e.getAstab() : sub == 1 ? e.getAslash() : e.getAcrush();
+			}
+		}
+		return total;
+	}
+
+	private ItemEquipmentStats weaponStats()
+	{
+		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		if (equipment == null)
+		{
+			return null;
+		}
+		final Item weapon = equipment.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
+		if (weapon == null)
+		{
+			return null;
+		}
+		final ItemStats stats = itemManager.getItemStats(weapon.getId());
+		return stats == null ? null : stats.getEquipment();
+	}
+
+	private int weaponSpeedTicks()
+	{
+		final ItemEquipmentStats w = weaponStats();
+		final int speed = w == null ? 4 : w.getAspeed();
+		return speed <= 0 ? 4 : speed;
 	}
 
 	/** Max hit for the current loadout and weapon style, or 0 if unavailable/magic. */

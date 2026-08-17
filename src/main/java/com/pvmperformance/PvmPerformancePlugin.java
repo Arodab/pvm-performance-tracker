@@ -104,13 +104,18 @@ public class PvmPerformancePlugin extends Plugin
 	private CombatCalc combatCalc;
 
 	@Inject
+	private MonsterStatsProvider monsterStats;
+
+	@Inject
 	private ClientThread clientThread;
 
 	private PvmPerformancePanel panel;
 	private NavigationButton navButton;
 
-	// Expected max hit for the current loadout/style, recomputed each tick.
+	// Expected figures for the current loadout, recomputed each tick.
 	private int expectedMaxHit;
+	private double expectedAccuracy = -1;
+	private double expectedDps = -1;
 
 	// The fight currently in progress, or null between fights.
 	private Fight current;
@@ -149,6 +154,7 @@ public class PvmPerformancePlugin extends Plugin
 		clientToolbar.addNavigation(navButton);
 
 		executor.execute(this::loadHistory);
+		monsterStats.startUp();
 	}
 
 	@Override
@@ -268,6 +274,17 @@ public class PvmPerformancePlugin extends Plugin
 		countedProjectiles.removeIf(p -> p.getRemainingCycles() <= 0);
 
 		expectedMaxHit = combatCalc.maxHit();
+		final Fight shown = getDisplayFight();
+		if (shown != null)
+		{
+			expectedAccuracy = combatCalc.meleeHitChance(shown.getTargetId());
+			expectedDps = combatCalc.meleeDps(shown.getTargetId());
+		}
+		else
+		{
+			expectedAccuracy = -1;
+			expectedDps = -1;
+		}
 
 		if (current != null && !current.isEnded())
 		{
@@ -399,6 +416,18 @@ public class PvmPerformancePlugin extends Plugin
 	int getExpectedMaxHit()
 	{
 		return expectedMaxHit;
+	}
+
+	/** Expected melee hit chance vs the shown target (0..1), or -1 if unavailable. */
+	double getExpectedAccuracy()
+	{
+		return expectedAccuracy;
+	}
+
+	/** Expected melee DPS vs the shown target, or -1 if unavailable. */
+	double getExpectedDps()
+	{
+		return expectedDps;
 	}
 
 	/** Per-NPC aggregates in most-recently-fought order; optionally bosses only. */
