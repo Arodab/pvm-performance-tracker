@@ -42,8 +42,15 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return null;
 		}
 
+		// In whole-trip mode the measured side comes from the running totals; the
+		// expected max hit stays live, since it describes the loadout worn now.
+		final SessionTotals session = config.overlaySessionTotals() ? plugin.getSession() : null;
+		final boolean trip = session != null;
+
 		panelComponent.getChildren().add(TitleComponent.builder()
-			.text(fight.getTargetName())
+			.text(trip
+				? String.format("Trip: %d kill%s", session.getKills(), session.getKills() == 1 ? "" : "s")
+				: fight.getTargetName())
 			.build());
 
 		final int maxHit = plugin.getExpectedMaxHit();
@@ -67,37 +74,59 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 		}
 
+		final int damage = trip ? session.getDamageDealt() : fight.getDamageDealt();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Damage")
-			.right(QuantityFormatter.formatNumber(fight.getDamageDealt()))
+			.right(QuantityFormatter.formatNumber(damage))
 			.build());
 
-		final double expAvgHit = plugin.getExpectedAverageHit();
+		final double avgHit = trip ? session.averageHit() : fight.averageHit();
+		final double expAvgHit = trip ? session.expectedAverageHit() : plugin.getExpectedAverageHit();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Avg hit")
 			.right(expAvgHit >= 0
-				? String.format("%.2f (exp %.2f)", fight.averageHit(), expAvgHit)
-				: String.format("%.2f", fight.averageHit()))
+				? String.format("%.2f (exp %.2f)", avgHit, expAvgHit)
+				: String.format("%.2f", avgHit))
 			.build());
 
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Hits")
-			.right(String.format("%d/%d", fight.getHits(), fight.getAttempts()))
+			.right(trip
+				? String.format("%d/%d", session.getHits(), session.getAttempts())
+				: String.format("%d/%d", fight.getHits(), fight.getAttempts()))
 			.build());
 
-		final double expAcc = plugin.getExpectedAccuracy();
+		final double accuracy = trip ? session.accuracy() : fight.accuracy();
+		final double expAcc = trip ? session.expectedAccuracy() : plugin.getExpectedAccuracy();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Accuracy")
 			.right(expAcc >= 0
-				? String.format("%.0f%% (exp %.0f%%)", fight.accuracy() * 100, expAcc * 100)
-				: String.format("%.0f%%", fight.accuracy() * 100))
+				? String.format("%.0f%% (exp %.0f%%)", accuracy * 100, expAcc * 100)
+				: String.format("%.0f%%", accuracy * 100))
 			.build());
 
+		final double lostShare = trip ? session.ticksLostShare() : fight.ticksLostShare();
+		if (lostShare >= 0)
+		{
+			final int lost = trip ? session.getTicksLost() : fight.getTicksLost();
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("Ticks lost")
+				.right(String.format("%d (%.0f%%)", lost, lostShare * 100))
+				.build());
+		}
+
+		final long millis = trip ? session.durationMillis() : fight.durationMillis();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Time")
-			.right(String.format("%.1fs", fight.durationMillis() / 1000.0))
+			.right(trip ? formatDuration(millis) : String.format("%.1fs", millis / 1000.0))
 			.build());
 
 		return super.render(graphics);
+	}
+
+	private static String formatDuration(long millis)
+	{
+		final long seconds = millis / 1000;
+		return String.format("%d:%02d", seconds / 60, seconds % 60);
 	}
 }

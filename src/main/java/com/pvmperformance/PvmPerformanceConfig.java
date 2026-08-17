@@ -32,12 +32,24 @@ public interface PvmPerformanceConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "overlaySessionTotals",
+		name = "Overlay: whole trip",
+		description = "Keep the overlay running across kills instead of resetting each fight, "
+			+ "so a whole trip can be judged rather than one kill. Reset it from the side panel",
+		position = 3
+	)
+	default boolean overlaySessionTotals()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "assumeSlayerTask",
 		name = "Assume on slayer task",
 		description = "Count the black mask / slayer helmet bonus in the expected figures. "
 			+ "There is no reliable way to tell whether the current target is your task, "
 			+ "so this is a manual switch: leave it off unless you are on task",
-		position = 3
+		position = 4
 	)
 	default boolean assumeSlayerTask()
 	{
@@ -48,7 +60,7 @@ public interface PvmPerformanceConfig extends Config
 		keyName = "fightTimeoutTicks",
 		name = "Fight timeout (ticks)",
 		description = "End the current fight after this many game ticks with no damage dealt",
-		position = 4
+		position = 5
 	)
 	default int fightTimeoutTicks()
 	{

@@ -122,6 +122,10 @@ public class PvmPerformancePlugin extends Plugin
 	// sampled with figures that were actually meant for it.
 	private int expectedForNpcId = -1;
 
+	// Running totals for the trip, shown instead of the current fight when the
+	// overlay is set to whole-trip mode.
+	private final SessionTotals session = new SessionTotals(System.currentTimeMillis());
+
 	// The fight currently in progress, or null between fights.
 	private Fight current;
 	// The most recently finished fight, kept so the overlay lingers briefly.
@@ -191,10 +195,16 @@ public class PvmPerformancePlugin extends Plugin
 				startFight(npc, now);
 			}
 			current.recordDamageDealt(hitsplat.getAmount(), now);
+			session.recordAttempt(hitsplat.getAmount(), now);
 			sampleExpected(current);
 			// A landed hit resolves one of my pending attacks so it can't later
-			// be mistaken for another player's splash.
-			consumePending(npc.getIndex());
+			// be mistaken for another player's splash. When there was none, the
+			// attack had no projectile, so it was melee and landed on the tick it
+			// was made — which makes this the attack tick.
+			if (!consumePending(npc.getIndex()))
+			{
+				current.recordAttackTick(client.getTickCount(), combatCalc.attackSpeedTicks());
+			}
 		}
 		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
 		{
@@ -239,6 +249,9 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(npc, now);
 		}
 		pendingMineHits.merge(npc.getIndex(), 1, Integer::sum);
+		// A projectile is created on the tick the attack is made, well before it
+		// lands, so this is the attack tick for anything ranged or magic.
+		current.recordAttackTick(client.getTickCount(), combatCalc.attackSpeedTicks());
 	}
 
 	@Subscribe
@@ -260,7 +273,9 @@ public class PvmPerformancePlugin extends Plugin
 		final int index = ((NPC) actor).getIndex();
 		if (consumePending(index) && current.getTargetIndex() == index)
 		{
-			current.recordSplash(System.currentTimeMillis());
+			final long now = System.currentTimeMillis();
+			current.recordSplash(now);
+			session.recordAttempt(0, now);
 			sampleExpected(current);
 		}
 	}
@@ -280,6 +295,19 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		fight.recordExpected(expectedMaxHit, expectedAccuracy, expectedAverageHit);
+		session.recordExpected(expectedMaxHit, expectedAccuracy, expectedAverageHit);
+	}
+
+	/** The trip totals shown when the overlay is set to whole-trip mode. */
+	SessionTotals getSession()
+	{
+		return session;
+	}
+
+	/** Starts the trip totals over, from the side panel. */
+	void resetSession()
+	{
+		session.reset(System.currentTimeMillis());
 	}
 
 	@Subscribe
@@ -350,11 +378,13 @@ public class PvmPerformancePlugin extends Plugin
 			finalizeFight(false, now);
 		}
 		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), npcManager.getHealth(npc.getId()), now);
+		session.recordFightStarted(now);
 	}
 
 	private void finalizeFight(boolean died, long now)
 	{
 		current.end(died, now);
+		session.recordFightEnded(died, current, now);
 		history.add(0, current);
 		while (history.size() > MAX_HISTORY)
 		{
@@ -584,7 +614,8 @@ public class PvmPerformancePlugin extends Plugin
 					Files.newOutputStream(out.toPath()), StandardCharsets.UTF_8)))
 				{
 					writer.write("started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
-						+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit\n");
+						+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
+						+ "ticksLost,ticksLostPct\n");
 					for (Fight fight : fights)
 					{
 						writer.write(csvRow(fight));
@@ -607,7 +638,7 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
-		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s%n",
+		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s%n",
 			started,
 			fight.getTargetName().replace('"', '\''),
 			fight.getTargetId(),
@@ -623,7 +654,9 @@ public class PvmPerformancePlugin extends Plugin
 			fight.averageHit(),
 			csvExpected(fight.expectedMaxHit(), 1),
 			csvExpected(fight.expectedAccuracy() * 100, 1),
-			csvExpected(fight.expectedAverageHit(), 2));
+			csvExpected(fight.expectedAverageHit(), 2),
+			fight.getTicksLost(),
+			csvExpected(fight.ticksLostShare() * 100, 1));
 	}
 
 	/**

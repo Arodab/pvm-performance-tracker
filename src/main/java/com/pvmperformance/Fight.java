@@ -41,6 +41,11 @@ class Fight
 	// max hit is known, and are counted separately.
 	private int expectedTargetSamples;
 
+	// Ticks the weapon was off cooldown but no attack was made.
+	private int ticksLost;
+	private int firstAttackTick = -1;
+	private int lastAttackTick = -1;
+
 	Fight(String targetName, int targetId, int targetIndex, int maxHp, long now)
 	{
 		this.targetName = targetName == null ? "NPC" : targetName;
@@ -154,5 +159,47 @@ class Fight
 	double expectedAverageHit()
 	{
 		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
+	}
+
+	/**
+	 * Records the tick an attack was made on, counting any ticks the weapon
+	 * spent off cooldown before it. A scythe swung on tick 1 could go again on
+	 * tick 6, so swinging on tick 7 instead loses one.
+	 *
+	 * <p>The first attack of a fight sets the baseline and can lose nothing,
+	 * since there is no earlier attack to be late relative to.
+	 */
+	void recordAttackTick(int tick, int weaponSpeedTicks)
+	{
+		if (lastAttackTick < 0)
+		{
+			firstAttackTick = tick;
+		}
+		else if (weaponSpeedTicks > 0)
+		{
+			final int gap = tick - lastAttackTick;
+			if (gap > weaponSpeedTicks)
+			{
+				ticksLost += gap - weaponSpeedTicks;
+			}
+		}
+		lastAttackTick = tick;
+	}
+
+	/**
+	 * Ticks lost as a share of the ticks between the first and last attack, so a
+	 * long fight and a short one can be compared. -1 until two attacks have been
+	 * made, before which no gap exists to judge.
+	 */
+	double ticksLostShare()
+	{
+		final int span = attackTickSpan();
+		return span <= 0 ? -1 : (double) ticksLost / span;
+	}
+
+	/** Ticks between the first and last attack of this fight. */
+	int attackTickSpan()
+	{
+		return firstAttackTick < 0 ? 0 : lastAttackTick - firstAttackTick;
 	}
 }

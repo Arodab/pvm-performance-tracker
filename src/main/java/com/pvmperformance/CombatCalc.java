@@ -525,6 +525,46 @@ class CombatCalc
 	}
 
 	/**
+	 * How many ticks the current weapon takes between attacks, which is the
+	 * cadence the tick-loss count measures against.
+	 */
+	int attackSpeedTicks()
+	{
+		final ItemEquipmentStats w = weaponStats();
+		final int speed = w == null ? 4 : w.getAspeed();
+		final int ticks = speed <= 0 ? 4 : speed;
+		final AttackStyle style = attackStyle();
+		if (style.getAttackType() == AttackType.MAGIC)
+		{
+			return castSpeedTicks(ticks);
+		}
+		// Rapid fires a tick sooner; it is the only style that alters attack speed.
+		return style.getCombatStyle() == CombatStyle.RAPID ? Math.max(1, ticks - 1) : ticks;
+	}
+
+	/**
+	 * Casting runs on its own clock: the weapon's speed applies only to powered
+	 * staves and salamanders, which fire their own attack rather than a spell.
+	 * Everything else casts in 5 ticks, or 4 for the harmonised staff on the
+	 * standard spellbook.
+	 */
+	private int castSpeedTicks(int weaponTicks)
+	{
+		final WeaponCategory category = weaponCategory();
+		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
+		{
+			return weaponTicks;
+		}
+		final Spell spell = autocastSpell();
+		if (weaponItemId() == ItemID.NIGHTMARE_STAFF_HARMONISED
+			&& spell != null && spell.getSpellbook() == Spellbook.STANDARD)
+		{
+			return 4;
+		}
+		return 5;
+	}
+
+	/**
 	 * Max hit for the current loadout against this target, or 0 if unavailable.
 	 * The target matters because salve, dragon hunter, demonbane and the rest
 	 * only apply against the monsters they are meant for; pass -1 for the figure

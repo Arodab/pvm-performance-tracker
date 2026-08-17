@@ -123,9 +123,15 @@ class PvmPerformancePanel extends PluginPanel
 			refresh();
 		});
 
-		final JPanel buttons = new JPanel(new GridLayout(1, 2, 6, 0));
+		final JButton resetTrip = new JButton("New trip");
+		resetTrip.setToolTipText("Start the whole-trip overlay totals over. "
+			+ "Tracked fight history is untouched");
+		resetTrip.addActionListener(e -> plugin.resetSession());
+
+		final JPanel buttons = new JPanel(new GridLayout(1, 3, 6, 0));
 		buttons.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		buttons.add(exportAll);
+		buttons.add(resetTrip);
 		buttons.add(clear);
 		fullWidth(header, buttons);
 		header.add(Box.createVerticalStrut(4));
