@@ -9,9 +9,12 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -146,8 +149,12 @@ class MonsterStatsProvider
 				// First version of each id wins; later variants (phases) are ignored for now.
 				map.putIfAbsent(m.id, new MonsterStats(
 					m.skills.defence, m.skills.magic,
+					m.offensive == null ? 0 : m.offensive.magic,
 					m.defensive.stab, m.defensive.slash, m.defensive.crush,
-					m.defensive.magic, m.defensive.standard));
+					m.defensive.magic, m.defensive.standard,
+					m.attributes == null
+						? Collections.emptySet()
+						: new HashSet<>(Arrays.asList(m.attributes))));
 			}
 			byId = map;
 			log.debug("PvM Performance: loaded {} monster stat entries", map.size());
@@ -159,21 +166,33 @@ class MonsterStatsProvider
 	{
 		private final int defenceLevel;
 		private final int magicLevel;
+		/** The monster's offensive magic bonus, which the twisted bow also scales on. */
+		private final int offensiveMagic;
 		private final int defStab;
 		private final int defSlash;
 		private final int defCrush;
 		private final int defMagic;
 		private final int defRanged;
+		/** Wiki attribute tags ("undead", "dragon", "demon", ...) driving gear bonuses. */
+		private final Set<String> attributes;
 
-		MonsterStats(int defenceLevel, int magicLevel, int defStab, int defSlash, int defCrush, int defMagic, int defRanged)
+		MonsterStats(int defenceLevel, int magicLevel, int offensiveMagic, int defStab, int defSlash,
+			int defCrush, int defMagic, int defRanged, Set<String> attributes)
 		{
 			this.defenceLevel = defenceLevel;
 			this.magicLevel = magicLevel;
+			this.offensiveMagic = offensiveMagic;
 			this.defStab = defStab;
 			this.defSlash = defSlash;
 			this.defCrush = defCrush;
 			this.defMagic = defMagic;
 			this.defRanged = defRanged;
+			this.attributes = attributes;
+		}
+
+		boolean hasAttribute(String attribute)
+		{
+			return attributes.contains(attribute);
 		}
 	}
 
@@ -181,12 +200,19 @@ class MonsterStatsProvider
 	{
 		int id;
 		Skills skills;
+		Offensive offensive;
 		Defensive defensive;
+		String[] attributes;
 
 		static class Skills
 		{
 			@SerializedName("def")
 			int defence;
+			int magic;
+		}
+
+		static class Offensive
+		{
 			int magic;
 		}
 

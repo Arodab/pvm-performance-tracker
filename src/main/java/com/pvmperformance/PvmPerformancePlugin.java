@@ -274,15 +274,17 @@ public class PvmPerformancePlugin extends Plugin
 		// Drop projectiles that have landed so the set doesn't retain them.
 		countedProjectiles.removeIf(p -> p.getRemainingCycles() <= 0);
 
-		expectedMaxHit = combatCalc.maxHit();
 		final Fight shown = getDisplayFight();
 		if (shown != null)
 		{
+			// Pass the target so salve, dragon hunter and the rest can apply.
+			expectedMaxHit = combatCalc.maxHit(shown.getTargetId());
 			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
 			expectedDps = combatCalc.dps(shown.getTargetId());
 		}
 		else
 		{
+			expectedMaxHit = combatCalc.maxHit(-1);
 			expectedAccuracy = -1;
 			expectedDps = -1;
 		}

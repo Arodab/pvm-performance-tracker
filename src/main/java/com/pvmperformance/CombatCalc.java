@@ -45,13 +45,24 @@ class CombatCalc
 	private final Client client;
 	private final ItemManager itemManager;
 	private final MonsterStatsProvider monsters;
+	private final GearBonusCalc gearBonuses;
+	private final PvmPerformanceConfig config;
 
 	@Inject
-	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters)
+	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
+		GearBonusCalc gearBonuses, PvmPerformanceConfig config)
 	{
 		this.client = client;
 		this.itemManager = itemManager;
 		this.monsters = monsters;
+		this.gearBonuses = gearBonuses;
+		this.config = config;
+	}
+
+	/** The gear multipliers for the current loadout against this target. */
+	private GearBonus gearBonus(AttackType type, int npcId)
+	{
+		return gearBonuses.compute(type, monsters.get(npcId), config.assumeSlayerTask());
 	}
 
 	/**
@@ -67,22 +78,23 @@ class CombatCalc
 		}
 		final AttackStyle style = attackStyle();
 		final AttackType type = style.getAttackType();
+		final double gear = gearBonus(type, npcId).getAccuracy();
 		if (type.isMelee())
 		{
-			return meleeHitChance(style, type, npc);
+			return meleeHitChance(style, type, npc, gear);
 		}
 		if (type == AttackType.RANGED)
 		{
-			return rangedHitChance(style, npc);
+			return rangedHitChance(style, npc, gear);
 		}
-		return magicHitChance(style, npc);
+		return magicHitChance(style, npc, gear);
 	}
 
 	/** Expected DPS vs the NPC, or -1 when the hit chance or max hit is unavailable. */
 	double dps(int npcId)
 	{
 		final double accuracy = hitChance(npcId);
-		final int max = maxHit();
+		final int max = maxHit(npcId);
 		if (accuracy < 0 || max <= 0)
 		{
 			return -1;
@@ -90,11 +102,11 @@ class CombatCalc
 		return accuracy * (max / 2.0) / (weaponSpeedTicks() * 0.6);
 	}
 
-	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc)
+	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
 	{
 		final int effAtk = (int) Math.floor(client.getBoostedSkillLevel(Skill.ATTACK) * meleeAccuracyPrayer())
 			+ style.attackLevelBonus() + 8;
-		final int attRoll = effAtk * (attackBonus(type) + 64);
+		final int attRoll = (int) (effAtk * (attackBonus(type) + 64) * gear);
 		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
 			: type == AttackType.SLASH ? npc.getDefSlash() : npc.getDefCrush();
 		final int defRoll = (npc.getDefenceLevel() + 9) * (defBonus + 64);
@@ -106,20 +118,20 @@ class CombatCalc
 	 * level, and its effective level starts from +9 rather than the +8 melee and
 	 * ranged use.
 	 */
-	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc)
+	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
 	{
 		final int effMagic = (int) Math.floor(client.getBoostedSkillLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
-		final int attRoll = effMagic * (attackBonus(AttackType.MAGIC) + 64);
+		final int attRoll = (int) (effMagic * (attackBonus(AttackType.MAGIC) + 64) * gear);
 		final int defRoll = (npc.getMagicLevel() + 9) * (npc.getDefMagic() + 64);
 		return hitChanceFrom(attRoll, defRoll);
 	}
 
-	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc)
+	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
 	{
 		final int effRanged = (int) Math.floor(client.getBoostedSkillLevel(Skill.RANGED) * rangedAccuracyPrayer())
 			+ style.attackLevelBonus() + 8;
-		final int attRoll = effRanged * (attackBonus(AttackType.RANGED) + 64);
+		final int attRoll = (int) (effRanged * (attackBonus(AttackType.RANGED) + 64) * gear);
 		final int defRoll = (npc.getDefenceLevel() + 9) * (npc.getDefRanged() + 64);
 		return hitChanceFrom(attRoll, defRoll);
 	}
@@ -278,6 +290,11 @@ class CombatCalc
 				}
 			}
 		}
+		if (type == AttackType.MAGIC)
+		{
+			// The shadow multiplies the magic accuracy of everything else worn.
+			total *= gearBonuses.shadowMultiplier();
+		}
 		return total;
 	}
 
@@ -333,8 +350,20 @@ class CombatCalc
 		return 5;
 	}
 
-	/** Max hit for the current loadout and weapon style, or 0 if unavailable. */
-	int maxHit()
+	/**
+	 * Max hit for the current loadout against this target, or 0 if unavailable.
+	 * The target matters because salve, dragon hunter, demonbane and the rest
+	 * only apply against the monsters they are meant for; pass -1 for the figure
+	 * before any target-dependent gear effects.
+	 */
+	int maxHit(int npcId)
+	{
+		final int base = baseMaxHit();
+		final double gear = gearBonus(attackStyle().getAttackType(), npcId).getDamage();
+		return (int) (base * gear);
+	}
+
+	private int baseMaxHit()
 	{
 		switch (weaponStyle())
 		{
@@ -399,9 +428,9 @@ class CombatCalc
 
 	/**
 	 * Scales a base magic hit by the summed magic damage % of the worn gear
-	 * (occult, tormented, ancestral, ...). Not modelled: Tumeken's Shadow
-	 * tripling its own gear bonus, the tomes' elemental bonuses, and the
-	 * smoke staff's standard-spell bonus, so those setups still read low.
+	 * (occult, tormented, ancestral, ...), which Tumeken's Shadow multiplies.
+	 * Not modelled: the tomes' elemental bonuses and the smoke staff's
+	 * standard-spell bonus, so those setups still read low.
 	 */
 	private int applyMagicDamage(int baseMaxHit)
 	{
@@ -419,6 +448,7 @@ class CombatCalc
 				percent += stats.getEquipment().getMdmg();
 			}
 		}
+		percent *= gearBonuses.shadowMultiplier();
 		return (int) Math.floor(baseMaxHit * (1.0 + percent / 100.0));
 	}
 

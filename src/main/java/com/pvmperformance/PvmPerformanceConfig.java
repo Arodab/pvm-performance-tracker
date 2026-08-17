@@ -32,10 +32,23 @@ public interface PvmPerformanceConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "assumeSlayerTask",
+		name = "Assume on slayer task",
+		description = "Count the black mask / slayer helmet bonus in the expected figures. "
+			+ "There is no reliable way to tell whether the current target is your task, "
+			+ "so this is a manual switch: leave it off unless you are on task",
+		position = 3
+	)
+	default boolean assumeSlayerTask()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "fightTimeoutTicks",
 		name = "Fight timeout (ticks)",
 		description = "End the current fight after this many game ticks with no damage dealt",
-		position = 3
+		position = 4
 	)
 	default int fightTimeoutTicks()
 	{
