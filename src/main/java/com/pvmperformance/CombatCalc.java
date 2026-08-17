@@ -3,12 +3,12 @@ package com.pvmperformance;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.EquipmentInventorySlot;
-import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
-import net.runelite.api.ItemID;
 import net.runelite.api.Prayer;
 import net.runelite.api.Skill;
+import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.game.ItemEquipmentStats;
@@ -135,23 +135,23 @@ class CombatCalc
 
 	private double meleeAccuracyPrayer()
 	{
-		if (client.isPrayerActive(Prayer.PIETY))
+		if (prayerActive(Prayer.PIETY))
 		{
 			return 1.20;
 		}
-		if (client.isPrayerActive(Prayer.CHIVALRY))
+		if (prayerActive(Prayer.CHIVALRY))
 		{
 			return 1.15;
 		}
-		if (client.isPrayerActive(Prayer.INCREDIBLE_REFLEXES))
+		if (prayerActive(Prayer.INCREDIBLE_REFLEXES))
 		{
 			return 1.15;
 		}
-		if (client.isPrayerActive(Prayer.IMPROVED_REFLEXES))
+		if (prayerActive(Prayer.IMPROVED_REFLEXES))
 		{
 			return 1.10;
 		}
-		if (client.isPrayerActive(Prayer.CLARITY_OF_THOUGHT))
+		if (prayerActive(Prayer.CLARITY_OF_THOUGHT))
 		{
 			return 1.05;
 		}
@@ -246,7 +246,7 @@ class CombatCalc
 	/** Sum of the worn gear's attack bonus for the type being rolled. */
 	private int attackBonus(AttackType type)
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
 		{
 			return 0;
@@ -283,7 +283,7 @@ class CombatCalc
 
 	private ItemEquipmentStats weaponStats()
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
 		{
 			return null;
@@ -325,7 +325,7 @@ class CombatCalc
 			return weaponTicks;
 		}
 		final Spell spell = autocastSpell();
-		if (weaponItemId() == ItemID.HARMONISED_NIGHTMARE_STAFF
+		if (weaponItemId() == ItemID.NIGHTMARE_STAFF_HARMONISED
 			&& spell != null && spell.getSpellbook() == Spellbook.STANDARD)
 		{
 			return 4;
@@ -405,7 +405,7 @@ class CombatCalc
 	 */
 	private int applyMagicDamage(int baseMaxHit)
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
 		{
 			return baseMaxHit;
@@ -427,20 +427,22 @@ class CombatCalc
 	{
 		final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
 		final int seas = Math.max(1, (magic - 75) / 3 + 20);
+		// gameval names these after the cache, so "TOTS" is trident of the seas
+		// and "_OR" / "DEADMAN_BLIGHTED_" are the cosmetic and Deadman variants.
 		switch (weaponItemId())
 		{
-			case ItemID.TRIDENT_OF_THE_SEAS:
-			case ItemID.TRIDENT_OF_THE_SEAS_E:
-			case ItemID.TRIDENT_OF_THE_SEAS_FULL:
+			case ItemID.TOTS:
+			case ItemID.TOTS_CHARGED:
+			case ItemID.TOTS_I_CHARGED:
 				return seas;
-			case ItemID.TRIDENT_OF_THE_SWAMP:
-			case ItemID.TRIDENT_OF_THE_SWAMP_E:
+			case ItemID.TOXIC_TOTS_CHARGED:
+			case ItemID.TOXIC_TOTS_I_CHARGED:
 				return seas + 3;
 			case ItemID.SANGUINESTI_STAFF:
-			case ItemID.HOLY_SANGUINESTI_STAFF:
+			case ItemID.SANGUINESTI_STAFF_OR:
 				return seas + 4;
 			case ItemID.TUMEKENS_SHADOW:
-			case ItemID.CORRUPTED_TUMEKENS_SHADOW:
+			case ItemID.DEADMAN_BLIGHTED_TUMEKENS_SHADOW:
 				return seas + 6;
 			case ItemID.WARPED_SCEPTRE:
 				return Math.max(1, (8 * magic + 96) / 37);
@@ -451,7 +453,7 @@ class CombatCalc
 
 	private int weaponItemId()
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
 		{
 			return -1;
@@ -462,45 +464,54 @@ class CombatCalc
 
 	private double meleePrayer()
 	{
-		if (client.isPrayerActive(Prayer.PIETY))
+		if (prayerActive(Prayer.PIETY))
 		{
 			return 1.23;
 		}
-		if (client.isPrayerActive(Prayer.CHIVALRY))
+		if (prayerActive(Prayer.CHIVALRY))
 		{
 			return 1.18;
 		}
-		if (client.isPrayerActive(Prayer.ULTIMATE_STRENGTH))
+		if (prayerActive(Prayer.ULTIMATE_STRENGTH))
 		{
 			return 1.15;
 		}
-		if (client.isPrayerActive(Prayer.SUPERHUMAN_STRENGTH))
+		if (prayerActive(Prayer.SUPERHUMAN_STRENGTH))
 		{
 			return 1.10;
 		}
-		if (client.isPrayerActive(Prayer.BURST_OF_STRENGTH))
+		if (prayerActive(Prayer.BURST_OF_STRENGTH))
 		{
 			return 1.05;
 		}
 		return 1.0;
 	}
 
+	/**
+	 * Whether a prayer is currently active. Reads the prayer's varbit directly;
+	 * {@code Client.isPrayerActive} is deprecated and has no replacement overload.
+	 */
+	private boolean prayerActive(Prayer prayer)
+	{
+		return client.getVarbitValue(prayer.getVarbit()) == 1;
+	}
+
 	/** Magic attack prayer multiplier. The magic prayers boost accuracy only, not damage. */
 	private double magicAccuracyPrayer()
 	{
-		if (client.isPrayerActive(Prayer.AUGURY))
+		if (prayerActive(Prayer.AUGURY))
 		{
 			return 1.25;
 		}
-		if (client.isPrayerActive(Prayer.MYSTIC_MIGHT))
+		if (prayerActive(Prayer.MYSTIC_MIGHT))
 		{
 			return 1.15;
 		}
-		if (client.isPrayerActive(Prayer.MYSTIC_LORE))
+		if (prayerActive(Prayer.MYSTIC_LORE))
 		{
 			return 1.10;
 		}
-		if (client.isPrayerActive(Prayer.MYSTIC_WILL))
+		if (prayerActive(Prayer.MYSTIC_WILL))
 		{
 			return 1.05;
 		}
@@ -510,19 +521,19 @@ class CombatCalc
 	/** Ranged attack prayer multiplier. Rigour gives less here than it does to strength. */
 	private double rangedAccuracyPrayer()
 	{
-		if (client.isPrayerActive(Prayer.RIGOUR))
+		if (prayerActive(Prayer.RIGOUR))
 		{
 			return 1.20;
 		}
-		if (client.isPrayerActive(Prayer.EAGLE_EYE))
+		if (prayerActive(Prayer.EAGLE_EYE))
 		{
 			return 1.15;
 		}
-		if (client.isPrayerActive(Prayer.HAWK_EYE))
+		if (prayerActive(Prayer.HAWK_EYE))
 		{
 			return 1.10;
 		}
-		if (client.isPrayerActive(Prayer.SHARP_EYE))
+		if (prayerActive(Prayer.SHARP_EYE))
 		{
 			return 1.05;
 		}
@@ -531,19 +542,19 @@ class CombatCalc
 
 	private double rangedPrayer()
 	{
-		if (client.isPrayerActive(Prayer.RIGOUR))
+		if (prayerActive(Prayer.RIGOUR))
 		{
 			return 1.23;
 		}
-		if (client.isPrayerActive(Prayer.EAGLE_EYE))
+		if (prayerActive(Prayer.EAGLE_EYE))
 		{
 			return 1.15;
 		}
-		if (client.isPrayerActive(Prayer.HAWK_EYE))
+		if (prayerActive(Prayer.HAWK_EYE))
 		{
 			return 1.10;
 		}
-		if (client.isPrayerActive(Prayer.SHARP_EYE))
+		if (prayerActive(Prayer.SHARP_EYE))
 		{
 			return 1.05;
 		}
@@ -553,7 +564,7 @@ class CombatCalc
 	/** Sum of the melee (str) or ranged (rstr) strength bonus across worn gear. */
 	private int equipmentBonus(boolean melee)
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
 		{
 			return 0;

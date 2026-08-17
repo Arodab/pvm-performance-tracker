@@ -31,7 +31,6 @@ import net.runelite.api.Actor;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.GraphicID;
 import net.runelite.api.Hitsplat;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
@@ -43,6 +42,7 @@ import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.ProjectileMoved;
+import net.runelite.api.gameval.SpotanimID;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -246,7 +246,8 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final Actor actor = event.getActor();
-		if (!(actor instanceof NPC) || !actor.hasSpotAnim(GraphicID.SPLASH))
+		// gameval's name for the splash graphic shown when a spell misses.
+		if (!(actor instanceof NPC) || !actor.hasSpotAnim(SpotanimID.FAILEDSPELL_IMPACT))
 		{
 			return;
 		}
