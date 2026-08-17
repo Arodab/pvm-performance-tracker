@@ -148,7 +148,7 @@ class MonsterStatsProvider
 				}
 				// First version of each id wins; later variants (phases) are ignored for now.
 				map.putIfAbsent(m.id, new MonsterStats(
-					m.name == null ? "" : m.name,
+					m.name == null ? "" : m.name, m.size,
 					m.skills.defence, m.skills.magic,
 					m.offensive == null ? 0 : m.offensive.magic,
 					m.defensive.stab, m.defensive.slash, m.defensive.crush,
@@ -167,6 +167,8 @@ class MonsterStatsProvider
 	{
 		/** Used to look up the few monsters that alter demonbane effectiveness. */
 		private final String name;
+		/** Tiles across, which the colossal blade scales its damage on. */
+		private final int size;
 		private final int defenceLevel;
 		private final int magicLevel;
 		/** The monster's offensive magic bonus, which the twisted bow also scales on. */
@@ -179,10 +181,11 @@ class MonsterStatsProvider
 		/** Wiki attribute tags ("undead", "dragon", "demon", ...) driving gear bonuses. */
 		private final Set<String> attributes;
 
-		MonsterStats(String name, int defenceLevel, int magicLevel, int offensiveMagic, int defStab, int defSlash,
-			int defCrush, int defMagic, int defRanged, Set<String> attributes)
+		MonsterStats(String name, int size, int defenceLevel, int magicLevel, int offensiveMagic, int defStab,
+			int defSlash, int defCrush, int defMagic, int defRanged, Set<String> attributes)
 		{
 			this.name = name;
+			this.size = size;
 			this.defenceLevel = defenceLevel;
 			this.magicLevel = magicLevel;
 			this.offensiveMagic = offensiveMagic;
@@ -204,6 +207,7 @@ class MonsterStatsProvider
 	{
 		int id;
 		String name;
+		int size;
 		Skills skills;
 		Offensive offensive;
 		Defensive defensive;

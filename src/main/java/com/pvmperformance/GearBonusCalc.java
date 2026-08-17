@@ -10,6 +10,7 @@ import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Player;
+import net.runelite.api.Skill;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarbitID;
@@ -86,14 +87,29 @@ class GearBonusCalc
 
 		// Salve and the slayer helm deliberately do not stack; salve takes priority.
 		final GearBonus salve = salveBonus(type, npc, gear);
-		total = total.combine(salve.isNone() ? blackMaskBonus(type, gear, onSlayerTask) : salve);
+		final GearBonus blackMask = salve.isNone() ? blackMaskBonus(type, gear, onSlayerTask) : GearBonus.NONE;
+		final GearBonus dragonHunter = dragonHunterBonus(type, npc, gear);
+		final GearBonus demonbane = demonbaneBonus(type, npc, spell, gear);
+
+		total = total.combine(salve);
+		// The dragon hunter crossbow and scorching bow add their damage to the
+		// black mask's rather than multiplying by it, so those pairs are folded
+		// together before joining the rest.
+		if (!blackMask.isNone() && stacksAdditivelyWithBlackMask(gear))
+		{
+			total = total.combine(addDamage(blackMask, dragonHunter.combine(demonbane)));
+		}
+		else
+		{
+			total = total.combine(blackMask).combine(dragonHunter).combine(demonbane);
+		}
 
 		total = total.combine(voidBonus(type, gear));
 		total = total.combine(crystalBonus(gear));
 		total = total.combine(inquisitorsBonus(type, gear));
 		total = total.combine(obsidianBonus(type, gear));
-		total = total.combine(dragonHunterBonus(type, npc, gear));
-		total = total.combine(demonbaneBonus(type, npc, spell, gear));
+		total = total.combine(dharoksBonus(type, gear));
+		total = total.combine(avariceBonus(npc, gear));
 		total = total.combine(kerisBonus(type, npc, gear));
 		total = total.combine(fangBonus(type, gear));
 		total = total.combine(twistedBowBonus(type, npc, gear));
@@ -281,11 +297,76 @@ class GearBonusCalc
 		{
 			return GearBonus.symmetric(1.2);
 		}
-		if (type == AttackType.RANGED && weapon == ItemID.DRAGONHUNTER_XBOW)
+		if (type == AttackType.RANGED && isDragonHunterCrossbow(weapon))
 		{
 			return GearBonus.of(1.30, 1.25);
 		}
+		if (type == AttackType.MAGIC && weapon == ItemID.DRAGONHUNTER_WAND)
+		{
+			return GearBonus.of(1.50, 1.20);
+		}
 		return GearBonus.NONE;
+	}
+
+	private static boolean isDragonHunterCrossbow(int weapon)
+	{
+		return weapon == ItemID.DRAGONHUNTER_XBOW
+			|| weapon == ItemID.DRAGONHUNTER_XBOW_KBD
+			|| weapon == ItemID.DRAGONHUNTER_XBOW_VORKATH;
+	}
+
+	/** Whether the equipped weapon is one that adds to the black mask instead of multiplying. */
+	private boolean stacksAdditivelyWithBlackMask(Loadout gear)
+	{
+		final int weapon = gear.id(EquipmentInventorySlot.WEAPON);
+		return isDragonHunterCrossbow(weapon) || "Scorching bow".equals(gear.name(EquipmentInventorySlot.WEAPON));
+	}
+
+	/** Sums two damage bonuses rather than multiplying them; accuracy still multiplies. */
+	private static GearBonus addDamage(GearBonus a, GearBonus b)
+	{
+		if (b.isNone())
+		{
+			return a;
+		}
+		return GearBonus.of(
+			a.getAccuracy() * b.getAccuracy(),
+			1.0 + (a.getDamage() - 1.0) + (b.getDamage() - 1.0));
+	}
+
+	/**
+	 * Dharok's set effect: the lower the wearer's hitpoints, the harder they
+	 * hit. Needs the full set, greataxe included.
+	 */
+	private GearBonus dharoksBonus(AttackType type, Loadout gear)
+	{
+		if (!type.isMelee())
+		{
+			return GearBonus.NONE;
+		}
+		final boolean set = startsWith(gear.name(EquipmentInventorySlot.HEAD), "Dharok's helm")
+			&& startsWith(gear.name(EquipmentInventorySlot.BODY), "Dharok's platebody")
+			&& startsWith(gear.name(EquipmentInventorySlot.LEGS), "Dharok's platelegs")
+			&& startsWith(gear.name(EquipmentInventorySlot.WEAPON), "Dharok's greataxe");
+		if (!set)
+		{
+			return GearBonus.NONE;
+		}
+		final int maxHp = client.getRealSkillLevel(Skill.HITPOINTS);
+		final int currentHp = client.getBoostedSkillLevel(Skill.HITPOINTS);
+		final int missing = Math.max(0, maxHp - currentHp);
+		return GearBonus.of(1.0, 1.0 + (missing / 100.0) * (maxHp / 100.0));
+	}
+
+	/** Amulet of avarice: 20% against revenants, which carry no attribute tag. */
+	private GearBonus avariceBonus(MonsterStatsProvider.MonsterStats npc, Loadout gear)
+	{
+		if (npc == null || !npc.getName().startsWith("Revenant"))
+		{
+			return GearBonus.NONE;
+		}
+		return "Amulet of avarice".equals(gear.name(EquipmentInventorySlot.AMULET))
+			? GearBonus.symmetric(1.2) : GearBonus.NONE;
 	}
 
 	/**
@@ -677,19 +758,24 @@ class GearBonusCalc
 			return 0.0;
 		}
 		double percent = 0.0;
-		if (startsWith(gear.name(EquipmentInventorySlot.HEAD), "Virtus mask"))
+		if (isVirtus(gear.id(EquipmentInventorySlot.HEAD), ItemID.VIRTUS_MASK, ItemID.VIRTUS_MASK_ORNAMENT))
 		{
 			percent += 3.0;
 		}
-		if (startsWith(gear.name(EquipmentInventorySlot.BODY), "Virtus robe top"))
+		if (isVirtus(gear.id(EquipmentInventorySlot.BODY), ItemID.VIRTUS_TOP, ItemID.VIRTUS_TOP_ORNAMENT))
 		{
 			percent += 3.0;
 		}
-		if (startsWith(gear.name(EquipmentInventorySlot.LEGS), "Virtus robe bottom"))
+		if (isVirtus(gear.id(EquipmentInventorySlot.LEGS), ItemID.VIRTUS_LEGS, ItemID.VIRTUS_LEGS_ORNAMENT))
 		{
 			percent += 3.0;
 		}
 		return percent;
+	}
+
+	private static boolean isVirtus(int worn, int plain, int ornament)
+	{
+		return worn == plain || worn == ornament;
 	}
 
 	/**

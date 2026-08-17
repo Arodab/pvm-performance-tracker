@@ -1,7 +1,10 @@
 package com.pvmperformance;
 
 import javax.inject.Inject;
+import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.NPC;
+import net.runelite.api.Player;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
@@ -14,6 +17,7 @@ import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.game.ItemEquipmentStats;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
+import net.runelite.client.game.NPCManager;
 
 /**
  * Expected combat figures computed from the player's live loadout: max hit, hit
@@ -47,16 +51,18 @@ class CombatCalc
 	private final MonsterStatsProvider monsters;
 	private final GearBonusCalc gearBonuses;
 	private final PvmPerformanceConfig config;
+	private final NPCManager npcManager;
 
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
-		GearBonusCalc gearBonuses, PvmPerformanceConfig config)
+		GearBonusCalc gearBonuses, PvmPerformanceConfig config, NPCManager npcManager)
 	{
 		this.client = client;
 		this.itemManager = itemManager;
 		this.monsters = monsters;
 		this.gearBonuses = gearBonuses;
 		this.config = config;
+		this.npcManager = npcManager;
 	}
 
 	/** The gear multipliers for the current loadout against this target. */
@@ -104,12 +110,97 @@ class CombatCalc
 		final double accuracy = hitChance(npcId);
 		// Averages, not best cases: a keris crit or an ahrim's proc raises the max
 		// hit but only lifts sustained damage by a few percent.
-		final double averageMax = baseMaxHit() * gearBonus(npcId).getExpectedDamage();
+		final double averageMax = baseMaxHit() * gearBonus(npcId).getExpectedDamage() + colossalBladeBonus(npcId);
 		if (accuracy < 0 || averageMax <= 0)
 		{
 			return -1;
 		}
-		return accuracy * (averageMax / 2.0);
+		final double ordinary = accuracy * (averageMax / 2.0);
+
+		final EnchantedBolt bolt = loadedBolt(npcId);
+		if (bolt == null)
+		{
+			return ordinary;
+		}
+		final double procChance = bolt.chance(hasKandarinHardDiary());
+		switch (bolt)
+		{
+			case RUBY:
+				// Fires regardless of the accuracy roll and replaces the hit
+				// entirely, so the two outcomes are weighted rather than scaled.
+				return procChance * EnchantedBolt.rubyDamage(targetCurrentHp(npcId))
+					+ (1.0 - procChance) * ordinary;
+			case DIAMOND:
+				// Also ignores accuracy, but rolls damage normally against a
+				// raised max, so a proc always lands.
+				return procChance * (1.15 * averageMax / 2.0) + (1.0 - procChance) * ordinary;
+			default:
+				// Onyx leeches from damage actually dealt, so it needs a hit first.
+				return ordinary * (1.0 + 0.20 * procChance);
+		}
+	}
+
+	/**
+	 * The enchanted bolt loaded for this attack, or null when none applies —
+	 * the style isn't ranged, the weapon isn't a crossbow, or onyx is loaded
+	 * against undead, which have no life to leech.
+	 */
+	private EnchantedBolt loadedBolt(int npcId)
+	{
+		final AttackStyle style = attackStyle();
+		if (style.getAttackType() != AttackType.RANGED)
+		{
+			return null;
+		}
+		final WeaponCategory category = weaponCategory();
+		if (category != WeaponCategory.CROSSBOW)
+		{
+			return null;
+		}
+		final int ammo = equippedItemId(EquipmentInventorySlot.AMMO);
+		final EnchantedBolt bolt = ammo < 0
+			? null : EnchantedBolt.forAmmoName(itemManager.getItemComposition(ammo).getName());
+		if (bolt == EnchantedBolt.ONYX)
+		{
+			final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+			if (npc != null && npc.hasAttribute("undead"))
+			{
+				return null;
+			}
+		}
+		return bolt;
+	}
+
+	private boolean hasKandarinHardDiary()
+	{
+		return client.getVarbitValue(VarbitID.KANDARIN_DIARY_HARD_COMPLETE) == 1;
+	}
+
+	/**
+	 * The target's health right now, which the ruby bolt effect is a share of.
+	 * Falls back to its full health when no health bar is showing.
+	 */
+	private int targetCurrentHp(int npcId)
+	{
+		final Integer maxHp = npcManager.getHealth(npcId);
+		if (maxHp == null || maxHp <= 0)
+		{
+			return 0;
+		}
+		final Player player = client.getLocalPlayer();
+		final Actor target = player == null ? null : player.getInteracting();
+		if (!(target instanceof NPC))
+		{
+			return maxHp;
+		}
+		final NPC npc = (NPC) target;
+		final int ratio = npc.getHealthRatio();
+		final int scale = npc.getHealthScale();
+		if (ratio < 0 || scale <= 0)
+		{
+			return maxHp;
+		}
+		return Math.max(0, maxHp * ratio / scale);
 	}
 
 	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
@@ -433,42 +524,6 @@ class CombatCalc
 		return stats == null ? null : stats.getEquipment();
 	}
 
-	private int weaponSpeedTicks()
-	{
-		final ItemEquipmentStats w = weaponStats();
-		final int speed = w == null ? 4 : w.getAspeed();
-		final int ticks = speed <= 0 ? 4 : speed;
-		final AttackStyle style = attackStyle();
-		if (style.getAttackType() == AttackType.MAGIC)
-		{
-			return castSpeedTicks(ticks);
-		}
-		// Rapid fires a tick sooner; it is the only style that alters attack speed.
-		return style.getCombatStyle() == CombatStyle.RAPID ? Math.max(1, ticks - 1) : ticks;
-	}
-
-	/**
-	 * Casting runs on its own clock: the weapon's speed applies only to powered
-	 * staves and salamanders, which fire their own attack rather than a spell.
-	 * Everything else casts in 5 ticks, or 4 for the harmonised staff on the
-	 * standard spellbook.
-	 */
-	private int castSpeedTicks(int weaponTicks)
-	{
-		final WeaponCategory category = weaponCategory();
-		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
-		{
-			return weaponTicks;
-		}
-		final Spell spell = autocastSpell();
-		if (weaponItemId() == ItemID.NIGHTMARE_STAFF_HARMONISED
-			&& spell != null && spell.getSpellbook() == Spellbook.STANDARD)
-		{
-			return 4;
-		}
-		return 5;
-	}
-
 	/**
 	 * Max hit for the current loadout against this target, or 0 if unavailable.
 	 * The target matters because salve, dragon hunter, demonbane and the rest
@@ -477,7 +532,38 @@ class CombatCalc
 	 */
 	int maxHit(int npcId)
 	{
-		return (int) (baseMaxHit() * gearBonus(npcId).getDamage());
+		final int hit = (int) (baseMaxHit() * gearBonus(npcId).getDamage()) + colossalBladeBonus(npcId);
+		final EnchantedBolt bolt = loadedBolt(npcId);
+		if (bolt == null)
+		{
+			return hit;
+		}
+		switch (bolt)
+		{
+			case RUBY:
+				// The bolt's hit replaces the weapon's, and only beats it on
+				// targets with a lot of health left.
+				return Math.max(hit, EnchantedBolt.rubyDamage(targetCurrentHp(npcId)));
+			case DIAMOND:
+				return (int) (hit * 1.15);
+			default:
+				return (int) (hit * 1.20);
+		}
+	}
+
+	/**
+	 * The colossal blade adds 2 damage per tile of the target's size, up to 5
+	 * tiles. This is a flat addition rather than a multiplier, so it lands after
+	 * the gear multipliers.
+	 */
+	private int colossalBladeBonus(int npcId)
+	{
+		if (weaponItemId() != ItemID.GIANTS_FOUNDRY_COLOSSAL_BLADE)
+		{
+			return 0;
+		}
+		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		return npc == null ? 0 : 2 * Math.min(npc.getSize(), 5);
 	}
 
 	/** The equipped weapon's special attack, or null if it has none that hits. */
