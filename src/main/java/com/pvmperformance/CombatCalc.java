@@ -60,9 +60,9 @@ class CombatCalc
 	}
 
 	/** The gear multipliers for the current loadout against this target. */
-	private GearBonus gearBonus(AttackType type, int npcId)
+	private GearBonus gearBonus(int npcId)
 	{
-		return gearBonuses.compute(type, monsters.get(npcId), config.assumeSlayerTask());
+		return gearBonuses.compute(attackStyle(), monsters.get(npcId), autocastSpell(), config.assumeSlayerTask());
 	}
 
 	/**
@@ -78,7 +78,7 @@ class CombatCalc
 		}
 		final AttackStyle style = attackStyle();
 		final AttackType type = style.getAttackType();
-		final double gear = gearBonus(type, npcId).getAccuracy();
+		final double gear = gearBonus(npcId).getAccuracy();
 		if (type.isMelee())
 		{
 			return meleeHitChance(style, type, npc, gear);
@@ -358,9 +358,7 @@ class CombatCalc
 	 */
 	int maxHit(int npcId)
 	{
-		final int base = baseMaxHit();
-		final double gear = gearBonus(attackStyle().getAttackType(), npcId).getDamage();
-		return (int) (base * gear);
+		return (int) (baseMaxHit() * gearBonus(npcId).getDamage());
 	}
 
 	/** The equipped weapon's special attack, or null if it has none that hits. */
@@ -372,9 +370,26 @@ class CombatCalc
 	/**
 	 * The most one special attack activation can deal against this target, or 0
 	 * when the weapon has no damaging spec. Multi-hit specs are totalled.
+	 *
+	 * <p>Two weapons can't be expressed as a fixed multiple of the normal max
+	 * hit and are computed here instead: the abyssal bludgeon scales with the
+	 * prayer points the player is currently missing, and the volatile nightmare
+	 * staff ignores the normal hit entirely in favour of a magic-level curve.
 	 */
 	int specialAttackMaxHit(int npcId)
 	{
+		final int weapon = weaponItemId();
+		if (weapon == ItemID.ABYSSAL_BLUDGEON)
+		{
+			final int missingPrayer = Math.max(0,
+				client.getRealSkillLevel(Skill.PRAYER) - client.getBoostedSkillLevel(Skill.PRAYER));
+			return (int) (maxHit(npcId) * (1.0 + 0.005 * missingPrayer));
+		}
+		if (weapon == ItemID.NIGHTMARE_STAFF_VOLATILE || weapon == ItemID.DEADMAN_BLIGHTED_VOLATILE_STAFF)
+		{
+			final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
+			return applyMagicDamage(Math.min(58, 58 * magic / 99 + 1));
+		}
 		final SpecialAttack spec = specialAttack();
 		return spec == null ? 0 : spec.maxTotal(maxHit(npcId));
 	}
@@ -464,7 +479,13 @@ class CombatCalc
 				percent += stats.getEquipment().getMdmg();
 			}
 		}
-		percent *= gearBonuses.shadowMultiplier();
+		// The shadow's multiplied magic damage is capped at 100%.
+		final int multiplier = gearBonuses.shadowMultiplier();
+		percent *= multiplier;
+		if (multiplier > 1)
+		{
+			percent = Math.min(100, percent);
+		}
 		return (int) Math.floor(baseMaxHit * (1.0 + percent / 100.0));
 	}
 

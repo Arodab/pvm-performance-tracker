@@ -13,12 +13,12 @@ import net.runelite.api.gameval.ItemID;
  * dragon claws deal a decaying sequence, which is why this is a list rather
  * than a multiplier and a count.
  *
- * <p>Deliberately excluded, because their spec damage is not a fixed multiple
- * of the normal max hit and a single number here would be wrong: the abyssal
- * bludgeon (scales with missing prayer points), the volatile nightmare staff
- * (scales off the magic level directly), and the granite maul (an extra attack
- * that does not change the hit). Accuracy-only specs are also left out, since
- * they move the hit chance rather than the max hit.
+ * <p>Entries with no multipliers at all are the ones whose spec damage is not a
+ * multiple of the normal max hit; {@code CombatCalc} computes those directly.
+ *
+ * <p>Deliberately excluded: the granite maul, whose spec is an extra attack that
+ * does not change the hit, and the accuracy-only specs such as the Zaryte
+ * crossbow's, which double the hit chance rather than the damage.
  */
 enum SpecialAttack
 {
@@ -52,7 +52,15 @@ enum SpecialAttack
 	DARK_BOW_WHITE(ItemID.DARKBOW_WHITE, "Descent of Darkness", 1.5, 1.5),
 	MAGIC_SHORTBOW(ItemID.MAGIC_SHORTBOW, "Snapshot", 1.0, 1.0),
 	MAGIC_SHORTBOW_I(ItemID.MAGIC_SHORTBOW_I, "Snapshot", 1.0, 1.0),
-	WEBWEAVER_BOW(ItemID.WILD_CAVE_WEBWEAVER_CHARGED, "Swarm", 0.6, 0.6, 0.6, 0.6);
+	WEBWEAVER_BOW(ItemID.WILD_CAVE_WEBWEAVER_CHARGED, "Swarm", 0.6, 0.6, 0.6, 0.6),
+
+	// Magic
+	// These three carry no multipliers: their spec damage is not a multiple of
+	// the normal max hit, so CombatCalc computes it. The bludgeon scales with
+	// missing prayer points and the volatile staff off the magic level.
+	ABYSSAL_BLUDGEON(ItemID.ABYSSAL_BLUDGEON, "Penance"),
+	VOLATILE_STAFF(ItemID.NIGHTMARE_STAFF_VOLATILE, "Immolate"),
+	VOLATILE_STAFF_BLIGHTED(ItemID.DEADMAN_BLIGHTED_VOLATILE_STAFF, "Immolate");
 
 	private static final Map<Integer, SpecialAttack> BY_ITEM = new HashMap<>();
 
@@ -84,7 +92,7 @@ enum SpecialAttack
 
 	int hits()
 	{
-		return hitMultipliers.length;
+		return Math.max(1, hitMultipliers.length);
 	}
 
 	/** The most the whole activation can deal against a target with this max hit. */

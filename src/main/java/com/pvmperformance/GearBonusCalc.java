@@ -1,33 +1,38 @@
 package com.pvmperformance;
 
+import java.util.HashMap;
+import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.Player;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.game.ItemManager;
 
 /**
- * Resolves the gear effects that multiply the attack roll and the max hit —
- * salve, slayer helm, void, crystal, dragon hunter, demonbane, inquisitor's,
- * twisted bow, obsidian and keris.
+ * Resolves the gear effects that multiply the attack roll and the max hit.
  *
  * <p>Multipliers and stacking rules follow the LlemonDuck dps-calculator
- * (BSD-2), (c) Paul Norton. Target-dependent effects read the wiki attribute
+ * (BSD-2), (c) Paul Norton, with the newer weapons and the two raid-specific
+ * rules taken from the wiki. Target-dependent effects read the wiki attribute
  * tags carried by {@link MonsterStatsProvider.MonsterStats}.
  *
- * <p>Item families with many cosmetic variants (crystal armour, slayer helms,
- * salve amulets, void, bow of faerdhinen) are matched by item name rather than
- * by id. Each recolour is a separate id but shares one name, so a name test is
- * both far shorter and more precise: it distinguishes the tiers that matter
- * (imbued, enhanced, inactive) which the ids do not group.
+ * <p>Items are matched by name rather than by id. Nearly every family here has
+ * many ids for one item — cosmetic recolours (crystal, bow of faerdhinen),
+ * degradation steps (ahrim's, blessed sword), charge states (revenant weapons)
+ * and the ~70 slayer helmets — while the name is both stable and the thing that
+ * actually distinguishes the tiers that change the multiplier: "(i)", "(e)",
+ * "(ei)", "(inactive)", "(u)".
  *
- * <p>Not modelled: revenant weapons, leafy and vampyre bane weapons, the tomes,
- * ahrim's, chinchompa range falloff, and the scorching bow.
+ * <p>Not modelled: holy water, the keris crit chance, and the additive rather
+ * than multiplicative stacking that the dragon hunter crossbow and scorching
+ * bow have with the black mask specifically.
  */
 @Singleton
 class GearBonusCalc
@@ -37,6 +42,20 @@ class GearBonusCalc
 	private static final GearBonus SALVE_ENHANCED = GearBonus.symmetric(6.0 / 5.0);
 	private static final GearBonus BLACK_MASK_MELEE = GearBonus.symmetric(7.0 / 6.0);
 	private static final GearBonus BLACK_MASK_RANGED_MAGIC = GearBonus.symmetric(1.15);
+
+	/**
+	 * Demons whose demonbane effectiveness isn't 100%, scaling how much of a
+	 * demonbane weapon's bonus actually lands. Keyed by monster name.
+	 */
+	private static final Map<String, Double> DEMONBANE_EFFECTIVENESS = new HashMap<>();
+
+	static
+	{
+		DEMONBANE_EFFECTIVENESS.put("Duke Sucellus", 0.70);
+		DEMONBANE_EFFECTIVENESS.put("Ice demon", 1.15);
+		DEMONBANE_EFFECTIVENESS.put("Yama", 1.20);
+		DEMONBANE_EFFECTIVENESS.put("Void Flare", 2.00);
+	}
 
 	private final Client client;
 	private final ItemManager itemManager;
@@ -52,35 +71,36 @@ class GearBonusCalc
 	 * The combined multipliers for the current loadout against this target.
 	 * A null target skips the effects that depend on what is being fought.
 	 */
-	GearBonus compute(AttackType type, MonsterStatsProvider.MonsterStats npc, boolean onSlayerTask)
+	GearBonus compute(AttackStyle style, MonsterStatsProvider.MonsterStats npc, Spell spell, boolean onSlayerTask)
 	{
 		final Loadout gear = snapshot();
 		if (gear == null)
 		{
 			return GearBonus.NONE;
 		}
+		final AttackType type = style.getAttackType();
 
 		GearBonus total = GearBonus.NONE;
 
 		// Salve and the slayer helm deliberately do not stack; salve takes priority.
 		final GearBonus salve = salveBonus(type, npc, gear);
-		if (salve.isNone())
-		{
-			total = total.combine(blackMaskBonus(type, gear, onSlayerTask));
-		}
-		else
-		{
-			total = total.combine(salve);
-		}
+		total = total.combine(salve.isNone() ? blackMaskBonus(type, gear, onSlayerTask) : salve);
 
 		total = total.combine(voidBonus(type, gear));
 		total = total.combine(crystalBonus(gear));
 		total = total.combine(inquisitorsBonus(type, gear));
 		total = total.combine(obsidianBonus(type, gear));
 		total = total.combine(dragonHunterBonus(type, npc, gear));
-		total = total.combine(demonbaneBonus(type, npc, gear));
+		total = total.combine(demonbaneBonus(type, npc, spell, gear));
 		total = total.combine(kerisBonus(type, npc, gear));
 		total = total.combine(twistedBowBonus(type, npc, gear));
+		total = total.combine(tomeBonus(type, spell, gear));
+		total = total.combine(smokeStaffBonus(type, spell, gear));
+		total = total.combine(revenantBonus(type, gear));
+		total = total.combine(leafyBonus(type, npc, spell, gear));
+		total = total.combine(vampyreBaneBonus(type, npc, gear));
+		total = total.combine(ahrimsBonus(style, gear));
+		total = total.combine(chinchompaBonus(style, gear));
 		return total;
 	}
 
@@ -121,7 +141,7 @@ class GearBonusCalc
 			return GearBonus.NONE;
 		}
 		final String head = gear.name(EquipmentInventorySlot.HEAD);
-		if (head == null || !(head.startsWith("Black mask") || head.contains("slayer helmet") || head.startsWith("Slayer helmet")))
+		if (head == null || !(head.startsWith("Black mask") || head.toLowerCase().contains("slayer helmet")))
 		{
 			return GearBonus.NONE;
 		}
@@ -174,26 +194,22 @@ class GearBonusCalc
 			return GearBonus.NONE;
 		}
 		double accuracy = 0.0;
-		if (isCrystal(gear.name(EquipmentInventorySlot.HEAD), "Crystal helm"))
+		// The uncharged pieces share the name with "(inactive)" appended, so an
+		// exact match is what excludes them.
+		if ("Crystal helm".equals(gear.name(EquipmentInventorySlot.HEAD)))
 		{
 			accuracy += 0.05;
 		}
-		if (isCrystal(gear.name(EquipmentInventorySlot.BODY), "Crystal body"))
+		if ("Crystal body".equals(gear.name(EquipmentInventorySlot.BODY)))
 		{
 			accuracy += 0.15;
 		}
-		if (isCrystal(gear.name(EquipmentInventorySlot.LEGS), "Crystal legs"))
+		if ("Crystal legs".equals(gear.name(EquipmentInventorySlot.LEGS)))
 		{
 			accuracy += 0.10;
 		}
 		// No set bonus: each piece stands alone, and damage gains half of accuracy.
 		return accuracy == 0.0 ? GearBonus.NONE : GearBonus.of(1.0 + accuracy, 1.0 + accuracy / 2.0);
-	}
-
-	private static boolean isCrystal(String name, String piece)
-	{
-		// The uncharged pieces share the name with "(inactive)" appended.
-		return name != null && name.equals(piece);
 	}
 
 	private GearBonus inquisitorsBonus(AttackType type, Loadout gear)
@@ -259,23 +275,68 @@ class GearBonusCalc
 		return GearBonus.NONE;
 	}
 
-	private GearBonus demonbaneBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
+	/**
+	 * Demonbane weapons and spells. The listed bonus is scaled by the target's
+	 * demonbane effectiveness, which a handful of demons alter — Duke Sucellus
+	 * resists it at 70% while Yama and the ice demon take more than the full
+	 * amount.
+	 */
+	private GearBonus demonbaneBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Spell spell, Loadout gear)
 	{
-		if (npc == null || !npc.hasAttribute("demon") || !type.isMelee())
+		if (npc == null || !npc.hasAttribute("demon"))
 		{
 			return GearBonus.NONE;
 		}
-		final int weapon = gear.id(EquipmentInventorySlot.WEAPON);
-		if (weapon == ItemID.ARCLIGHT || weapon == ItemID.EMBERLIGHT)
+		final String weapon = gear.name(EquipmentInventorySlot.WEAPON);
+		GearBonus raw = GearBonus.NONE;
+		if (type.isMelee() && weapon != null)
 		{
-			return GearBonus.symmetric(1.7);
+			if ("Arclight".equals(weapon) || "Emberlight".equals(weapon))
+			{
+				raw = GearBonus.symmetric(1.7);
+			}
+			else if ("Burning claws".equals(weapon))
+			{
+				raw = GearBonus.symmetric(1.05);
+			}
+			else if ("Darklight".equals(weapon) || "Silverlight".equals(weapon))
+			{
+				raw = GearBonus.of(1.0, 1.6);
+			}
 		}
-		final String name = gear.name(EquipmentInventorySlot.WEAPON);
-		if ("Darklight".equals(name) || "Silverlight".equals(name))
+		else if (type == AttackType.RANGED && "Scorching bow".equals(weapon))
 		{
-			return GearBonus.of(1.0, 1.6);
+			raw = GearBonus.symmetric(1.3);
 		}
-		return GearBonus.NONE;
+		else if (type == AttackType.MAGIC && isDemonbaneSpell(spell))
+		{
+			raw = GearBonus.of(1.2, 1.25);
+		}
+		return scaleByDemonbaneEffectiveness(raw, npc);
+	}
+
+	private static boolean isDemonbaneSpell(Spell spell)
+	{
+		return spell == Spell.INFERIOR_DEMONBANE
+			|| spell == Spell.SUPERIOR_DEMONBANE
+			|| spell == Spell.DARK_DEMONBANE;
+	}
+
+	/** Scales only the bonus part, so a 70% bonus at 70% effectiveness becomes 49%. */
+	private static GearBonus scaleByDemonbaneEffectiveness(GearBonus raw, MonsterStatsProvider.MonsterStats npc)
+	{
+		if (raw.isNone())
+		{
+			return raw;
+		}
+		final double effectiveness = DEMONBANE_EFFECTIVENESS.getOrDefault(npc.getName(), 1.0);
+		if (effectiveness == 1.0)
+		{
+			return raw;
+		}
+		return GearBonus.of(
+			1.0 + (raw.getAccuracy() - 1.0) * effectiveness,
+			1.0 + (raw.getDamage() - 1.0) * effectiveness);
 	}
 
 	private GearBonus kerisBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
@@ -303,7 +364,8 @@ class GearBonusCalc
 	/**
 	 * The twisted bow scales off the target's magic, and turns into a penalty
 	 * against low-magic targets. The magic considered is capped at 250, raised
-	 * to 350 inside the Chambers of Xeric.
+	 * to 350 inside the Chambers of Xeric; the resulting accuracy caps at 140%
+	 * and the damage at 250%.
 	 */
 	private GearBonus twistedBowBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
@@ -314,7 +376,9 @@ class GearBonusCalc
 		}
 		final int cap = inChambersOfXeric() ? 350 : 250;
 		final int magic = Math.min(cap, Math.max(npc.getMagicLevel(), npc.getOffensiveMagic()));
-		return GearBonus.of(twistedBowFactor(magic, true), twistedBowFactor(magic, false));
+		return GearBonus.of(
+			Math.min(1.40, twistedBowFactor(magic, true)),
+			Math.min(2.50, twistedBowFactor(magic, false)));
 	}
 
 	/** Both curves have the same shape with different constants. */
@@ -325,6 +389,187 @@ class GearBonusCalc
 		final double linear = (3.0 * magic - sub) / 100.0;
 		final double quadratic = Math.pow((3.0 * magic) / 10.0 - (10.0 * sub), 2.0) / 100.0;
 		return (base + linear - quadratic) / 100.0;
+	}
+
+	/** Tome of fire boosts fire spells, tome of water water spells. */
+	private GearBonus tomeBonus(AttackType type, Spell spell, Loadout gear)
+	{
+		if (type != AttackType.MAGIC || spell == null)
+		{
+			return GearBonus.NONE;
+		}
+		final String offHand = gear.name(EquipmentInventorySlot.SHIELD);
+		if (offHand == null)
+		{
+			return GearBonus.NONE;
+		}
+		final String spellName = spell.getDisplayName();
+		if ("Tome of fire".equals(offHand) && spellName.startsWith("Fire"))
+		{
+			return GearBonus.of(1.0, 1.5);
+		}
+		if ("Tome of water".equals(offHand) && spellName.startsWith("Water"))
+		{
+			return GearBonus.symmetric(1.2);
+		}
+		return GearBonus.NONE;
+	}
+
+	private GearBonus smokeStaffBonus(AttackType type, Spell spell, Loadout gear)
+	{
+		if (type != AttackType.MAGIC || spell == null || spell.getSpellbook() != Spellbook.STANDARD)
+		{
+			return GearBonus.NONE;
+		}
+		final String weapon = gear.name(EquipmentInventorySlot.WEAPON);
+		return "Smoke battlestaff".equals(weapon) || "Mystic smoke staff".equals(weapon)
+			? GearBonus.symmetric(1.1) : GearBonus.NONE;
+	}
+
+	/**
+	 * The revenant weapons and their upgrades, which add 50% accuracy and damage
+	 * against any NPC in the Wilderness and nothing outside it.
+	 *
+	 * <p>The reference gives Thammaron's sceptre 2.0 accuracy and 1.25 damage,
+	 * but the wiki has all six weapons on a flat 50% of both, so that is what is
+	 * used here.
+	 */
+	private GearBonus revenantBonus(AttackType type, Loadout gear)
+	{
+		final String weapon = gear.name(EquipmentInventorySlot.WEAPON);
+		if (weapon == null)
+		{
+			return GearBonus.NONE;
+		}
+		// The sceptre can bash and the mace and bow can manual cast, so the style
+		// has to match the weapon for the passive to apply.
+		final boolean matches;
+		switch (type)
+		{
+			case MAGIC:
+				matches = weapon.startsWith("Thammaron's sceptre") || weapon.startsWith("Accursed sceptre");
+				break;
+			case RANGED:
+				matches = weapon.startsWith("Craw's bow") || weapon.startsWith("Webweaver bow");
+				break;
+			default:
+				matches = weapon.startsWith("Viggora's chainmace") || weapon.startsWith("Ursine chainmace");
+				break;
+		}
+		return matches && inWilderness() ? GearBonus.symmetric(1.5) : GearBonus.NONE;
+	}
+
+	/**
+	 * Leafy monsters are immune to everything but leaf-bladed weapons, broad
+	 * ammo and magic dart, so anything else zeroes the damage rather than
+	 * reducing it. Only the leaf-bladed battleaxe carries a bonus on top.
+	 */
+	private GearBonus leafyBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Spell spell, Loadout gear)
+	{
+		if (npc == null || !npc.hasAttribute("leafy"))
+		{
+			return GearBonus.NONE;
+		}
+		switch (type)
+		{
+			case MAGIC:
+				return spell == Spell.MAGIC_DART ? GearBonus.NONE : GearBonus.symmetric(0.0);
+			case RANGED:
+				// "Broad bolts", "Amethyst broad bolts", "Broad arrows".
+				final String ammo = gear.name(EquipmentInventorySlot.AMMO);
+				return ammo != null && ammo.toLowerCase().contains("broad")
+					? GearBonus.NONE : GearBonus.symmetric(0.0);
+			default:
+				final String weapon = gear.name(EquipmentInventorySlot.WEAPON);
+				if (weapon == null || !weapon.startsWith("Leaf-bladed"))
+				{
+					return GearBonus.symmetric(0.0);
+				}
+				return weapon.equals("Leaf-bladed battleaxe") ? GearBonus.symmetric(1.175) : GearBonus.NONE;
+		}
+	}
+
+	private GearBonus vampyreBaneBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
+	{
+		if (npc == null || !npc.hasAttribute("vampyre") || !type.isMelee())
+		{
+			return GearBonus.NONE;
+		}
+		final String weapon = gear.name(EquipmentInventorySlot.WEAPON);
+		if (weapon == null)
+		{
+			return GearBonus.NONE;
+		}
+		if (weapon.startsWith("Blisterwood flail"))
+		{
+			return GearBonus.of(1.05, 1.25);
+		}
+		if (weapon.startsWith("Blisterwood sickle"))
+		{
+			return GearBonus.of(1.05, 1.15);
+		}
+		return weapon.startsWith("Ivandis flail") ? GearBonus.of(1.0, 1.20) : GearBonus.NONE;
+	}
+
+	/** Full ahrim's plus the amulet of the damned, autocasting only. */
+	private GearBonus ahrimsBonus(AttackStyle style, Loadout gear)
+	{
+		if (style.getAttackType() != AttackType.MAGIC || style.getCombatStyle() != CombatStyle.AUTOCAST)
+		{
+			return GearBonus.NONE;
+		}
+		final boolean set = startsWith(gear.name(EquipmentInventorySlot.WEAPON), "Ahrim's staff")
+			&& startsWith(gear.name(EquipmentInventorySlot.HEAD), "Ahrim's hood")
+			&& startsWith(gear.name(EquipmentInventorySlot.BODY), "Ahrim's robetop")
+			&& startsWith(gear.name(EquipmentInventorySlot.LEGS), "Ahrim's robeskirt")
+			&& startsWith(gear.name(EquipmentInventorySlot.AMULET), "Amulet of the damned");
+		return set ? GearBonus.of(1.0, 1.3) : GearBonus.NONE;
+	}
+
+	/**
+	 * Chinchompa accuracy depends on how far the target is: each fuse length is
+	 * at its best in one band and worse in the others.
+	 */
+	private GearBonus chinchompaBonus(AttackStyle style, Loadout gear)
+	{
+		// "Chinchompa", "Red chinchompa", "Black chinchompa".
+		final String weapon = gear.name(EquipmentInventorySlot.WEAPON);
+		if (style.getAttackType() != AttackType.RANGED || weapon == null
+			|| !weapon.toLowerCase().contains("chinchompa"))
+		{
+			return GearBonus.NONE;
+		}
+		final int distance = targetDistance();
+		if (distance < 0)
+		{
+			return GearBonus.NONE;
+		}
+		// Short band is 1-3 tiles, medium 4-6, long beyond that.
+		final int band = distance <= 3 ? 0 : distance <= 6 ? 1 : 2;
+		final int fuse = style.getCombatStyle() == CombatStyle.ACCURATE ? 0
+			: style.getCombatStyle() == CombatStyle.RAPID ? 1 : 2;
+		final double[][] accuracy = {
+			{1.0, 0.75, 0.5},
+			{0.75, 1.0, 0.75},
+			{0.5, 0.75, 1.0},
+		};
+		return GearBonus.of(accuracy[band][fuse], 1.0);
+	}
+
+	/** Tiles between the player and whatever they are attacking, or -1 if nothing. */
+	private int targetDistance()
+	{
+		final Player player = client.getLocalPlayer();
+		if (player == null)
+		{
+			return -1;
+		}
+		final Actor target = player.getInteracting();
+		if (target == null)
+		{
+			return -1;
+		}
+		return player.getWorldLocation().distanceTo(target.getWorldLocation());
 	}
 
 	/**
@@ -360,6 +605,16 @@ class GearBonusCalc
 	private boolean inTombsOfAmascut()
 	{
 		return client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL) > 0;
+	}
+
+	private boolean inWilderness()
+	{
+		return client.getVarbitValue(VarbitID.INSIDE_WILDERNESS) == 1;
+	}
+
+	private static boolean startsWith(String name, String prefix)
+	{
+		return name != null && name.startsWith(prefix);
 	}
 
 	private Loadout snapshot()
