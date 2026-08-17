@@ -229,8 +229,8 @@ class PvmPerformancePanel extends PluginPanel
 		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
 
 		final String info = String.format(
-			"<html><b>%s</b><br><font color='#a0a0a0'>%d fights &middot; %d kills &middot; %.2f dps &middot; %.0f%% acc &middot; %s dmg</font></html>",
-			s.getName(), s.getFights(), s.getKills(), s.avgDps(), s.accuracy() * 100,
+			"<html><b>%s</b><br><font color='#a0a0a0'>%d fights &middot; %d kills &middot; %.2f avg hit &middot; %.0f%% acc &middot; %s dmg</font></html>",
+			s.getName(), s.getFights(), s.getKills(), s.avgHit(), s.accuracy() * 100,
 			QuantityFormatter.formatNumber(s.getTotalDamageDealt()));
 		final JLabel label = new JLabel(info);
 		label.setForeground(Color.WHITE);

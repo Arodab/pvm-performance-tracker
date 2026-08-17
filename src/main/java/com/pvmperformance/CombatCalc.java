@@ -90,8 +90,16 @@ class CombatCalc
 		return magicHitChance(style, npc, gear);
 	}
 
-	/** Expected DPS vs the NPC, or -1 when the hit chance or max hit is unavailable. */
-	double dps(int npcId)
+	/**
+	 * Expected damage per attack made against the NPC, counting misses as zero,
+	 * or -1 when the hit chance or max hit is unavailable.
+	 *
+	 * <p>A landed hit rolls uniformly up to the max, so it averages half of it;
+	 * multiplying by the hit chance folds the misses back in. Unlike DPS this
+	 * doesn't depend on attack speed, so it compares directly against the
+	 * measured damage-per-attack without the fight's pace getting in the way.
+	 */
+	double averageHit(int npcId)
 	{
 		final double accuracy = hitChance(npcId);
 		// Averages, not best cases: a keris crit or an ahrim's proc raises the max
@@ -101,7 +109,7 @@ class CombatCalc
 		{
 			return -1;
 		}
-		return accuracy * (averageMax / 2.0) / (weaponSpeedTicks() * 0.6);
+		return accuracy * (averageMax / 2.0);
 	}
 
 	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
@@ -112,7 +120,7 @@ class CombatCalc
 		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
 			: type == AttackType.SLASH ? npc.getDefSlash() : npc.getDefCrush();
 		final int defRoll = (npc.getDefenceLevel() + 9) * (defBonus + 64);
-		return hitChanceFrom(attRoll, defRoll);
+		return meleeHitChanceFrom(attRoll, defRoll);
 	}
 
 	/**
@@ -145,6 +153,59 @@ class CombatCalc
 			return 1.0 - (defRoll + 2.0) / (2.0 * (attRoll + 1.0));
 		}
 		return attRoll / (2.0 * (defRoll + 1.0));
+	}
+
+	/**
+	 * Hit chance for a melee attack, taking Osmumten's fang's second accuracy
+	 * roll into account.
+	 *
+	 * <p>An ordinary attack rolls once from 0..attRoll against one roll from
+	 * 0..defRoll and hits if it is the higher. The fang rolls twice and lands if
+	 * either succeeds, but what gets re-rolled differs: inside the Tombs of
+	 * Amascut the target's defence is re-rolled too, making the two attempts
+	 * independent, while outside it both attacks are compared against a single
+	 * defence roll.
+	 */
+	private double meleeHitChanceFrom(int attRoll, int defRoll)
+	{
+		if (!isFangEquipped())
+		{
+			return hitChanceFrom(attRoll, defRoll);
+		}
+		if (gearBonuses.inTombsOfAmascut())
+		{
+			final double miss = 1.0 - hitChanceFrom(attRoll, defRoll);
+			return 1.0 - miss * miss;
+		}
+		return 1.0 - sharedDefenceMissChance(attRoll, defRoll);
+	}
+
+	/**
+	 * Probability that two attack rolls both fail against the same defence roll.
+	 *
+	 * <p>For a fixed defence roll d, one attack misses with probability
+	 * (d+1)/(attRoll+1), so two miss with the square of that; averaging the
+	 * square over d gives the closed forms below. The sum of squares over the
+	 * defence range is what turns into the (d+2)(2d+3)/6 term. When the defence
+	 * roll can exceed the attack roll, every d past attRoll misses outright and
+	 * contributes 1.
+	 */
+	private static double sharedDefenceMissChance(int attRoll, int defRoll)
+	{
+		final double a = attRoll;
+		final double d = defRoll;
+		if (defRoll <= attRoll)
+		{
+			return (d + 2.0) * (2.0 * d + 3.0) / (6.0 * (a + 1.0) * (a + 1.0));
+		}
+		final double capped = (a + 2.0) * (2.0 * a + 3.0) / (6.0 * (a + 1.0));
+		return (capped + (d - a)) / (d + 1.0);
+	}
+
+	private boolean isFangEquipped()
+	{
+		final int weapon = weaponItemId();
+		return weapon == ItemID.OSMUMTENS_FANG || weapon == ItemID.OSMUMTENS_FANG_ORNAMENT;
 	}
 
 	private double meleeAccuracyPrayer()

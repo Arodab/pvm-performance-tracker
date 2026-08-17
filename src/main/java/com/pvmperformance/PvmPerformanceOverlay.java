@@ -72,12 +72,12 @@ class PvmPerformanceOverlay extends OverlayPanel
 			.right(QuantityFormatter.formatNumber(fight.getDamageDealt()))
 			.build());
 
-		final double expDps = plugin.getExpectedDps();
+		final double expAvgHit = plugin.getExpectedAverageHit();
 		panelComponent.getChildren().add(LineComponent.builder()
-			.left("DPS")
-			.right(expDps >= 0
-				? String.format("%.2f (exp %.2f)", fight.dps(), expDps)
-				: String.format("%.2f", fight.dps()))
+			.left("Avg hit")
+			.right(expAvgHit >= 0
+				? String.format("%.2f (exp %.2f)", fight.averageHit(), expAvgHit)
+				: String.format("%.2f", fight.averageHit()))
 			.build());
 
 		panelComponent.getChildren().add(LineComponent.builder()

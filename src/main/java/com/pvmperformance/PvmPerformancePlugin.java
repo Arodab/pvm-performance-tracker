@@ -115,7 +115,7 @@ public class PvmPerformancePlugin extends Plugin
 	// Expected figures for the current loadout, recomputed each tick.
 	private int expectedMaxHit;
 	private double expectedAccuracy = -1;
-	private double expectedDps = -1;
+	private double expectedAverageHit = -1;
 	private int expectedSpecMaxHit;
 	private SpecialAttack specialAttack;
 
@@ -283,14 +283,14 @@ public class PvmPerformancePlugin extends Plugin
 			// Pass the target so salve, dragon hunter and the rest can apply.
 			expectedMaxHit = combatCalc.maxHit(shown.getTargetId());
 			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
-			expectedDps = combatCalc.dps(shown.getTargetId());
+			expectedAverageHit = combatCalc.averageHit(shown.getTargetId());
 			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(shown.getTargetId());
 		}
 		else
 		{
 			expectedMaxHit = combatCalc.maxHit(-1);
 			expectedAccuracy = -1;
-			expectedDps = -1;
+			expectedAverageHit = -1;
 			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(-1);
 		}
 
@@ -432,10 +432,10 @@ public class PvmPerformancePlugin extends Plugin
 		return expectedAccuracy;
 	}
 
-	/** Expected DPS vs the shown target, or -1 if unavailable. */
-	double getExpectedDps()
+	/** Expected damage per attack vs the shown target, or -1 if unavailable. */
+	double getExpectedAverageHit()
 	{
-		return expectedDps;
+		return expectedAverageHit;
 	}
 
 	/** Max total damage of one special attack activation (0 if the weapon has none). */

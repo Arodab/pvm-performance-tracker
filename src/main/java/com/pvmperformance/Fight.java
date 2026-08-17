@@ -90,6 +90,16 @@ class Fight
 		return damageDealt / durationSeconds();
 	}
 
+	/**
+	 * Mean damage per attack made, counting misses as zero. This is the figure
+	 * the expected side is compared against, since it depends only on the
+	 * loadout and the target rather than on how fast the fight was played.
+	 */
+	double averageHit()
+	{
+		return attempts == 0 ? 0 : (double) damageDealt / attempts;
+	}
+
 	/** 0..1; share of my resolved attacks that dealt more than 0. */
 	double accuracy()
 	{

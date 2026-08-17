@@ -403,8 +403,8 @@ class GearBonusCalc
 	 * from zero. That lowers the reachable max to 85% while leaving the average
 	 * exactly where an ordinary weapon's sits, at half the unmodified max.
 	 *
-	 * <p>Not modelled: the fang's second accuracy roll, which raises its hit
-	 * chance well above what the standard formula gives.
+	 * <p>The fang's second accuracy roll is handled in {@code CombatCalc}, since
+	 * it changes the hit chance formula rather than multiplying a roll.
 	 */
 	private GearBonus fangBonus(AttackType type, Loadout gear)
 	{
@@ -690,7 +690,7 @@ class GearBonusCalc
 	 * varbit. This also reads set in the lobby, which is harmless: nothing is
 	 * being fought there, so no multiplier is applied anyway.
 	 */
-	private boolean inTombsOfAmascut()
+	boolean inTombsOfAmascut()
 	{
 		return client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL) > 0;
 	}

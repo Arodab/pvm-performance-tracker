@@ -42,6 +42,12 @@ class NpcStats
 		return seconds < 0.6 ? 0 : totalDamageDealt / seconds;
 	}
 
+	/** Mean damage per attack made across every fight, counting misses as zero. */
+	double avgHit()
+	{
+		return totalAttempts == 0 ? 0 : (double) totalDamageDealt / totalAttempts;
+	}
+
 	double accuracy()
 	{
 		return totalAttempts == 0 ? 0 : (double) totalHits / totalAttempts;
