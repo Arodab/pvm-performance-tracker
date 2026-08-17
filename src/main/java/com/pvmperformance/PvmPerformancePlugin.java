@@ -37,6 +37,7 @@ import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GraphicChanged;
@@ -276,6 +277,17 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				finalizeFight(false, current.getLastActivityMillis());
 			}
+		}
+	}
+
+	@Subscribe
+	public void onCommandExecuted(CommandExecuted event)
+	{
+		// DEV ONLY (remove before publishing): prints the melee max-hit inputs.
+		if ("pvmmaxhit".equals(event.getCommand().toLowerCase()))
+		{
+			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
+				"[PvM] " + combatCalc.meleeBreakdown(), null);
 		}
 	}
 
