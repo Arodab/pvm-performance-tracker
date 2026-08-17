@@ -277,8 +277,8 @@ public class PvmPerformancePlugin extends Plugin
 		final Fight shown = getDisplayFight();
 		if (shown != null)
 		{
-			expectedAccuracy = combatCalc.meleeHitChance(shown.getTargetId());
-			expectedDps = combatCalc.meleeDps(shown.getTargetId());
+			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
+			expectedDps = combatCalc.dps(shown.getTargetId());
 		}
 		else
 		{

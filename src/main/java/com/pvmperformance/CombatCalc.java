@@ -16,12 +16,14 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 
 /**
- * Expected combat figures computed from the player's live loadout. This is the
- * start of the "expected" engine: melee and ranged max hit so far.
+ * Expected combat figures computed from the player's live loadout: max hit for
+ * all three styles, and hit chance and DPS against a given NPC for melee and
+ * ranged.
  *
  * <p>Max hit depends only on the attacker (levels, prayer, style, gear strength),
- * not on the target, so it needs no NPC data. Magic max hit, plus the
- * target-dependent expected accuracy and DPS, come later.
+ * not on the target, so it needs no NPC data. Hit chance and DPS additionally
+ * need the target's defensive stats from {@link MonsterStatsProvider}, and
+ * return -1 when those are unavailable.
  *
  * <p>The combat option the player has actually selected is resolved by
  * {@link #attackStyle()} and drives both the attack type rolled against and the
@@ -53,13 +55,12 @@ class CombatCalc
 		this.monsters = monsters;
 	}
 
-	/** Expected melee hit chance (0..1) vs the NPC, or -1 if not melee / no data. */
-	double meleeHitChance(int npcId)
+	/**
+	 * Expected hit chance (0..1) vs the NPC, or -1 when there is no data or the
+	 * style isn't modelled yet (magic).
+	 */
+	double hitChance(int npcId)
 	{
-		if (weaponStyle() != Style.MELEE)
-		{
-			return -1;
-		}
 		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
 		if (npc == null)
 		{
@@ -67,25 +68,47 @@ class CombatCalc
 		}
 		final AttackStyle style = attackStyle();
 		final AttackType type = style.getAttackType();
+		if (type.isMelee())
+		{
+			return meleeHitChance(style, type, npc);
+		}
+		if (type == AttackType.RANGED)
+		{
+			return rangedHitChance(style, npc);
+		}
+		return -1; // magic accuracy needs the spell and magic damage %, not modelled yet
+	}
+
+	/** Expected DPS vs the NPC, or -1 when the hit chance or max hit is unavailable. */
+	double dps(int npcId)
+	{
+		final double accuracy = hitChance(npcId);
+		final int max = maxHit();
+		if (accuracy < 0 || max <= 0)
+		{
+			return -1;
+		}
+		return accuracy * (max / 2.0) / (weaponSpeedTicks() * 0.6);
+	}
+
+	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc)
+	{
 		final int effAtk = (int) Math.floor(client.getBoostedSkillLevel(Skill.ATTACK) * meleeAccuracyPrayer())
 			+ style.attackLevelBonus() + 8;
-		final int attRoll = effAtk * (meleeAttackBonus(type) + 64);
+		final int attRoll = effAtk * (attackBonus(type) + 64);
 		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
 			: type == AttackType.SLASH ? npc.getDefSlash() : npc.getDefCrush();
 		final int defRoll = (npc.getDefenceLevel() + 9) * (defBonus + 64);
 		return hitChanceFrom(attRoll, defRoll);
 	}
 
-	/** Expected melee DPS vs the NPC, or -1 if not melee / no data. */
-	double meleeDps(int npcId)
+	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc)
 	{
-		final double accuracy = meleeHitChance(npcId);
-		if (accuracy < 0)
-		{
-			return -1;
-		}
-		final double interval = weaponSpeedTicks() * 0.6;
-		return accuracy * (meleeMaxHit() / 2.0) / interval;
+		final int effRanged = (int) Math.floor(client.getBoostedSkillLevel(Skill.RANGED) * rangedAccuracyPrayer())
+			+ style.attackLevelBonus() + 8;
+		final int attRoll = effRanged * (attackBonus(AttackType.RANGED) + 64);
+		final int defRoll = (npc.getDefenceLevel() + 9) * (npc.getDefRanged() + 64);
+		return hitChanceFrom(attRoll, defRoll);
 	}
 
 	private static double hitChanceFrom(int attRoll, int defRoll)
@@ -196,7 +219,8 @@ class CombatCalc
 		return w.getAslash() >= w.getAcrush() ? AttackType.SLASH : AttackType.CRUSH;
 	}
 
-	private int meleeAttackBonus(AttackType type)
+	/** Sum of the worn gear's attack bonus for the type being rolled. */
+	private int attackBonus(AttackType type)
 	{
 		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
 		if (equipment == null)
@@ -210,8 +234,24 @@ class CombatCalc
 			if (stats != null && stats.getEquipment() != null)
 			{
 				final ItemEquipmentStats e = stats.getEquipment();
-				total += type == AttackType.STAB ? e.getAstab()
-					: type == AttackType.SLASH ? e.getAslash() : e.getAcrush();
+				switch (type)
+				{
+					case STAB:
+						total += e.getAstab();
+						break;
+					case SLASH:
+						total += e.getAslash();
+						break;
+					case CRUSH:
+						total += e.getAcrush();
+						break;
+					case RANGED:
+						total += e.getArange();
+						break;
+					default:
+						total += e.getAmagic();
+						break;
+				}
 			}
 		}
 		return total;
@@ -237,7 +277,9 @@ class CombatCalc
 	{
 		final ItemEquipmentStats w = weaponStats();
 		final int speed = w == null ? 4 : w.getAspeed();
-		return speed <= 0 ? 4 : speed;
+		final int ticks = speed <= 0 ? 4 : speed;
+		// Rapid fires a tick sooner; it is the only style that alters attack speed.
+		return attackStyle().getCombatStyle() == CombatStyle.RAPID ? Math.max(1, ticks - 1) : ticks;
 	}
 
 	/** Max hit for the current loadout and weapon style, or 0 if unavailable/magic. */
@@ -344,6 +386,28 @@ class CombatCalc
 			return 1.10;
 		}
 		if (client.isPrayerActive(Prayer.BURST_OF_STRENGTH))
+		{
+			return 1.05;
+		}
+		return 1.0;
+	}
+
+	/** Ranged attack prayer multiplier. Rigour gives less here than it does to strength. */
+	private double rangedAccuracyPrayer()
+	{
+		if (client.isPrayerActive(Prayer.RIGOUR))
+		{
+			return 1.20;
+		}
+		if (client.isPrayerActive(Prayer.EAGLE_EYE))
+		{
+			return 1.15;
+		}
+		if (client.isPrayerActive(Prayer.HAWK_EYE))
+		{
+			return 1.10;
+		}
+		if (client.isPrayerActive(Prayer.SHARP_EYE))
 		{
 			return 1.05;
 		}
