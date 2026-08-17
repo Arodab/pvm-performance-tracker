@@ -3,10 +3,10 @@ package com.pvmperformance;
 import lombok.Getter;
 
 /**
- * The actual (measured) performance of a single fight against one NPC. Only
- * observed facts live here: damage from {@code hitsplat.isMine()} splats, hits
- * vs zeros for accuracy, damage taken, and wall-clock duration. The "expected"
- * side (max hit / expected DPS from a combat model) is added in a later phase.
+ * The performance of a single fight against one NPC: the measured side from
+ * observed facts — damage from {@code hitsplat.isMine()} splats, hits vs zeros
+ * for accuracy, damage taken, and wall-clock duration — alongside the expected
+ * side sampled from the combat model once per attack made.
  */
 @Getter
 class Fight
@@ -28,6 +28,18 @@ class Fight
 	private boolean ended;
 	private boolean targetDied;
 	private long endMillis;
+
+	// The expected figures, sampled once per attack made rather than snapshotted
+	// once for the fight. With one loadout throughout, the mean is just that
+	// loadout's figure; with a spec weapon swapped in partway it is the actual
+	// blend of what was wielded, which no single snapshot could represent.
+	private double sumExpectedMaxHit;
+	private int expectedMaxHitSamples;
+	private double sumExpectedAccuracy;
+	private double sumExpectedAverageHit;
+	// Accuracy and average hit need target data, so they can be missing while the
+	// max hit is known, and are counted separately.
+	private int expectedTargetSamples;
 
 	Fight(String targetName, int targetId, int targetIndex, int maxHp, long now)
 	{
@@ -104,5 +116,43 @@ class Fight
 	double accuracy()
 	{
 		return attempts == 0 ? 0 : (double) hits / attempts;
+	}
+
+	/**
+	 * Takes one sample of the expected figures for the attack just resolved.
+	 * A negative accuracy or average hit means the target's stats weren't
+	 * available, and only the max hit is recorded.
+	 */
+	void recordExpected(int maxHit, double accuracy, double averageHit)
+	{
+		if (maxHit > 0)
+		{
+			sumExpectedMaxHit += maxHit;
+			expectedMaxHitSamples++;
+		}
+		if (accuracy >= 0 && averageHit >= 0)
+		{
+			sumExpectedAccuracy += accuracy;
+			sumExpectedAverageHit += averageHit;
+			expectedTargetSamples++;
+		}
+	}
+
+	/** Mean expected max hit over the attacks made, or -1 if never sampled. */
+	double expectedMaxHit()
+	{
+		return expectedMaxHitSamples == 0 ? -1 : sumExpectedMaxHit / expectedMaxHitSamples;
+	}
+
+	/** Mean expected hit chance (0..1) over the attacks made, or -1 if never sampled. */
+	double expectedAccuracy()
+	{
+		return expectedTargetSamples == 0 ? -1 : sumExpectedAccuracy / expectedTargetSamples;
+	}
+
+	/** Mean expected damage per attack over the attacks made, or -1 if never sampled. */
+	double expectedAverageHit()
+	{
+		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
 	}
 }

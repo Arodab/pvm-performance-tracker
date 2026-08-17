@@ -118,6 +118,9 @@ public class PvmPerformancePlugin extends Plugin
 	private double expectedAverageHit = -1;
 	private int expectedSpecMaxHit;
 	private SpecialAttack specialAttack;
+	// Which target the figures above were computed against, so an attack is only
+	// sampled with figures that were actually meant for it.
+	private int expectedForNpcId = -1;
 
 	// The fight currently in progress, or null between fights.
 	private Fight current;
@@ -188,6 +191,7 @@ public class PvmPerformancePlugin extends Plugin
 				startFight(npc, now);
 			}
 			current.recordDamageDealt(hitsplat.getAmount(), now);
+			sampleExpected(current);
 			// A landed hit resolves one of my pending attacks so it can't later
 			// be mistaken for another player's splash.
 			consumePending(npc.getIndex());
@@ -257,7 +261,25 @@ public class PvmPerformancePlugin extends Plugin
 		if (consumePending(index) && current.getTargetIndex() == index)
 		{
 			current.recordSplash(System.currentTimeMillis());
+			sampleExpected(current);
 		}
+	}
+
+	/**
+	 * Records what the model expected of the attack that just resolved. Sampling
+	 * per attack rather than once per fight keeps the figures honest when a spec
+	 * weapon is swapped in partway: the mean then reflects the blend actually
+	 * wielded instead of whichever weapon happened to be held at one instant.
+	 */
+	private void sampleExpected(Fight fight)
+	{
+		if (expectedForNpcId != fight.getTargetId())
+		{
+			// The cached figures were computed for something else, most likely
+			// because this is the opening attack of the fight.
+			return;
+		}
+		fight.recordExpected(expectedMaxHit, expectedAccuracy, expectedAverageHit);
 	}
 
 	@Subscribe
@@ -285,6 +307,7 @@ public class PvmPerformancePlugin extends Plugin
 			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
 			expectedAverageHit = combatCalc.averageHit(shown.getTargetId());
 			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(shown.getTargetId());
+			expectedForNpcId = shown.getTargetId();
 		}
 		else
 		{
@@ -292,6 +315,7 @@ public class PvmPerformancePlugin extends Plugin
 			expectedAccuracy = -1;
 			expectedAverageHit = -1;
 			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(-1);
+			expectedForNpcId = -1;
 		}
 
 		if (current != null && !current.isEnded())
@@ -559,7 +583,8 @@ public class PvmPerformancePlugin extends Plugin
 				try (Writer writer = new BufferedWriter(new java.io.OutputStreamWriter(
 					Files.newOutputStream(out.toPath()), StandardCharsets.UTF_8)))
 				{
-					writer.write("started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,accuracyPct,durationSec,dps\n");
+					writer.write("started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
+						+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit\n");
 					for (Fight fight : fights)
 					{
 						writer.write(csvRow(fight));
@@ -582,7 +607,7 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
-		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f%n",
+		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s%n",
 			started,
 			fight.getTargetName().replace('"', '\''),
 			fight.getTargetId(),
@@ -594,7 +619,21 @@ public class PvmPerformancePlugin extends Plugin
 			fight.getHits(),
 			fight.accuracy() * 100,
 			fight.durationMillis() / 1000.0,
-			fight.dps());
+			fight.dps(),
+			fight.averageHit(),
+			csvExpected(fight.expectedMaxHit(), 1),
+			csvExpected(fight.expectedAccuracy() * 100, 1),
+			csvExpected(fight.expectedAverageHit(), 2));
+	}
+
+	/**
+	 * Expected figures are left blank rather than written as a number when the
+	 * model had nothing to say — no target stats, or a fight recorded before
+	 * these columns existed — so a reader can tell "unknown" from a real zero.
+	 */
+	private static String csvExpected(double value, int decimals)
+	{
+		return value < 0 ? "" : String.format("%." + decimals + "f", value);
 	}
 
 	private static String sanitize(String name)
