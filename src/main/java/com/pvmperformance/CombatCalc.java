@@ -6,6 +6,7 @@ import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.ItemID;
 import net.runelite.api.Prayer;
 import net.runelite.api.Skill;
 import net.runelite.api.gameval.VarPlayerID;
@@ -52,7 +53,7 @@ class CombatCalc
 			case RANGED:
 				return rangedMaxHit();
 			case MAGIC:
-				return 0; // TODO: spell-based magic max hit
+				return magicMaxHit();
 			default:
 				return meleeMaxHit();
 		}
@@ -85,6 +86,50 @@ class CombatCalc
 	private static int maxHitFromStrength(int effectiveStrength, int strengthBonus)
 	{
 		return (effectiveStrength * (strengthBonus + 64) + 320) / 640;
+	}
+
+	/**
+	 * Powered-staff magic max hit from the magic level. Base value only for now:
+	 * magic-damage % gear (occult, tormented, Shadow's tripling, tome of fire)
+	 * and standard-spell casting are not applied yet, so it reads low with such
+	 * gear. Returns 0 for anything not a supported powered staff. Formulae from
+	 * the LlemonDuck dps-calculator (BSD-2).
+	 */
+	private int magicMaxHit()
+	{
+		final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
+		final int seas = Math.max(1, (magic - 75) / 3 + 20);
+		switch (weaponItemId())
+		{
+			case ItemID.TRIDENT_OF_THE_SEAS:
+			case ItemID.TRIDENT_OF_THE_SEAS_E:
+			case ItemID.TRIDENT_OF_THE_SEAS_FULL:
+				return seas;
+			case ItemID.TRIDENT_OF_THE_SWAMP:
+			case ItemID.TRIDENT_OF_THE_SWAMP_E:
+				return seas + 3;
+			case ItemID.SANGUINESTI_STAFF:
+			case ItemID.HOLY_SANGUINESTI_STAFF:
+				return seas + 4;
+			case ItemID.TUMEKENS_SHADOW:
+			case ItemID.CORRUPTED_TUMEKENS_SHADOW:
+				return seas + 6;
+			case ItemID.WARPED_SCEPTRE:
+				return Math.max(1, (8 * magic + 96) / 37);
+			default:
+				return 0;
+		}
+	}
+
+	private int weaponItemId()
+	{
+		final ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		if (equipment == null)
+		{
+			return -1;
+		}
+		final Item weapon = equipment.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
+		return weapon == null ? -1 : weapon.getId();
 	}
 
 	private double meleePrayer()
