@@ -9,6 +9,7 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -26,10 +27,13 @@ import net.runelite.client.util.QuantityFormatter;
 
 class PvmPerformancePanel extends PluginPanel
 {
+	private static final String ALL_NPCS = "All NPCs";
+
 	private final PvmPerformancePlugin plugin;
 
 	private final JCheckBox bossOnly = new JCheckBox("Boss only");
 	private final JTextField search = new JTextField();
+	private final JComboBox<String> bossSelect = new JComboBox<>();
 	private final JLabel status = new JLabel(" ");
 	private final JPanel list = new JPanel();
 
@@ -97,6 +101,16 @@ class PvmPerformancePanel extends PluginPanel
 		fullWidth(header, search);
 		header.add(Box.createVerticalStrut(6));
 
+		bossSelect.addItem(ALL_NPCS);
+		for (String boss : plugin.getBossDisplayNames())
+		{
+			bossSelect.addItem(boss);
+		}
+		bossSelect.setToolTipText("Jump to a boss (shows its stats, or 'no data' if not fought)");
+		bossSelect.addActionListener(e -> refresh());
+		fullWidth(header, bossSelect);
+		header.add(Box.createVerticalStrut(6));
+
 		final JButton exportAll = new JButton("Export all");
 		exportAll.setToolTipText("Export every tracked fight to a CSV file");
 		exportAll.addActionListener(e -> plugin.exportAll(bossOnly.isSelected()));
@@ -150,6 +164,37 @@ class PvmPerformancePanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			list.removeAll();
+
+			// A specific boss picked in the selector focuses the panel on it.
+			final Object selected = bossSelect.getSelectedItem();
+			if (selected != null && !ALL_NPCS.equals(selected))
+			{
+				final String bossName = selected.toString();
+				NpcStats match = null;
+				for (NpcStats s : plugin.getNpcStats(false))
+				{
+					if (s.getName().equalsIgnoreCase(bossName))
+					{
+						match = s;
+						break;
+					}
+				}
+				if (match != null)
+				{
+					list.add(buildRow(match));
+				}
+				else
+				{
+					final JLabel none = new JLabel("<html>No data for <b>" + bossName + "</b> yet.</html>");
+					none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+					none.setBorder(new EmptyBorder(4, 2, 4, 2));
+					list.add(none);
+				}
+				list.revalidate();
+				list.repaint();
+				return;
+			}
+
 			final String query = search.getText().trim().toLowerCase();
 			int shown = 0;
 			for (NpcStats s : plugin.getNpcStats(bossOnly.isSelected()))

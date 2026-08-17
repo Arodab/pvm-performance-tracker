@@ -72,6 +72,7 @@ public class PvmPerformancePlugin extends Plugin
 	// that list but their names never match a combat NPC, so they're naturally
 	// excluded here and handled separately later.
 	private static final Set<String> BOSS_NAMES = buildBossNames();
+	private static final List<String> BOSS_DISPLAY_NAMES = buildBossDisplayNames();
 	private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 	private static final DateTimeFormatter ROW_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -431,6 +432,26 @@ public class PvmPerformancePlugin extends Plugin
 			}
 		}
 		return names;
+	}
+
+	private static List<String> buildBossDisplayNames()
+	{
+		final List<String> names = new ArrayList<>();
+		for (HiscoreSkill skill : HiscoreSkill.values())
+		{
+			if (skill.getType() == HiscoreSkillType.BOSS)
+			{
+				names.add(skill.getName());
+			}
+		}
+		Collections.sort(names);
+		return names;
+	}
+
+	/** All hiscore boss display names, sorted; used by the panel's boss selector. */
+	List<String> getBossDisplayNames()
+	{
+		return BOSS_DISPLAY_NAMES;
 	}
 
 	private static String normalizeName(String name)
