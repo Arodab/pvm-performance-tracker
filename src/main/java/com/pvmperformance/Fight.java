@@ -41,10 +41,11 @@ class Fight
 	// max hit is known, and are counted separately.
 	private int expectedTargetSamples;
 
-	// Ticks the weapon was off cooldown but no attack was made.
+	// Ticks the weapon was off cooldown but no attack was made, against the
+	// ticks elapsed since the first attack.
 	private int ticksLost;
-	private int firstAttackTick = -1;
-	private int lastAttackTick = -1;
+	private int combatTicks;
+	private boolean attacking;
 
 	Fight(String targetName, int targetId, int targetIndex, int maxHp, long now)
 	{
@@ -161,45 +162,47 @@ class Fight
 		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
 	}
 
-	/**
-	 * Records the tick an attack was made on, counting any ticks the weapon
-	 * spent off cooldown before it. A scythe swung on tick 1 could go again on
-	 * tick 6, so swinging on tick 7 instead loses one.
-	 *
-	 * <p>The first attack of a fight sets the baseline and can lose nothing,
-	 * since there is no earlier attack to be late relative to.
-	 */
-	void recordAttackTick(int tick, int weaponSpeedTicks)
+	/** Marks that an attack was made this tick, starting the count if it is the first. */
+	void recordAttackMade()
 	{
-		if (lastAttackTick < 0)
-		{
-			firstAttackTick = tick;
-		}
-		else if (weaponSpeedTicks > 0)
-		{
-			final int gap = tick - lastAttackTick;
-			if (gap > weaponSpeedTicks)
-			{
-				ticksLost += gap - weaponSpeedTicks;
-			}
-		}
-		lastAttackTick = tick;
+		attacking = true;
+		combatTicks++;
 	}
 
 	/**
-	 * Ticks lost as a share of the ticks between the first and last attack, so a
-	 * long fight and a short one can be compared. -1 until two attacks have been
-	 * made, before which no gap exists to judge.
+	 * Marks a tick that passed with the weapon off cooldown and no attack made.
+	 * Ignored before the first attack, since waiting to reach a boss isn't
+	 * wasted combat time.
+	 */
+	void recordTickLost()
+	{
+		if (attacking)
+		{
+			ticksLost++;
+			combatTicks++;
+		}
+	}
+
+	/** A tick that passed while the weapon was still on cooldown. */
+	void recordTickSpent()
+	{
+		if (attacking)
+		{
+			combatTicks++;
+		}
+	}
+
+	/**
+	 * Ticks lost as a share of those elapsed since the first attack, so a long
+	 * fight and a short one compare. -1 before the first attack.
 	 */
 	double ticksLostShare()
 	{
-		final int span = attackTickSpan();
-		return span <= 0 ? -1 : (double) ticksLost / span;
+		return combatTicks <= 0 ? -1 : (double) ticksLost / combatTicks;
 	}
 
-	/** Ticks between the first and last attack of this fight. */
-	int attackTickSpan()
+	int getCombatTicks()
 	{
-		return firstAttackTick < 0 ? 0 : lastAttackTick - firstAttackTick;
+		return combatTicks;
 	}
 }

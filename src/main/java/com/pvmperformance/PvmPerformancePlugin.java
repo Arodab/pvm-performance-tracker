@@ -121,6 +121,8 @@ public class PvmPerformancePlugin extends Plugin
 	// Which target the figures above were computed against, so an attack is only
 	// sampled with figures that were actually meant for it.
 	private int expectedForNpcId = -1;
+	// Ticks left before the weapon can attack again; 0 means it is ready.
+	private int attackCooldown;
 
 	// Running totals for the trip, shown instead of the current fight when the
 	// overlay is set to whole-trip mode.
@@ -198,13 +200,8 @@ public class PvmPerformancePlugin extends Plugin
 			session.recordAttempt(hitsplat.getAmount(), now);
 			sampleExpected(current);
 			// A landed hit resolves one of my pending attacks so it can't later
-			// be mistaken for another player's splash. When there was none, the
-			// attack had no projectile, so it was melee and landed on the tick it
-			// was made — which makes this the attack tick.
-			if (!consumePending(npc.getIndex()))
-			{
-				current.recordAttackTick(client.getTickCount(), combatCalc.attackSpeedTicks());
-			}
+			// be mistaken for another player's splash.
+			consumePending(npc.getIndex());
 		}
 		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
 		{
@@ -249,9 +246,6 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(npc, now);
 		}
 		pendingMineHits.merge(npc.getIndex(), 1, Integer::sum);
-		// A projectile is created on the tick the attack is made, well before it
-		// lands, so this is the attack tick for anything ranged or magic.
-		current.recordAttackTick(client.getTickCount(), combatCalc.attackSpeedTicks());
 	}
 
 	@Subscribe
@@ -320,9 +314,68 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Advances the attack cooldown by a tick and books the tick as an attack, as
+	 * wasted, or as still on cooldown.
+	 *
+	 * <p>Reading the animation rather than the landed hit is what makes this work
+	 * for every style: a melee hit lands on the tick it is thrown, but a ranged
+	 * or magic one lands however many ticks the projectile takes to fly, which
+	 * varies with distance and would invent tick loss that never happened. The
+	 * animation plays on the tick the attack is made, whatever the style, and
+	 * whether or not the attack goes on to hit.
+	 */
+	private void trackAttackCooldown()
+	{
+		if (current == null || current.isEnded())
+		{
+			attackCooldown = 0;
+			return;
+		}
+		if (attackCooldown > 0)
+		{
+			attackCooldown--;
+			current.recordTickSpent();
+			return;
+		}
+		// Off cooldown: either an attack goes out this tick, or it is wasted.
+		if (isAttackingTarget())
+		{
+			current.recordAttackMade();
+			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
+		}
+		else
+		{
+			current.recordTickLost();
+		}
+	}
+
+	/**
+	 * Whether the player is attacking the NPC this fight is about. Idle and
+	 * walking leave the animation at -1 because they are pose animations, so any
+	 * other animation while targeting the NPC is an attack, barring the things
+	 * on the blocklist such as eating or being hit.
+	 */
+	private boolean isAttackingTarget()
+	{
+		final Player me = client.getLocalPlayer();
+		if (me == null)
+		{
+			return false;
+		}
+		final Actor target = me.getInteracting();
+		if (!(target instanceof NPC) || ((NPC) target).getIndex() != current.getTargetIndex())
+		{
+			return false;
+		}
+		return AttackAnimations.couldBeAttack(me.getAnimation());
+	}
+
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
+		trackAttackCooldown();
+
 		// Drop projectiles that have landed so the set doesn't retain them.
 		countedProjectiles.removeIf(p -> p.getRemainingCycles() <= 0);
 
