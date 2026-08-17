@@ -40,6 +40,8 @@ enum SpecialAttack
 	DRAGON_HALBERD(ItemID.DRAGON_HALBERD, "Sweep", 1.1, 1.1),
 	CRYSTAL_HALBERD(ItemID.CRYSTAL_HALBERD, "Sweep", 1.1, 1.1),
 	VOIDWAKER(ItemID.VOIDWAKER, "Voidwaker", 1.5),
+	// Wrath of Amascut: doubles accuracy and adds 25% damage, raid only.
+	KERIS_CORRUPTION(ItemID.KERIS_PARTISAN_CORRUPTION, "Wrath of Amascut", 1.25),
 	BLESSED_SWORD(ItemID.BLESSED_SARADOMIN_SWORD, "Saradomin's Lightning", 1.25),
 	BLESSED_SWORD_DEGRADED(ItemID.BLESSED_SARADOMIN_SWORD_DEGRADED, "Saradomin's Lightning", 1.25),
 

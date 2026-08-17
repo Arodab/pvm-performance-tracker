@@ -95,6 +95,7 @@ class GearBonusCalc
 		total = total.combine(dragonHunterBonus(type, npc, gear));
 		total = total.combine(demonbaneBonus(type, npc, spell, gear));
 		total = total.combine(kerisBonus(type, npc, gear));
+		total = total.combine(fangBonus(type, gear));
 		total = total.combine(twistedBowBonus(type, npc, gear));
 		total = total.combine(tomeBonus(type, spell, gear));
 		total = total.combine(smokeStaffBonus(type, spell, gear));
@@ -352,12 +353,20 @@ class GearBonusCalc
 	}
 
 	/**
-	 * The keris family deals 33% more damage to kalphites, and has a 1/51 chance
-	 * of tripling that. The triple is reachable, so it counts towards the max
-	 * hit, but it only averages out to a few percent.
+	 * The keris family deals 33% more damage to kalphites and scabarites, with a
+	 * 1/51 chance of tripling it. The triple is reachable, so it counts towards
+	 * the max hit, but it only averages out to a few percent.
 	 *
-	 * <p>The wiki also names scabarites, but the monster data carries no tag for
-	 * them, so only kalphites are covered.
+	 * <p>The jewelled partisans from the Tombs of Amascut differ: breaching adds
+	 * 33% accuracy on top, and amascut trades the damage bonus down to 15% in
+	 * exchange for base stats. Corruption and the sun keep the base bonus and
+	 * add a special attack instead.
+	 *
+	 * <p>Scabarites need no separate check — the monster data tags the raid's
+	 * scarabs and Kephri as kalphites already.
+	 *
+	 * <p>Not modelled: the sun's raid-only passives, which key off the target
+	 * being below 25% health.
 	 */
 	private GearBonus kerisBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
@@ -365,12 +374,15 @@ class GearBonusCalc
 		{
 			return GearBonus.NONE;
 		}
-		if (!isKeris(gear.id(EquipmentInventorySlot.WEAPON)))
+		final int weapon = gear.id(EquipmentInventorySlot.WEAPON);
+		if (!isKeris(weapon))
 		{
 			return GearBonus.NONE;
 		}
-		final double base = 1.33;
-		return GearBonus.chance(1.0, base * 3.0, base * (1.0 + 2.0 / 51.0));
+		final double damage = weapon == ItemID.KERIS_PARTISAN_AMASCUT ? 1.15 : 1.33;
+		final double accuracy = weapon == ItemID.KERIS_PARTISAN_BREACH ? 1.33 : 1.0;
+		// The crit triples whatever the passive already boosted.
+		return GearBonus.split(accuracy, damage * 3.0, damage * (1.0 + 2.0 / 51.0));
 	}
 
 	private static boolean isKeris(int weapon)
@@ -384,6 +396,25 @@ class GearBonusCalc
 			|| weapon == ItemID.KERIS_PARTISAN_CORRUPTION
 			|| weapon == ItemID.KERIS_PARTISAN_SUN
 			|| weapon == ItemID.KERIS_PARTISAN_AMASCUT;
+	}
+
+	/**
+	 * Osmumten's fang rolls damage between 15% and 85% of the max hit instead of
+	 * from zero. That lowers the reachable max to 85% while leaving the average
+	 * exactly where an ordinary weapon's sits, at half the unmodified max.
+	 *
+	 * <p>Not modelled: the fang's second accuracy roll, which raises its hit
+	 * chance well above what the standard formula gives.
+	 */
+	private GearBonus fangBonus(AttackType type, Loadout gear)
+	{
+		if (!type.isMelee())
+		{
+			return GearBonus.NONE;
+		}
+		final int weapon = gear.id(EquipmentInventorySlot.WEAPON);
+		return weapon == ItemID.OSMUMTENS_FANG || weapon == ItemID.OSMUMTENS_FANG_ORNAMENT
+			? GearBonus.split(1.0, 0.85, 1.0) : GearBonus.NONE;
 	}
 
 	/**
@@ -423,6 +454,11 @@ class GearBonusCalc
 	 * <p>These are 10% against NPCs. The 50% and 20% the reference carries are
 	 * the against-players figures, which do not apply to anything this plugin
 	 * tracks. Fire is damage only; water boosts accuracy as well.
+	 *
+	 * <p>Not modelled: a tome of fire charged with searing pages raises the
+	 * minimum hit to 10% of the max, which lifts average damage. The tome keeps
+	 * the same item id whichever page it holds, so the charge type can't be told
+	 * apart from the equipped item.
 	 */
 	private GearBonus tomeBonus(AttackType type, Spell spell, Loadout gear)
 	{
@@ -575,7 +611,7 @@ class GearBonusCalc
 			&& startsWith(gear.name(EquipmentInventorySlot.BODY), "Ahrim's robetop")
 			&& startsWith(gear.name(EquipmentInventorySlot.LEGS), "Ahrim's robeskirt")
 			&& startsWith(gear.name(EquipmentInventorySlot.AMULET), "Amulet of the damned");
-		return set ? GearBonus.chance(1.0, 1.3, 1.0 + 0.25 * 0.3) : GearBonus.NONE;
+		return set ? GearBonus.split(1.0, 1.3, 1.0 + 0.25 * 0.3) : GearBonus.NONE;
 	}
 
 	/**
