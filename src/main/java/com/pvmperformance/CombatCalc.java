@@ -694,10 +694,15 @@ class CombatCalc
 	 */
 	private int magicMaxHit()
 	{
-		final int base = poweredStaffMaxHit();
-		if (base > 0)
+		final WeaponCategory category = weaponCategory();
+		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
 		{
-			return applyMagicDamage(base, null);
+			// These fire their own attack and never cast the autocast spell, so
+			// one that isn't recognised is unknown, not spell-shaped. Falling
+			// through here would report whatever spell happened to be left set
+			// to autocast, which is a wrong number rather than no number.
+			final int base = poweredStaffMaxHit();
+			return base <= 0 ? 0 : applyMagicDamage(base, null);
 		}
 		final Spell spell = autocastSpell();
 		return spell == null ? 0 : applyMagicDamage(spell.getBaseMaxHit(), spell);
@@ -741,33 +746,55 @@ class CombatCalc
 		return (int) Math.floor(baseMaxHit * (1.0 + percent / 100.0));
 	}
 
-	/** The staff's own attack, for powered staves, or 0 if this isn't one. */
+	/**
+	 * The staff's own attack, for powered staves, or 0 if this isn't one.
+	 *
+	 * <p>Matched by name because each staff has many ids — charged, uncharged,
+	 * enhanced and the ornament-kit recolours, which run to a dozen for the
+	 * tridents alone. Listing ids missed the ornamented ones entirely and the
+	 * staff then reported nothing at all.
+	 *
+	 * <p>The uncharged forms are excluded by name: they cannot attack, and the
+	 * name is the only thing that separates them.
+	 */
 	private int poweredStaffMaxHit()
 	{
-		final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
-		final int seas = Math.max(1, (magic - 75) / 3 + 20);
-		// gameval names these after the cache, so "TOTS" is trident of the seas
-		// and "_OR" / "DEADMAN_BLIGHTED_" are the cosmetic and Deadman variants.
-		switch (weaponItemId())
+		final String name = weaponName();
+		if (name == null || name.toLowerCase().contains("uncharged"))
 		{
-			case ItemID.TOTS:
-			case ItemID.TOTS_CHARGED:
-			case ItemID.TOTS_I_CHARGED:
-				return seas;
-			case ItemID.TOXIC_TOTS_CHARGED:
-			case ItemID.TOXIC_TOTS_I_CHARGED:
-				return seas + 3;
-			case ItemID.SANGUINESTI_STAFF:
-			case ItemID.SANGUINESTI_STAFF_OR:
-				return seas + 4;
-			case ItemID.TUMEKENS_SHADOW:
-			case ItemID.DEADMAN_BLIGHTED_TUMEKENS_SHADOW:
-				return seas + 6;
-			case ItemID.WARPED_SCEPTRE:
-				return Math.max(1, (8 * magic + 96) / 37);
-			default:
-				return 0;
+			return 0;
 		}
+		final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
+		// Trident of the seas is floor(magic / 3) - 5; the rest are offsets of it.
+		final int seas = magic / 3 - 5;
+		if (name.startsWith("Trident of the seas"))
+		{
+			return Math.max(1, seas);
+		}
+		if (name.startsWith("Trident of the swamp"))
+		{
+			return Math.max(1, seas + 3);
+		}
+		if (name.endsWith("Sanguinesti staff"))
+		{
+			return Math.max(1, seas + 4);
+		}
+		if (name.startsWith("Tumeken's shadow"))
+		{
+			return Math.max(1, magic / 3 + 1);
+		}
+		if (name.startsWith("Warped sceptre"))
+		{
+			return Math.max(1, (8 * magic + 96) / 37);
+		}
+		return 0;
+	}
+
+	/** The equipped weapon's name, or null when unarmed. */
+	private String weaponName()
+	{
+		final int weapon = weaponItemId();
+		return weapon < 0 ? null : itemManager.getItemComposition(weapon).getName();
 	}
 
 	/** The equipped weapon's item id, or -1 when unarmed. */
