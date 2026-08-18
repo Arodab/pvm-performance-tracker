@@ -42,6 +42,7 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.MenuOptionClicked;
@@ -176,6 +177,10 @@ public class PvmPerformancePlugin extends Plugin
 	// so no scan is needed to know whether the target can be fought at all.
 	private int targetLiveId = -1;
 	private NPC targetNpc;
+
+	// Which special Olm is running. Reset when the raid is, since it means
+	// nothing outside one.
+	private OlmPhase olmPhase;
 
 	// The fight currently in progress, or null between fights.
 	private Fight current;
@@ -399,6 +404,29 @@ public class PvmPerformancePlugin extends Plugin
 			&& current.getTargetIndex() == ((NPC) target).getIndex();
 	}
 
+	/**
+	 * Watches for what Olm's phase is made of. Each special leaves something of
+	 * its own in the scene, and his head spawning is what starts a phase — the
+	 * same signal the CoX Additions plugin counts phases by, which is all that
+	 * plugin does here: it does not identify the specials.
+	 */
+	@Subscribe
+	public void onGameObjectSpawned(GameObjectSpawned event)
+	{
+		final int id = event.getGameObject().getId();
+		if (OlmPhase.isHeadObject(id))
+		{
+			// A new phase begins with nothing known about it yet.
+			olmPhase = null;
+			return;
+		}
+		final OlmPhase phase = OlmPhase.forObject(id);
+		if (phase != null)
+		{
+			olmPhase = phase;
+		}
+	}
+
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
@@ -469,6 +497,12 @@ public class PvmPerformancePlugin extends Plugin
 	public void onNpcSpawned(NpcSpawned event)
 	{
 		final NPC npc = event.getNpc();
+		final OlmPhase phase = OlmPhase.forNpc(npc.getId());
+		if (phase != null)
+		{
+			// The flame wall is an NPC rather than an object, so it arrives here.
+			olmPhase = phase;
+		}
 		if (npc.getId() != respawnWatchNpcId)
 		{
 			return;
@@ -748,6 +782,7 @@ public class PvmPerformancePlugin extends Plugin
 		targetLiveId = npc.getId();
 		targetNpc = npc;
 		combatCalc.setTargetIndex(npc.getIndex());
+		labelOlmPhase(current);
 		openEncounterFor(current, now);
 		if (npc.getIndex() == respawnNpcIndex)
 		{
@@ -840,10 +875,26 @@ public class PvmPerformancePlugin extends Plugin
 			currentEncounter = null;
 		}
 		raidType = now_;
+		olmPhase = null;
 		if (raidType != null)
 		{
 			currentRaid = new Raid(raidType, ++raidCounter, now);
 		}
+	}
+
+	/**
+	 * Names an Olm fight by the special its phase is running, so the three can be
+	 * compared against each other. A phase whose special has not shown itself yet
+	 * keeps the plain name rather than being filed under a guess.
+	 */
+	private void labelOlmPhase(Fight fight)
+	{
+		if (olmPhase == null || fight.getGroupName() == null
+			|| !fight.getGroupName().startsWith("Great Olm"))
+		{
+			return;
+		}
+		fight.setEncounterLabel(fight.getGroupName() + " · " + olmPhase.getLabel());
 	}
 
 	private void finalizeFight(boolean died, long now)

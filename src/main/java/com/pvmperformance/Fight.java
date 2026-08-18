@@ -17,6 +17,10 @@ class Fight
 	private final String targetName;
 	// The room or boss this fight is a part of, or null if it stands alone.
 	private final String groupName;
+	// Overrides the group name where the room alone is too coarse to compare
+	// against itself — Olm's phases, which differ by which special is running.
+	// Null unless set, which is also how an older history file reads.
+	private String encounterLabel;
 	// Stored the wrong way round on purpose. Deserialisation fills fields
 	// without running their initialisers, so a fight read back from a history
 	// file written before this existed gets false — which has to mean the
@@ -145,7 +149,16 @@ class Fight
 	/** The room or boss this belongs to, falling back to the target's own name. */
 	String encounterName()
 	{
+		if (encounterLabel != null)
+		{
+			return encounterLabel;
+		}
 		return groupName == null ? getTargetName() : groupName;
+	}
+
+	void setEncounterLabel(String label)
+	{
+		this.encounterLabel = label;
 	}
 
 	void recordDamageDealt(int amount, long now)
