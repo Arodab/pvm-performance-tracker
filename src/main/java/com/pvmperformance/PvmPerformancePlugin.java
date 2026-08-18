@@ -93,9 +93,10 @@ public class PvmPerformancePlugin extends Plugin
 	// loss is measured from the attacks themselves and is unaffected.
 	private static final Set<Integer> CONSUME_ANIMATIONS = Collections.unmodifiableSet(new HashSet<>(
 		Arrays.asList(AnimationID.HUMAN_EAT, AnimationID.HUMAN_KILLERWATT_ELECTRICSHOCK)));
-	// An eat pauses the attack for three ticks while showing its animation for
-	// one. Combo eating a karambwan alongside another food costs the same three.
-	private static final int EAT_TICKS = 3;
+	// The longest an eat can hold the attack back. A food alone is three ticks;
+	// a combo eat stacks its delays, so a shark chased with a karambwan is
+	// three plus two. The window closes early anyway, on the next attack.
+	private static final int EAT_TICKS = 5;
 	private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 	/** The column names, kept beside the row builders so the two cannot drift. */
 	static final String CSV_HEADER =
@@ -640,6 +641,8 @@ public class PvmPerformancePlugin extends Plugin
 			final boolean boosted = combatCalc.isBoosted();
 			final double actualSetup = combatCalc.actualAverageHit(targetId, prayed);
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
+			// The pause an eat caused is over the moment an attack goes out.
+			lastConsumeTick = 0;
 			current.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
 			if (current.isScored())
 			{
@@ -692,9 +695,13 @@ public class PvmPerformancePlugin extends Plugin
 	 * is eaten with another food on the same tick, one animation for a three
 	 * tick pause, and two thirds of it was landing in the wrong column.
 	 *
-	 * <p>The window is generous rather than exact, since foods differ. It can
-	 * only mislabel a tick that was already lost, never add one — an attack made
-	 * inside the window is an attack, and is never offered here.
+	 * <p>The window is the longest an eat can hold an attack back, and it is
+	 * closed by the next attack rather than run to its end — so it measures the
+	 * pause itself in the ordinary case, where the player attacks as soon as
+	 * they can, which is the thing this whole figure is about. Only a player who
+	 * eats and then idles on purpose has those idle ticks read as eating, and
+	 * even then it can only mislabel a tick that was already lost: an attack is
+	 * never offered here at all.
 	 */
 	private boolean isConsuming()
 	{
