@@ -353,6 +353,51 @@ class CombatCalc
 		return Math.max(0, maxHp * ratio / scale);
 	}
 
+	/**
+	 * The target's defence level as the raid it stands in leaves it.
+	 *
+	 * <p>Tombs of Amascut raises every NPC's stats with the raid level, so the
+	 * flat figures the monster data carries are its raid level 0 stats and
+	 * describe nothing anyone actually fights. Left unscaled the expected
+	 * accuracy is too high, and wrong in the flattering direction: the harder
+	 * the invocations, the better the player would look.
+	 */
+	private int defenceLevel(MonsterStatsProvider.MonsterStats npc)
+	{
+		return raidScaled(npc.getDefenceLevel());
+	}
+
+	/** The target's magic level, scaled the same way. Magic rolls against it. */
+	private int magicLevel(MonsterStatsProvider.MonsterStats npc)
+	{
+		return raidScaled(npc.getMagicLevel());
+	}
+
+	/**
+	 * Applies the Tombs of Amascut raid level to a monster stat: every five raid
+	 * levels add 2%, additively, so raid level 300 is +120% and 500 is +200%.
+	 *
+	 * <p>The wiki gives this for hitpoints, defence, accuracy and damage. Magic
+	 * level is scaled here because it is the accuracy stat of a magic attacker,
+	 * and the same number is what magic defends with — it cannot rise for one
+	 * and not the other. Defence bonuses are not scaled: they are the monster's
+	 * armour rather than a level, and the wiki lists them apart from what
+	 * scales.
+	 *
+	 * <p>Only Tombs of Amascut for now. Chambers of Xeric scales too, by party
+	 * size and by the player's own levels, and is not modelled yet.
+	 */
+	private int raidScaled(int level)
+	{
+		// Reads in the lobby as well, where nothing is fought.
+		final int raidLevel = client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL);
+		if (raidLevel <= 0)
+		{
+			return level;
+		}
+		return level * (100 + 2 * (raidLevel / 5)) / 100;
+	}
+
 	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
 	{
 		final int effAtk = (int) Math.floor(boostedLevel(Skill.ATTACK) * meleeAccuracyPrayer())
@@ -360,7 +405,7 @@ class CombatCalc
 		final int attRoll = (int) (effAtk * (attackBonus(type) + 64) * gear);
 		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
 			: type == AttackType.SLASH ? npc.getDefSlash() : npc.getDefCrush();
-		final int defRoll = (npc.getDefenceLevel() + 9) * (defBonus + 64);
+		final int defRoll = (defenceLevel(npc) + 9) * (defBonus + 64);
 		return meleeHitChanceFrom(attRoll, defRoll);
 	}
 
@@ -374,7 +419,7 @@ class CombatCalc
 		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
 		final int attRoll = (int) (effMagic * (attackBonus(AttackType.MAGIC) + 64) * gear);
-		final int defRoll = (npc.getMagicLevel() + 9) * (npc.getDefMagic() + 64);
+		final int defRoll = (magicLevel(npc) + 9) * (npc.getDefMagic() + 64);
 		if (!hasConflictionGauntlets())
 		{
 			return hitChanceFrom(attRoll, defRoll);
@@ -423,7 +468,7 @@ class CombatCalc
 		final int effRanged = (int) Math.floor(boostedLevel(Skill.RANGED) * rangedAccuracyPrayer())
 			+ style.attackLevelBonus() + 8;
 		final int attRoll = (int) (effRanged * (attackBonus(AttackType.RANGED) + 64) * gear);
-		final int defRoll = (npc.getDefenceLevel() + 9) * (npc.getDefRanged() + 64);
+		final int defRoll = (defenceLevel(npc) + 9) * (npc.getDefRanged() + 64);
 		return hitChanceFrom(attRoll, defRoll);
 	}
 
@@ -1101,7 +1146,9 @@ class CombatCalc
 		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
 		lines.add(npc == null
 			? "Target: none, or no stats for it"
-			: String.format("Target: %s, defence %d", npc.getName(), npc.getDefenceLevel()));
+			: String.format("Target: %s, defence %d (base %d), magic %d, toa raid level %d",
+				npc.getName(), defenceLevel(npc), npc.getDefenceLevel(), magicLevel(npc),
+				client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL)));
 
 		final double accuracy = hitChance(npcId);
 		lines.add(accuracy < 0
