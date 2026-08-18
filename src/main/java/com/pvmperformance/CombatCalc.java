@@ -4,6 +4,8 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.EnumComposition;
+import net.runelite.api.StructComposition;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.EquipmentInventorySlot;
@@ -60,6 +62,9 @@ class CombatCalc
 	private static final int MANUAL_CAST_TICKS = 8;
 	private Spell manualCastSpell;
 	private int manualCastTick = Integer.MIN_VALUE;
+	// Enum mapping a weapon category to its list of combat option structs, as
+	// read by RuneLite's own attack styles plugin. No gameval constant exists.
+	private static final int WEAPON_CATEGORY_STYLES_ENUM = 3908;
 	// Last loadout written to the debug log, so it is written only on a change.
 	private int loggedWeapon = Integer.MIN_VALUE;
 	private int loggedCategory = Integer.MIN_VALUE;
@@ -445,6 +450,14 @@ class CombatCalc
 	private AttackStyle attackStyle()
 	{
 		final int varp = client.getVarpValue(VarPlayerID.COM_MODE);
+		// A staff recognised by name attacks with magic, whatever the category
+		// table claims. The table's ids have gone stale against the live game,
+		// and trusting it sent tridents down the melee path entirely.
+		if (poweredStaffMaxHit() > 0)
+		{
+			return new AttackStyle(varp, "Powered staff", AttackType.MAGIC,
+				varp == 3 ? CombatStyle.LONGRANGE : CombatStyle.ACCURATE);
+		}
 		final WeaponCategory category = weaponCategory();
 		if (category != null)
 		{
@@ -875,11 +888,67 @@ class CombatCalc
 		loggedWeapon = weapon;
 		loggedCategory = categoryVarbit;
 		final AttackStyle style = attackStyle();
+		logStyleStructs(categoryVarbit);
 		log.debug("PvM Performance loadout: weapon={} name='{}' categoryVarbit={} mappedCategory={} "
 				+ "comMode={} type={} style={} poweredStaffHit={} autocast={} baseMaxHit={}",
 			weapon, weaponName(), categoryVarbit, WeaponCategory.forVarbit(categoryVarbit),
 			client.getVarpValue(VarPlayerID.COM_MODE), style.getAttackType(), style.getCombatStyle(),
 			poweredStaffMaxHit(), autocastSpell(), baseMaxHit());
+	}
+
+	/**
+	 * Dumps the game's own description of this weapon category's combat options.
+	 * Temporary: it is here to rebuild the category table against the live cache
+	 * rather than against a source that has drifted, and comes out once per
+	 * category change.
+	 *
+	 * <p>Enum 3908 maps a weapon category to an enum of structs, one per combat
+	 * option. RuneLite's own attack styles plugin reads the combat style from
+	 * param 1407; the surrounding params are probed to find which one carries
+	 * the attack type.
+	 */
+	private void logStyleStructs(int categoryVarbit)
+	{
+		final EnumComposition categories = client.getEnum(WEAPON_CATEGORY_STYLES_ENUM);
+		if (categories == null)
+		{
+			return;
+		}
+		final int styleEnumId = categories.getIntValue(categoryVarbit);
+		if (styleEnumId == -1)
+		{
+			log.debug("PvM Performance styles: category {} has no style enum", categoryVarbit);
+			return;
+		}
+		final EnumComposition styles = client.getEnum(styleEnumId);
+		if (styles == null)
+		{
+			return;
+		}
+		for (int structId : styles.getIntVals())
+		{
+			final StructComposition struct = client.getStructComposition(structId);
+			if (struct == null)
+			{
+				continue;
+			}
+			final StringBuilder params = new StringBuilder();
+			for (int param = 1395; param <= 1425; param++)
+			{
+				final String text = struct.getStringValue(param);
+				if (text != null && !text.isEmpty())
+				{
+					params.append(' ').append(param).append("='").append(text).append("'");
+					continue;
+				}
+				final int value = struct.getIntValue(param);
+				if (value != 0)
+				{
+					params.append(' ').append(param).append('=').append(value);
+				}
+			}
+			log.debug("PvM Performance styles: category={} struct={}{}", categoryVarbit, structId, params);
+		}
 	}
 
 	/** The equipped weapon's name, or null when unarmed. */
