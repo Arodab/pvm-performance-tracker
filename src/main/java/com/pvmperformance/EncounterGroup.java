@@ -84,6 +84,17 @@ final class EncounterGroup
 	 * one id whether he is walking or down, so his walking phase can only be
 	 * told from his animation.
 	 *
+	 * <p>Sotetseg is deliberately not here, though his name invites it.
+	 * {@code TOB_SOTETSEG_NONCOMBAT} is the id the monster data gives his full
+	 * stats to — level 995, 4000 hitpoints — while {@code _COMBAT} has none, so
+	 * "noncombat" may well be the form he is fought in, with the other used
+	 * elsewhere. It may equally be his idle form before the fight: the wiki's
+	 * Verzik phase 1 is {@code VERZIK_INITIAL} rather than
+	 * {@code VERZIK_PHASE1}, so its ids do lean towards spawn forms. Listing him
+	 * on the first reading would silently zero the tick loss for his whole room,
+	 * where leaving him off only over-counts the maze, so he stays off until
+	 * {@code ::loadout} says which id he wears while being hit.
+	 *
 	 * <p>Akkha's memory blast is covered, though on an unconfirmed guess at
 	 * which id he wears while away; {@code ::loadout} prints the target's live
 	 * id, which is what would settle it. His other immunity, channelled from
@@ -214,9 +225,6 @@ final class EncounterGroup
 	private static Set<Integer> buildUnattackable()
 	{
 		return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-			// Sotetseg names his own state: he wears a separate id for the maze.
-			NpcID.TOB_SOTETSEG_NONCOMBAT, NpcID.TOB_SOTETSEG_NONCOMBAT_STORY,
-			NpcID.TOB_SOTETSEG_NONCOMBAT_HARD,
 			// Verzik between phases.
 			NpcID.VERZIK_PHASE1_TO2_TRANSITION, NpcID.VERZIK_PHASE2_TO3_TRANSITION,
 			NpcID.VERZIK_PHASE1_TO2_TRANSITION_STORY, NpcID.VERZIK_PHASE2_TO3_TRANSITION_STORY,
