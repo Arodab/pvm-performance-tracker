@@ -82,7 +82,7 @@ class PvmPerformanceOverlay extends OverlayPanel
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
 				.left("Accuracy")
-				.right(String.format("%.0f%%", expAcc * 100))
+				.right(String.format("%.1f%%", expAcc * 100))
 				.build());
 		}
 

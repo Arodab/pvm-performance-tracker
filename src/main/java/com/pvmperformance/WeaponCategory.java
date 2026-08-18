@@ -14,20 +14,19 @@ import lombok.RequiredArgsConstructor;
  * varplayer this identifies exactly which combat option the player has
  * selected, rather than guessing it from the weapon's bonuses.
  *
+ * <p>The name is the reliable key, not the id. Reading the live game showed the
+ * ids have been renumbered since this table's source: powered staff reported 24
+ * where the table said 23, and Dinh's bulwark 28 where it said 27, while
+ * everything below them still matched. Both observed shifts were by one, so the
+ * ids from powered staff upward are set accordingly — an inference from two
+ * points, where the names are read from the game itself.
+ *
  * <p>Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, which
- * in turn follows the wiki's Module:CombatStyles. Three entries were corrected
- * against the table in RuneLite's own attack styles plugin (BSD-2), which is
- * derived from the game cache:
- *
- * <ul>
- *   <li>{@link #POLESTAFF} is category 13, not 18 — 18 is {@link #STAFF}, and
- *       the two collided.</li>
- *   <li>{@link #BANNER}'s third option is controlled, not aggressive.</li>
- *   <li>{@link #PARTISAN}'s options had placeholder varp values and styles.</li>
- * </ul>
- *
- * <p>Categories the game has but this table does not (8, 22, 25, 28, 30, ...)
- * are handled by the fallback in {@link CombatCalc}.
+ * in turn follows the wiki's Module:CombatStyles, with entries corrected against
+ * the table in RuneLite's own attack styles plugin (BSD-2): {@link #POLESTAFF}
+ * is 13 rather than 18, which collided with {@link #STAFF}; {@link #BANNER}'s
+ * third option is controlled; and {@link #PARTISAN}'s options had placeholder
+ * values.
  */
 @RequiredArgsConstructor
 enum WeaponCategory
@@ -150,26 +149,26 @@ enum WeaponCategory
 		new AttackStyle(4, "Spell", AttackType.MAGIC, CombatStyle.AUTOCAST),
 		new AttackStyle(5, "Spell (defensive)", AttackType.MAGIC, CombatStyle.AUTOCAST)
 	)),
-	POWERED_STAFF(23, "Powered Staff", Arrays.asList(
+	POWERED_STAFF(24, "Powered Staff", Arrays.asList(
 		new AttackStyle(0, "Accurate", AttackType.MAGIC, CombatStyle.ACCURATE),
 		new AttackStyle(1, "Accurate", AttackType.MAGIC, CombatStyle.ACCURATE),
 		new AttackStyle(3, "Longrange", AttackType.MAGIC, CombatStyle.LONGRANGE)
 	)),
-	BANNER(24, "Banner", Arrays.asList(
+	BANNER(25, "Banner", Arrays.asList(
 		new AttackStyle(0, "Lunge", AttackType.STAB, CombatStyle.ACCURATE),
 		new AttackStyle(1, "Swipe", AttackType.SLASH, CombatStyle.AGGRESSIVE),
 		new AttackStyle(2, "Pound", AttackType.CRUSH, CombatStyle.CONTROLLED),
 		new AttackStyle(3, "Block", AttackType.STAB, CombatStyle.DEFENSIVE)
 	)),
-	BLUDGEON(26, "Bludgeon", Arrays.asList(
+	BLUDGEON(27, "Bludgeon", Arrays.asList(
 		new AttackStyle(0, "Pound", AttackType.CRUSH, CombatStyle.AGGRESSIVE),
 		new AttackStyle(1, "Pummel", AttackType.CRUSH, CombatStyle.AGGRESSIVE),
 		new AttackStyle(2, "Smash", AttackType.CRUSH, CombatStyle.AGGRESSIVE)
 	)),
-	BULWARK(27, "Bulwark", Collections.singletonList(
+	BULWARK(28, "Bulwark", Collections.singletonList(
 		new AttackStyle(0, "Pummel", AttackType.CRUSH, CombatStyle.ACCURATE)
 	)),
-	PARTISAN(29, "Partisan", Arrays.asList(
+	PARTISAN(30, "Partisan", Arrays.asList(
 		new AttackStyle(0, "Stab", AttackType.STAB, CombatStyle.ACCURATE),
 		new AttackStyle(1, "Lunge", AttackType.STAB, CombatStyle.AGGRESSIVE),
 		new AttackStyle(2, "Pound", AttackType.CRUSH, CombatStyle.AGGRESSIVE),

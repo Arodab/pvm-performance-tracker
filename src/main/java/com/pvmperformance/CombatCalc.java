@@ -945,7 +945,7 @@ class CombatCalc
 		final double accuracy = hitChance(npcId);
 		lines.add(accuracy < 0
 			? String.format("Max hit %d, no accuracy without target stats", maxHit(npcId))
-			: String.format("Max hit %d, accuracy %.0f%%, avg hit %.2f",
+			: String.format("Max hit %d, accuracy %.1f%%, avg hit %.2f",
 				maxHit(npcId), accuracy * 100, averageHit(npcId)));
 
 		final int spec = specialAttackMaxHit(npcId);
