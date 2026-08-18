@@ -65,6 +65,8 @@ class CombatCalc
 	private static final int MANUAL_CAST_TICKS = 8;
 	private Spell manualCastSpell;
 	private int manualCastTick = Integer.MIN_VALUE;
+	private BlowpipeDart cachedDart;
+	private ItemEquipmentStats cachedDartStats;
 
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
@@ -415,11 +417,24 @@ class CombatCalc
 			: WeaponCategory.forVarbit(client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY));
 	}
 
-	/** The category heading on the combat tab, e.g. "Category: Whip". */
+	/**
+	 * The category heading on the combat tab, e.g. "Category: Whip", or null
+	 * when it isn't showing one.
+	 *
+	 * <p>The text is null-checked as well as the widget. An interface can exist
+	 * before its text is set, and Text.removeTags hands its argument straight to
+	 * a matcher, so a null there throws — out of a method reached several times a
+	 * tick from the tick handler, which would take the handler down with it every
+	 * tick and stop the plugin tracking anything at all.
+	 */
 	private String combatTabCategory()
 	{
 		final Widget widget = client.getWidget(InterfaceID.CombatInterface.CATEGORY);
-		return widget == null ? null : Text.removeTags(widget.getText());
+		if (widget == null || widget.getText() == null)
+		{
+			return null;
+		}
+		return Text.removeTags(widget.getText());
 	}
 
 	/** The spell currently set to autocast, or null if none is. */
@@ -548,12 +563,19 @@ class CombatCalc
 			return null;
 		}
 		final BlowpipeDart dart = config.blowpipeDart();
-		if (dart == BlowpipeDart.NONE)
+		if (dart == null || dart == BlowpipeDart.NONE)
 		{
 			return null;
 		}
-		final ItemStats stats = itemManager.getItemStats(dart.getItemId());
-		return stats == null ? null : stats.getEquipment();
+		// Held onto rather than looked up again: this is reached several times a
+		// tick, and the answer only changes when the setting does.
+		if (dart != cachedDart)
+		{
+			final ItemStats stats = itemManager.getItemStats(dart.getItemId());
+			cachedDartStats = stats == null ? null : stats.getEquipment();
+			cachedDart = dart;
+		}
+		return cachedDartStats;
 	}
 
 	/** Sum of the worn gear's attack bonus for the type being rolled. */

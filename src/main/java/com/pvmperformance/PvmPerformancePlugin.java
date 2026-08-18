@@ -268,7 +268,7 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final Widget selected = client.getSelectedWidget();
-		if (selected == null)
+		if (selected == null || selected.getName() == null)
 		{
 			return;
 		}
