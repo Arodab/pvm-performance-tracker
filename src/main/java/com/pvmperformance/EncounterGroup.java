@@ -169,6 +169,14 @@ final class EncounterGroup
 			NpcID.NIGHTMARE_CHALLENGE_PARASITE, NpcID.NIGHTMARE_CHALLENGE_PARASITE_WEAK,
 			NpcID.NIGHTMARE_CHALLENGE_SLEEPWALKER);
 
+		// The Nightmare, whose totems these also are. Her own forms are grouped
+		// so her phases do not split the room.
+		put(groups, "The Nightmare",
+			NpcID.NIGHTMARE_INITIAL, NpcID.NIGHTMARE_BLAST,
+			NpcID.NIGHTMARE_PHASE_01, NpcID.NIGHTMARE_PHASE_02, NpcID.NIGHTMARE_PHASE_03,
+			NpcID.NIGHTMARE_WEAK_PHASE_01, NpcID.NIGHTMARE_WEAK_PHASE_02,
+			NpcID.NIGHTMARE_WEAK_PHASE_03);
+
 		put(groups, "Yama", NpcID.YAMA, NpcID.YAMA_JUDGE_OF_YAMA, NpcID.LEAGUE6_JUDGE_OF_YAMA);
 
 		put(groups, "Zebak", NpcID.TOA_ZEBAK, NpcID.TOA_ZEBAK_ENRAGED);
@@ -287,6 +295,40 @@ final class EncounterGroup
 	{
 		return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
 			NpcID.TOA_ZEBAK_JUG, NpcID.TOA_ZEBAK_JUG_ROLLING)));
+	}
+
+	/**
+	 * Whether this is one of the totems, which both Nightmares share the ids of.
+	 * Which fight a totem belongs to is decided by the boss standing in the room
+	 * rather than by anything in the totem itself.
+	 */
+	static boolean isNightmareTotem(int npcId)
+	{
+		switch (npcId)
+		{
+			case NpcID.NIGHTMARE_TOTEM_1_READY:
+			case NpcID.NIGHTMARE_TOTEM_2_READY:
+			case NpcID.NIGHTMARE_TOTEM_3_READY:
+			case NpcID.NIGHTMARE_TOTEM_4_READY:
+			case NpcID.NIGHTMARE_TOTEM_1_CHARGED:
+			case NpcID.NIGHTMARE_TOTEM_2_CHARGED:
+			case NpcID.NIGHTMARE_TOTEM_3_CHARGED:
+			case NpcID.NIGHTMARE_TOTEM_4_CHARGED:
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	/** Which Nightmare this NPC is a form of, or null if it is not one. */
+	static String nightmareBossName(int npcId)
+	{
+		if (isNightmareTotem(npcId))
+		{
+			return null;
+		}
+		final String group = GROUPS.get(npcId);
+		return "The Nightmare".equals(group) || "Phosani's Nightmare".equals(group) ? group : null;
 	}
 
 	private static Set<Integer> buildUnscored()

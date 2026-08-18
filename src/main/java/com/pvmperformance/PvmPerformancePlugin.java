@@ -183,6 +183,10 @@ public class PvmPerformancePlugin extends Plugin
 	private int targetLiveId = -1;
 	private NPC targetNpc;
 
+	// Which Nightmare was last seen, so her totems can be told apart. Both
+	// fights use the same totem ids and nothing in a totem says whose it is.
+	private String nightmareBoss;
+
 	// Which special Olm is running. Reset when the raid is, since it means
 	// nothing outside one.
 	private OlmPhase olmPhase;
@@ -241,6 +245,7 @@ public class PvmPerformancePlugin extends Plugin
 		pendingMineHits.clear();
 		drain.clear();
 		partyHitpoints.clear();
+		nightmareBoss = null;
 		targetNpc = null;
 		respawnWatchNpcId = -1;
 		respawnNpcIndex = -1;
@@ -794,6 +799,7 @@ public class PvmPerformancePlugin extends Plugin
 			countedProjectiles.clear();
 			pendingMineHits.clear();
 			drain.clear();
+			nightmareBoss = null;
 			targetNpc = null;
 			respawnWatchNpcId = -1;
 			respawnNpcIndex = -1;
@@ -814,6 +820,7 @@ public class PvmPerformancePlugin extends Plugin
 		targetNpc = npc;
 		combatCalc.setTargetIndex(npc.getIndex());
 		labelOlmPhase(current);
+		labelNightmareTotem(current, npc.getId());
 		openEncounterFor(current, now);
 		if (npc.getIndex() == respawnNpcIndex)
 		{
@@ -929,6 +936,25 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		fight.setEncounterLabel(fight.getGroupName() + " · " + olmPhase.getLabel());
+	}
+
+	/**
+	 * Files a totem under whichever Nightmare is being fought. The two share
+	 * their totem ids, so the boss in the room is the only thing that tells them
+	 * apart — and it is always met before its totems are.
+	 */
+	private void labelNightmareTotem(Fight fight, int npcId)
+	{
+		final String boss = EncounterGroup.nightmareBossName(npcId);
+		if (boss != null)
+		{
+			nightmareBoss = boss;
+			return;
+		}
+		if (nightmareBoss != null && EncounterGroup.isNightmareTotem(npcId))
+		{
+			fight.setEncounterLabel(nightmareBoss);
+		}
 	}
 
 	private void finalizeFight(boolean died, long now)
