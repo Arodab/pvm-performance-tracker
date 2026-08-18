@@ -131,7 +131,7 @@ class DefenceDrain
 			return;
 		}
 		// The scaled figure, since that is the defence the drain is a share of.
-		final int base = RaidScaling.defence(client, stats.getDefenceLevel());
+		final int base = RaidScaling.defence(client, stats.getDefenceLevel(), stats.getName());
 		final int already = drainedFrom(npc.getIndex());
 		final int remaining = base - already;
 		if (remaining <= 0)

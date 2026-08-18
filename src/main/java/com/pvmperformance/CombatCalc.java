@@ -373,7 +373,7 @@ class CombatCalc
 		// What the target has left, not what it started with. Warhammers and
 		// godswords take real levels off it, and a model that keeps reading the
 		// book figure reports the player as less accurate than they were.
-		return Math.max(0, raidScaled(npc.getDefenceLevel()) - drain.drainedFrom(targetIndex));
+		return Math.max(0, raidScaled(npc) - drain.drainedFrom(targetIndex));
 	}
 
 	/** The NPC the expected figures are being asked about, for the drain lookup. */
@@ -401,9 +401,9 @@ class CombatCalc
 	 * <p>Only Tombs of Amascut for now. Chambers of Xeric scales too, by party
 	 * size and by the player's own levels, and is not modelled yet.
 	 */
-	private int raidScaled(int level)
+	private int raidScaled(MonsterStatsProvider.MonsterStats npc)
 	{
-		return RaidScaling.defence(client, level);
+		return RaidScaling.defence(client, npc.getDefenceLevel(), npc.getName());
 	}
 
 	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
@@ -434,8 +434,8 @@ class CombatCalc
 		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
 		final int attRoll = (int) (effMagic * (attackBonus(AttackType.MAGIC) + 64) * gear);
-		// Magic level is not raid scaled; see raidScaled.
-		final int defRoll = (npc.getMagicLevel() + 9) * (npc.getDefMagic() + 64);
+		final int magic = RaidScaling.magic(client, npc.getMagicLevel(), npc.getName());
+		final int defRoll = (magic + 9) * (npc.getDefMagic() + 64);
 		if (!hasConflictionGauntlets())
 		{
 			return hitChanceFrom(attRoll, defRoll);
