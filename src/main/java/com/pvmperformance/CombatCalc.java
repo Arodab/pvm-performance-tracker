@@ -1111,13 +1111,22 @@ class CombatCalc
 	 * style rolls on — attack as well as strength for melee, so the accuracy a
 	 * dose buys is counted and not just the damage.
 	 *
-	 * <p>Inside a raid this is the raid's own dose, which renews itself. Outside
-	 * it is the divine variant of the ordinary potion, which boosts by the same
-	 * amount as the plain one but holds it, so the figure is what a player who
-	 * kept themselves dosed would have.
+	 * <p>The standard is the ordinary divine dose for the style, raised to the
+	 * Chambers overload or to smelling salts when either belongs where the fight
+	 * is or is detected active. Salts taken outside the Tombs count for the same
+	 * reason: without that the standard would sit below what the player is
+	 * holding and the figure would read above 100%.
+	 *
+	 * <p>It is only ever raised by what is detected, never lowered. Lowering it
+	 * would let a player who took nothing at all read as perfectly dosed.
 	 */
 	private int maxBoost(Skill skill, int base)
 	{
+		// Inside a raid the raid's own dose is the ceiling, because nothing else
+		// can be brought in. That matters for the Chambers, whose overload is
+		// actually weaker than a super combat: holding a player there to the
+		// super combat figure would mark them down for not reaching a boost the
+		// raid does not allow.
 		if (gearBonuses.inChambersOfXeric())
 		{
 			return base * 13 / 100 + 5;
@@ -1126,14 +1135,22 @@ class CombatCalc
 		{
 			return base * 16 / 100 + 11; // smelling salts
 		}
-		switch (skill)
+		// Outside, the ordinary divine dose for the style, raised if something
+		// stronger is actually up — salts carried out of the Tombs, say. Raised
+		// only, never lowered: taking the standard from what the player happens
+		// to hold would let one who took nothing read as perfectly dosed.
+		int boost = skill == Skill.RANGED || skill == Skill.MAGIC
+			? base / 10 + 4          // divine ranging, saturated heart
+			: base * 15 / 100 + 5;   // divine super combat
+		if (client.getVarbitValue(VarbitID.STATRENEWAL_POTION_TIMER) > 0)
 		{
-			case RANGED: // ranging potion
-			case MAGIC:  // saturated heart
-				return base / 10 + 4;
-			default: // super combat
-				return base * 15 / 100 + 5;
+			boost = Math.max(boost, base * 16 / 100 + 11);
 		}
+		if (client.getVarbitValue(VarbitID.RAIDS_OVERLOAD_TIMER) > 0)
+		{
+			boost = Math.max(boost, base * 13 / 100 + 5);
+		}
+		return boost;
 	}
 
 	/** The prayer the player means to be using for the style in hand. */
