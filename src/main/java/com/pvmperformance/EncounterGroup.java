@@ -152,8 +152,10 @@ final class EncounterGroup
 		// in one hit, and their guaranteed max hits would drag the room towards
 		// perfect accuracy the longer one was spent on them.
 		//
-		// The totem ids are shared with The Nightmare, whose totems will file
-		// under her room as a result. Nothing in the id tells the two apart.
+		// The totem ids are shared with The Nightmare. Nothing in a totem says
+		// whose it is, so the boss standing in the room decides — see the
+		// plugin's labelNightmareTotem. Listing them here is the default for
+		// when no boss has been seen at all.
 		put(groups, "Phosani's Nightmare",
 			NpcID.NIGHTMARE_CHALLENGE_INITIAL, NpcID.NIGHTMARE_CHALLENGE_BLAST,
 			NpcID.NIGHTMARE_CHALLENGE_PHASE_01, NpcID.NIGHTMARE_CHALLENGE_PHASE_02,
