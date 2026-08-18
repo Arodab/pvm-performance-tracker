@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import net.runelite.api.Client;
+import net.runelite.api.gameval.NpcID;
 import net.runelite.api.gameval.VarbitID;
 
 /**
@@ -27,8 +28,41 @@ final class RaidScaling
 	private static final Set<String> MAGIC_SCALED = Collections.unmodifiableSet(new HashSet<>(
 		Arrays.asList("deathly ranger", "abyssal portal", "vespula", "vespine soldier")));
 
+	// Olm's hands mitigate 66% of an off-style hit, leaving this much.
+	private static final double MITIGATED = 0.34;
+
 	private RaidScaling()
 	{
+	}
+
+	/**
+	 * The share of a hit that reaches the target, for the few that shrug most of
+	 * it off.
+	 *
+	 * <p>Olm's hands each keep a third of anything that is not their own style:
+	 * the right hand is the mage hand and mitigates everything but magic, the
+	 * left is the melee hand and mitigates everything but melee. Attacking the
+	 * wrong one with the wrong style is three times weaker than the loadout
+	 * suggests, which is far too large an error to leave out of a figure meant
+	 * to say how the player is doing.
+	 */
+	static double damageTaken(int npcId, AttackType type)
+	{
+		if (npcId == NpcID.OLM_HAND_RIGHT || npcId == NpcID.OLM_HAND_RIGHT_SPAWNING)
+		{
+			return type == AttackType.MAGIC ? 1 : MITIGATED;
+		}
+		if (npcId == NpcID.OLM_HAND_LEFT || npcId == NpcID.OLM_HAND_LEFT_SPAWNING)
+		{
+			return type.isMelee() ? 1 : MITIGATED;
+		}
+		return 1;
+	}
+
+	/** Whether this is Olm's mage hand, whose magic level the Chambers halve. */
+	static boolean isOlmMageHand(int npcId)
+	{
+		return npcId == NpcID.OLM_HAND_RIGHT || npcId == NpcID.OLM_HAND_RIGHT_SPAWNING;
 	}
 
 	/** A monster's defence level as the raid it stands in leaves it. */
@@ -52,13 +86,15 @@ final class RaidScaling
 	 * The Chambers scale it, but only for the few whose magic is worth rolling
 	 * against.
 	 */
-	static int magic(Client client, int base, String name, int partyHitpoints)
+	static int magic(Client client, int npcId, int base, String name, int partyHitpoints)
 	{
 		if (!inChambers(client) || !scalesMagic(name))
 		{
 			return base;
 		}
-		return chambers(client, base, chambersDefenceMultiplier(client, name), partyHitpoints);
+		final int scaled = chambers(client, base, chambersDefenceMultiplier(client, name), partyHitpoints);
+		// The mage hand rolls on half of it.
+		return isOlmMageHand(npcId) ? scaled / 2 : scaled;
 	}
 
 	/**

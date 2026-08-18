@@ -251,7 +251,7 @@ class CombatCalc
 		{
 			return rangedHitChance(style, npc, gear);
 		}
-		return magicHitChance(style, npc, gear);
+		return magicHitChance(style, npc, gear, npcId);
 	}
 
 	/**
@@ -263,12 +263,19 @@ class CombatCalc
 	 * doesn't depend on attack speed, so it compares directly against the
 	 * measured damage-per-attack without the fight's pace getting in the way.
 	 */
+	/** How much of a hit the target keeps, for the few that shrug most of it off. */
+	private double mitigation(int npcId)
+	{
+		return RaidScaling.damageTaken(npcId, attackStyle().getAttackType());
+	}
+
 	double averageHit(int npcId)
 	{
 		final double accuracy = hitChance(npcId);
 		// Averages, not best cases: a keris crit or an ahrim's proc raises the max
 		// hit but only lifts sustained damage by a few percent.
-		final double averageMax = baseMaxHit() * gearBonus(npcId).getExpectedDamage() + colossalBladeBonus(npcId);
+		final double averageMax = (baseMaxHit() * gearBonus(npcId).getExpectedDamage()
+			+ colossalBladeBonus(npcId)) * mitigation(npcId);
 		if (accuracy < 0 || averageMax <= 0)
 		{
 			return -1;
@@ -431,12 +438,14 @@ class CombatCalc
 	 * accuracy in the Tombs does not move with the raid level at all, which is
 	 * the arithmetic behind magic being the better style at high invocations.
 	 */
-	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
+	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear,
+		int npcId)
 	{
 		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
 		final int attRoll = (int) (effMagic * (attackBonus(AttackType.MAGIC) + 64) * gear);
-		final int magic = RaidScaling.magic(client, npc.getMagicLevel(), npc.getName(), partyHitpoints.highest());
+		final int magic = RaidScaling.magic(client, npcId, npc.getMagicLevel(), npc.getName(),
+			partyHitpoints.highest());
 		final int defRoll = (magic + 9) * (npc.getDefMagic() + 64);
 		if (!hasConflictionGauntlets())
 		{
@@ -900,6 +909,13 @@ class CombatCalc
 	 * before any target-dependent gear effects.
 	 */
 	int maxHit(int npcId)
+	{
+		// What actually lands, which against Olm's hands is a third of it when the
+		// style is the wrong one for that hand.
+		return (int) (unmitigatedMaxHit(npcId) * mitigation(npcId));
+	}
+
+	private int unmitigatedMaxHit(int npcId)
 	{
 		final int hit = (int) (baseMaxHit() * gearBonus(npcId).getDamage()) + colossalBladeBonus(npcId);
 		final EnchantedBolt bolt = loadedBolt(npcId);
