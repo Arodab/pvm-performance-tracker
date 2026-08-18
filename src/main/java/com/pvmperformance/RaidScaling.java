@@ -39,7 +39,8 @@ final class RaidScaling
 	 * The share of a hit that reaches the target, for the few that shrug most of
 	 * it off.
 	 *
-	 * <p>Olm's hands each keep a third of anything that is not their own style:
+	 * <p>Two things need this. Olm's hands each keep a third of anything that is
+	 * not their own style:
 	 * the right hand is the mage hand and mitigates everything but magic, the
 	 * left is the melee hand and mitigates everything but melee. Attacking the
 	 * wrong one with the wrong style is three times weaker than the loadout
@@ -56,7 +57,28 @@ final class RaidScaling
 		{
 			return type.isMelee() ? 1 : MITIGATED;
 		}
-		return 1;
+		// The Nightmare's totems take double from magic, which is why they are
+		// charged with it. Left out, the expected damage would be half what
+		// lands and the player would look twice as unlucky as they were.
+		return isNightmareTotem(npcId) && type == AttackType.MAGIC ? 2 : 1;
+	}
+
+	private static boolean isNightmareTotem(int npcId)
+	{
+		switch (npcId)
+		{
+			case NpcID.NIGHTMARE_TOTEM_1_READY:
+			case NpcID.NIGHTMARE_TOTEM_2_READY:
+			case NpcID.NIGHTMARE_TOTEM_3_READY:
+			case NpcID.NIGHTMARE_TOTEM_4_READY:
+			case NpcID.NIGHTMARE_TOTEM_1_CHARGED:
+			case NpcID.NIGHTMARE_TOTEM_2_CHARGED:
+			case NpcID.NIGHTMARE_TOTEM_3_CHARGED:
+			case NpcID.NIGHTMARE_TOTEM_4_CHARGED:
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	/** Whether this is Olm's mage hand, whose magic level the Chambers halve. */

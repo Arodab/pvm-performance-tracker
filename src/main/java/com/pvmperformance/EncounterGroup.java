@@ -84,16 +84,14 @@ final class EncounterGroup
 	 * one id whether he is walking or down, so his walking phase can only be
 	 * told from his animation.
 	 *
-	 * <p>Sotetseg is deliberately not here, though his name invites it.
-	 * {@code TOB_SOTETSEG_NONCOMBAT} is the id the monster data gives his full
-	 * stats to — level 995, 4000 hitpoints — while {@code _COMBAT} has none, so
-	 * "noncombat" may well be the form he is fought in, with the other used
-	 * elsewhere. It may equally be his idle form before the fight: the wiki's
-	 * Verzik phase 1 is {@code VERZIK_INITIAL} rather than
-	 * {@code VERZIK_PHASE1}, so its ids do lean towards spawn forms. Listing him
-	 * on the first reading would silently zero the tick loss for his whole room,
-	 * where leaving him off only over-counts the maze, so he stays off until
-	 * {@code ::loadout} says which id he wears while being hit.
+	 * <p>Sotetseg is here on an unconfirmed reading, by request, so the maze
+	 * stops costing ticks. {@code TOB_SOTETSEG_NONCOMBAT} is the id the monster
+	 * data gives his full stats to, level 995 and 4000 hitpoints, while
+	 * {@code _COMBAT} has none, which argues it is the form he is fought in.
+	 * Against that, these ids lean towards spawn forms: the wiki's Verzik phase
+	 * 1 is {@code VERZIK_INITIAL} and not {@code VERZIK_PHASE1}. If the first
+	 * reading is right his room will report no tick loss at all, which is the
+	 * tell, and {@code ::loadout} while hitting him settles it.
 	 *
 	 * <p>Akkha's memory blast is covered, though on an unconfirmed guess at
 	 * which id he wears while away; {@code ::loadout} prints the target's live
