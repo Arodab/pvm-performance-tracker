@@ -52,6 +52,7 @@ import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.ProjectileMoved;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.AnimationID;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.SpotanimID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.RuneLite;
@@ -93,10 +94,11 @@ public class PvmPerformancePlugin extends Plugin
 	// loss is measured from the attacks themselves and is unaffected.
 	private static final Set<Integer> CONSUME_ANIMATIONS = Collections.unmodifiableSet(new HashSet<>(
 		Arrays.asList(AnimationID.HUMAN_EAT, AnimationID.HUMAN_KILLERWATT_ELECTRICSHOCK)));
-	// The longest an eat can hold the attack back. A food alone is three ticks;
-	// a combo eat stacks its delays, so a shark chased with a karambwan is
-	// three plus two. The window closes early anyway, on the next attack.
-	private static final int EAT_TICKS = 5;
+	// How long an eat holds the attack back. Delays stack within a tick, so a
+	// shark chased with a karambwan is three plus two.
+	private static final int EAT_TICKS = 3;
+	// A combo food adds its own delay on top of the food it chases.
+	private static final int KARAMBWAN_TICKS = 2;
 	private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 	/** The column names, kept beside the row builders so the two cannot drift. */
 	static final String CSV_HEADER =
@@ -171,6 +173,7 @@ public class PvmPerformancePlugin extends Plugin
 	// The tick an eat was last seen on, so the pause it causes is credited to it
 	// rather than only the one tick its animation shows for.
 	private int lastConsumeTick;
+	private int consumeDelay;
 
 	// Running totals for the trip, shown instead of the current fight when the
 	// overlay is set to whole-trip mode.
@@ -342,6 +345,7 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
+		noteConsumed(event);
 		if (event.getMenuAction() != MenuAction.WIDGET_TARGET_ON_NPC || !client.isWidgetSelected())
 		{
 			return;
@@ -643,6 +647,7 @@ public class PvmPerformancePlugin extends Plugin
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
+			consumeDelay = 0;
 			current.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
 			if (current.isScored())
 			{
@@ -687,6 +692,42 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
+	 * Notices food and drink going down, from the click rather than the
+	 * animation.
+	 *
+	 * <p>An animation is the wrong thing to ask. Eating on the same tick as an
+	 * attack shows the attack, so the eat leaves no animation to find — the same
+	 * reason attacks themselves are taken from events here and never from what
+	 * the player looks like. A click is a fact about what was done.
+	 *
+	 * <p>The delays add up within a tick, which is what makes combo eating cost
+	 * what it does: a shark is three and the karambwan chased after it is two,
+	 * for five. Summing the clicks gets that exactly, rather than guessing at a
+	 * window wide enough to cover it.
+	 */
+	private void noteConsumed(MenuOptionClicked event)
+	{
+		final String option = event.getMenuOption();
+		if (!"Eat".equals(option) && !"Drink".equals(option))
+		{
+			return;
+		}
+		final int tick = client.getTickCount();
+		if (tick != lastConsumeTick)
+		{
+			// A new pause rather than a second helping added to the last one.
+			lastConsumeTick = tick;
+			consumeDelay = 0;
+		}
+		consumeDelay += isComboFood(event.getItemId()) ? KARAMBWAN_TICKS : EAT_TICKS;
+	}
+
+	private static boolean isComboFood(int itemId)
+	{
+		return itemId == ItemID.TBWT_COOKED_KARAMBWAN || itemId == ItemID.BR_TBWT_COOKED_KARAMBWAN;
+	}
+
+	/**
 	 * Whether this lost tick was spent eating.
 	 *
 	 * <p>An eat shows its animation for one tick but costs three, so reading the
@@ -706,11 +747,15 @@ public class PvmPerformancePlugin extends Plugin
 	private boolean isConsuming()
 	{
 		final Player me = client.getLocalPlayer();
-		if (me != null && CONSUME_ANIMATIONS.contains(me.getAnimation()))
+		if (me != null && CONSUME_ANIMATIONS.contains(me.getAnimation()) && consumeDelay == 0)
 		{
+			// Nothing was clicked that this knows about — a wine, a cake, an
+			// unfamiliar option. The animation is the weaker signal but it is
+			// better than calling the tick idle.
 			lastConsumeTick = client.getTickCount();
+			consumeDelay = EAT_TICKS;
 		}
-		return lastConsumeTick > 0 && client.getTickCount() - lastConsumeTick < EAT_TICKS;
+		return lastConsumeTick > 0 && client.getTickCount() - lastConsumeTick < consumeDelay;
 	}
 
 	/**
