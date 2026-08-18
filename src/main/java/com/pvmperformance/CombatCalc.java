@@ -968,6 +968,13 @@ class CombatCalc
 	 */
 	int specialAttackMaxHit(int npcId)
 	{
+		// Mitigated like an ordinary hit: a special on the wrong hand is no more
+		// exempt from Olm's mitigation than anything else is.
+		return (int) (unmitigatedSpecialAttackMaxHit(npcId) * mitigation(npcId));
+	}
+
+	private int unmitigatedSpecialAttackMaxHit(int npcId)
+	{
 		final int weapon = weaponItemId();
 		if (weapon == ItemID.ABYSSAL_BLUDGEON)
 		{
