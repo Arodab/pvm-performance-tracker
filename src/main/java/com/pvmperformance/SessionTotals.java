@@ -51,14 +51,9 @@ class SessionTotals
 		sumExpectedAverageHit = 0;
 	}
 
-	void recordFightStarted(long now)
-	{
-		fights++;
-		lastActivityMillis = now;
-	}
-
 	void recordFightEnded(boolean died, Fight fight, long now)
 	{
+		fights++;
 		if (died)
 		{
 			kills++;

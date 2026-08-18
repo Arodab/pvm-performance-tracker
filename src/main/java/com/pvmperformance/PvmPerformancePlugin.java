@@ -468,6 +468,7 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
+		startFightOnTarget();
 		trackAttackCooldown();
 
 		// Drop projectiles that have landed so the set doesn't retain them.
@@ -495,12 +496,34 @@ public class PvmPerformancePlugin extends Plugin
 
 		if (current != null && !current.isEnded())
 		{
-			final long idle = System.currentTimeMillis() - current.getLastActivityMillis();
-			if (idle > config.fightTimeoutTicks() * 600L)
+			if (current.getAttempts() == 0)
 			{
-				finalizeFight(false, current.getLastActivityMillis());
+				// Opened by targeting and not yet fought. The idle timeout can't
+				// judge it, since it would expire while the player is still
+				// walking into range and then reopen on the next tick. It ends
+				// when they look away instead.
+				if (!isTargeting(current.getTargetIndex()))
+				{
+					finalizeFight(false, System.currentTimeMillis());
+				}
+			}
+			else
+			{
+				final long idle = System.currentTimeMillis() - current.getLastActivityMillis();
+				if (idle > config.fightTimeoutTicks() * 600L)
+				{
+					finalizeFight(false, current.getLastActivityMillis());
+				}
 			}
 		}
+	}
+
+	/** Whether the player is still interacting with this NPC. */
+	private boolean isTargeting(int npcIndex)
+	{
+		final Player me = client.getLocalPlayer();
+		final Actor target = me == null ? null : me.getInteracting();
+		return target instanceof NPC && ((NPC) target).getIndex() == npcIndex;
 	}
 
 	@Subscribe
@@ -524,13 +547,51 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			finalizeFight(false, now);
 		}
-		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), npcManager.getHealth(npc.getId()), now);
-		session.recordFightStarted(now);
+		// getHealth is nullable, and the fight takes an int.
+		final Integer maxHp = npcManager.getHealth(npc.getId());
+		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), maxHp == null ? -1 : maxHp, now);
+	}
+
+	/**
+	 * Opens a fight as soon as the player targets something attackable, so the
+	 * overlay is up while the first attack is still in the air rather than
+	 * appearing when it lands.
+	 *
+	 * <p>A fight opened this way and never fought is thrown away at the end
+	 * rather than recorded, so clicking an NPC and walking off leaves nothing
+	 * behind.
+	 */
+	private void startFightOnTarget()
+	{
+		if (current != null && !current.isEnded())
+		{
+			return;
+		}
+		final Player me = client.getLocalPlayer();
+		final Actor target = me == null ? null : me.getInteracting();
+		if (!(target instanceof NPC))
+		{
+			return;
+		}
+		final NPC npc = (NPC) target;
+		if (npc.getCombatLevel() <= 0 && npcManager.getHealth(npc.getId()) == null)
+		{
+			return; // not something that can be fought
+		}
+		startFight(npc, System.currentTimeMillis());
 	}
 
 	private void finalizeFight(boolean died, long now)
 	{
 		current.end(died, now);
+		pendingMineHits.clear();
+		if (current.getAttempts() == 0)
+		{
+			// Opened because the player looked at something and then didn't
+			// fight it. Nothing happened, so nothing is recorded.
+			current = null;
+			return;
+		}
 		session.recordFightEnded(died, current, now);
 		history.add(0, current);
 		while (history.size() > MAX_HISTORY)
@@ -539,7 +600,6 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		lastFinished = current;
 		current = null;
-		pendingMineHits.clear();
 		if (panel != null)
 		{
 			panel.refresh();
