@@ -1,6 +1,7 @@
 package com.pvmperformance;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -84,9 +85,127 @@ class CombatCalc
 	}
 
 	/** The gear multipliers for the current loadout against this target. */
-	private GearBonus gearBonus(int npcId)
+	private GearBonus computeGearBonus(int npcId)
 	{
 		return gearBonuses.compute(attackStyle(), monsters.get(npcId), activeSpell(), config.assumeSlayerTask());
+	}
+
+	/**
+	 * Answers held for the current tick.
+	 *
+	 * <p>Everything here is derived from equipment, varbits and the selected
+	 * combat option, none of which change within a tick, yet each was being
+	 * worked out several times over: an attack tick asked for the gear
+	 * multipliers ten times and walked the worn items ten times, once for every
+	 * figure that wanted them. The overlay refresh, the special attack, and the
+	 * efficiency pair all want the same answers from the same state.
+	 *
+	 * <p>The ideal figures share this cache safely. Substituting the intended
+	 * prayer and a full boost changes levels, not gear, so none of what is held
+	 * here differs between the real and the intended attack.
+	 */
+	private int memoTick = Integer.MIN_VALUE;
+	private AttackStyle memoStyle;
+	private String memoWeaponName;
+	private boolean memoWeaponNameSet;
+	private final int[] memoAttackBonus = new int[AttackType.values().length];
+	private final boolean[] memoAttackBonusSet = new boolean[AttackType.values().length];
+	private final int[] memoEquipmentBonus = new int[2];
+	private final boolean[] memoEquipmentBonusSet = new boolean[2];
+	private final int[] memoBaseMaxHit = new int[2];
+	private final boolean[] memoBaseMaxHitSet = new boolean[2];
+	private int memoGearNpc = Integer.MIN_VALUE;
+	private GearBonus memoGear;
+
+	/** Drops everything held once the tick it was worked out for has passed. */
+	private void expireMemo()
+	{
+		final int tick = client.getTickCount();
+		if (tick == memoTick)
+		{
+			return;
+		}
+		memoTick = tick;
+		memoStyle = null;
+		memoWeaponNameSet = false;
+		memoGearNpc = Integer.MIN_VALUE;
+		memoGear = null;
+		Arrays.fill(memoAttackBonusSet, false);
+		Arrays.fill(memoEquipmentBonusSet, false);
+		Arrays.fill(memoBaseMaxHitSet, false);
+	}
+
+	private AttackStyle attackStyle()
+	{
+		expireMemo();
+		if (memoStyle == null)
+		{
+			memoStyle = resolveAttackStyle();
+		}
+		return memoStyle;
+	}
+
+	private String weaponName()
+	{
+		expireMemo();
+		if (!memoWeaponNameSet)
+		{
+			memoWeaponName = computeWeaponName();
+			memoWeaponNameSet = true;
+		}
+		return memoWeaponName;
+	}
+
+	private int attackBonus(AttackType type)
+	{
+		expireMemo();
+		final int slot = type.ordinal();
+		if (!memoAttackBonusSet[slot])
+		{
+			memoAttackBonus[slot] = computeAttackBonus(type);
+			memoAttackBonusSet[slot] = true;
+		}
+		return memoAttackBonus[slot];
+	}
+
+	private int equipmentBonus(boolean melee)
+	{
+		expireMemo();
+		final int slot = melee ? 0 : 1;
+		if (!memoEquipmentBonusSet[slot])
+		{
+			memoEquipmentBonus[slot] = computeEquipmentBonus(melee);
+			memoEquipmentBonusSet[slot] = true;
+		}
+		return memoEquipmentBonus[slot];
+	}
+
+	/**
+	 * Held per mode rather than once. The levels and prayers behind it are
+	 * substituted while working out what an attack should have been, so the real
+	 * and the intended figures are genuinely different answers.
+	 */
+	private int baseMaxHit()
+	{
+		expireMemo();
+		final int slot = ideal ? 1 : 0;
+		if (!memoBaseMaxHitSet[slot])
+		{
+			memoBaseMaxHit[slot] = computeBaseMaxHit();
+			memoBaseMaxHitSet[slot] = true;
+		}
+		return memoBaseMaxHit[slot];
+	}
+
+	private GearBonus gearBonus(int npcId)
+	{
+		expireMemo();
+		if (memoGear == null || memoGearNpc != npcId)
+		{
+			memoGear = computeGearBonus(npcId);
+			memoGearNpc = npcId;
+		}
+		return memoGear;
 	}
 
 	/**
@@ -483,7 +602,7 @@ class CombatCalc
 		return manual != null ? manual : autocastSpell();
 	}
 
-	private AttackStyle attackStyle()
+	private AttackStyle resolveAttackStyle()
 	{
 		final int varp = client.getVarpValue(VarPlayerID.COM_MODE);
 		// A staff recognised by name attacks with magic, whatever the category
@@ -586,7 +705,7 @@ class CombatCalc
 	}
 
 	/** Sum of the worn gear's attack bonus for the type being rolled. */
-	private int attackBonus(AttackType type)
+	private int computeAttackBonus(AttackType type)
 	{
 		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
@@ -774,7 +893,7 @@ class CombatCalc
 		return spec == null ? 0 : spec.maxTotal(maxHit(npcId));
 	}
 
-	private int baseMaxHit()
+	private int computeBaseMaxHit()
 	{
 		switch (weaponStyle())
 		{
@@ -998,7 +1117,7 @@ class CombatCalc
 	}
 
 	/** The equipped weapon's name, or null when unarmed. */
-	private String weaponName()
+	private String computeWeaponName()
 	{
 		final int weapon = weaponItemId();
 		return weapon < 0 ? null : itemManager.getItemComposition(weapon).getName();
@@ -1426,7 +1545,7 @@ class CombatCalc
 	}
 
 	/** Sum of the melee (str) or ranged (rstr) strength bonus across worn gear. */
-	private int equipmentBonus(boolean melee)
+	private int computeEquipmentBonus(boolean melee)
 	{
 		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
