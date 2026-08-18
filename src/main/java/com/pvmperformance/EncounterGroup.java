@@ -79,9 +79,12 @@ final class EncounterGroup
 	 * death that has not despawned yet. No tick is lost while the target is one
 	 * of these, because no attack was possible.
 	 *
-	 * <p>This only catches bosses that change id to say so. Bloat does not: he
-	 * keeps one id whether he is walking or down, so his walking phase can only
-	 * be told from his animation and is not covered here.
+	 * <p>This only catches bosses that change id to say so, and only where the
+	 * id has been checked to mean it. Two are known to be missing. Bloat keeps
+	 * one id whether he is walking or down, so his walking phase can only be
+	 * told from his animation. Akkha channels immunity from his shadows and has
+	 * to be lured to a dispelled corner to be damaged at all — which is a matter
+	 * of where he is standing rather than what he is, so no id can carry it.
 	 */
 	static boolean isUnattackable(int npcId)
 	{
@@ -216,8 +219,6 @@ final class EncounterGroup
 			// The ice demon is only fightable once the brazier is lit, and
 			// Tekton cannot be touched while he is at his anvil healing.
 			NpcID.RAIDS_ICEDEMON_NONCOMBAT, NpcID.RAIDS_TEKTON_HAMMERING,
-			// Akkha's stand-ins while his shadows are up, and Kephri's corpse.
-			NpcID.AKKHA_ENRAGE_DUMMY, NpcID.AKKHA_SHADOW_ENRAGE_DUMMY,
 			NpcID.TOB_MAIDEN_DYING_A, NpcID.TOB_MAIDEN_DYING_B,
 			NpcID.TOB_MAIDEN_DYING_A_STORY, NpcID.TOB_MAIDEN_DYING_B_STORY,
 			NpcID.TOB_MAIDEN_DYING_A_HARD, NpcID.TOB_MAIDEN_DYING_B_HARD)));
