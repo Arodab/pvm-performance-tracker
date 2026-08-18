@@ -45,6 +45,7 @@ import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
+import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.ProjectileMoved;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.AnimationID;
@@ -148,6 +149,14 @@ public class PvmPerformancePlugin extends Plugin
 	// overlay is set to whole-trip mode.
 	private final SessionTotals session = new SessionTotals(System.currentTimeMillis());
 
+	// A boss just killed, watched for its respawn so the wait for the next kill
+	// can be timed, and where it respawned once it has. Bosses only: on a slayer
+	// task a second spawn across the room is not the same fight coming back, and
+	// timing the walk to it would say nothing.
+	private int respawnWatchNpcId = -1;
+	private int respawnNpcIndex = -1;
+	private int respawnTick;
+
 	// The fight currently in progress, or null between fights.
 	private Fight current;
 	// The most recently finished fight, kept so the overlay lingers briefly.
@@ -200,6 +209,8 @@ public class PvmPerformancePlugin extends Plugin
 		history.clear();
 		countedProjectiles.clear();
 		pendingMineHits.clear();
+		respawnWatchNpcId = -1;
+		respawnNpcIndex = -1;
 	}
 
 	@Subscribe
@@ -412,6 +423,25 @@ public class PvmPerformancePlugin extends Plugin
 		session.reset(System.currentTimeMillis());
 	}
 
+	/**
+	 * Catches the boss just killed coming back, so the wait between the two kills
+	 * can be timed. Nothing is counted from here: the tick is only remembered,
+	 * and is spent when a fight actually opens on that NPC. A respawn the player
+	 * walks away from leaves nothing behind.
+	 */
+	@Subscribe
+	public void onNpcSpawned(NpcSpawned event)
+	{
+		final NPC npc = event.getNpc();
+		if (npc.getId() != respawnWatchNpcId)
+		{
+			return;
+		}
+		respawnWatchNpcId = -1;
+		respawnNpcIndex = npc.getIndex();
+		respawnTick = client.getTickCount();
+	}
+
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned event)
 	{
@@ -452,6 +482,16 @@ public class PvmPerformancePlugin extends Plugin
 			// Read on the attack tick: this is when the prayers and boosts are
 			// the ones the attack actually rolled with.
 			final int targetId = current.getTargetId();
+			if (!current.isAttacking())
+			{
+				// The opening attack: time it against the respawn, if this fight
+				// was opened by one.
+				final int engaged = current.recordEngaged(client.getTickCount());
+				if (engaged > 0)
+				{
+					session.recordEngaged(engaged);
+				}
+			}
 			final boolean prayed = prayedThisTick || combatCalc.hasOffensivePrayer();
 			final boolean boosted = combatCalc.isBoosted();
 			final double actualSetup = combatCalc.actualAverageHit(targetId, prayed);
@@ -600,6 +640,8 @@ public class PvmPerformancePlugin extends Plugin
 			}
 			countedProjectiles.clear();
 			pendingMineHits.clear();
+			respawnWatchNpcId = -1;
+			respawnNpcIndex = -1;
 		}
 	}
 
@@ -612,6 +654,13 @@ public class PvmPerformancePlugin extends Plugin
 		// getHealth is nullable, and the fight takes an int.
 		final Integer maxHp = npcManager.getHealth(npc.getId());
 		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), maxHp == null ? -1 : maxHp, now);
+		if (npc.getIndex() == respawnNpcIndex)
+		{
+			// This is the boss whose respawn was watched, so the wait for it can
+			// be timed from the tick it appeared rather than from this one.
+			current.setEngageFromTick(respawnTick);
+			respawnNpcIndex = -1;
+		}
 	}
 
 	/**
@@ -653,6 +702,11 @@ public class PvmPerformancePlugin extends Plugin
 			// fight it. Nothing happened, so nothing is recorded.
 			current = null;
 			return;
+		}
+		if (died && isBoss(current))
+		{
+			respawnWatchNpcId = current.getTargetId();
+			respawnNpcIndex = -1;
 		}
 		session.recordFightEnded(died, current, now);
 		history.add(0, current);
@@ -884,7 +938,7 @@ public class PvmPerformancePlugin extends Plugin
 				{
 					writer.write("started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
 						+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
-						+ "ticksLost,ticksLostPct,ticksLostEating,"
+						+ "ticksLost,ticksLostPct,ticksLostEating,ticksToEngage,"
 						+ "attacksMade,attacksPrayed,attacksBoosted,efficiencyPct\n");
 					for (Fight fight : fights)
 					{
@@ -908,7 +962,7 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
-		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d,%d,%d,%d,%s%n",
+		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d,%s,%d,%d,%d,%s%n",
 			started,
 			fight.getTargetName().replace('"', '\''),
 			fight.getTargetId(),
@@ -928,6 +982,7 @@ public class PvmPerformancePlugin extends Plugin
 			fight.getTicksLost(),
 			csvExpected(fight.ticksLostShare() * 100, 1),
 			fight.getTicksLostEating(),
+			fight.getTicksToEngage() == 0 ? "" : String.valueOf(fight.getTicksToEngage()),
 			fight.getAttacksMade(),
 			fight.getAttacksPrayed(),
 			fight.getAttacksBoosted(),

@@ -11,6 +11,9 @@ import lombok.Getter;
 @Getter
 class Fight
 {
+	// A minute. Past this the wait is no longer about the fight.
+	private static final int MAX_ENGAGE_TICKS = 100;
+
 	private final String targetName;
 	private final int targetId;
 	private final int targetIndex;
@@ -58,6 +61,15 @@ class Fight
 	private int combatTicks;
 	private boolean attacking;
 
+	// The tick this target became available to attack — the tick it respawned,
+	// for a boss watched across its death — and how long it then took to be
+	// attacked. Both are 0 when unknown rather than -1, so that a fight read
+	// back from a history file written before they existed reads as unknown
+	// too: the fields are filled in by deserialisation, which does not run
+	// their initialisers. A gap of 0 cannot occur, so 0 is free to mean this.
+	private transient int engageFromTick;
+	private int ticksToEngage;
+
 	Fight(String targetName, int targetId, int targetIndex, int maxHp, long now)
 	{
 		this.targetName = targetName == null ? "NPC" : targetName;
@@ -66,6 +78,41 @@ class Fight
 		this.maxHp = maxHp;
 		this.startMillis = now;
 		this.lastActivityMillis = now;
+	}
+
+	/**
+	 * Notes the tick this target became attackable, so the wait before the first
+	 * attack can be timed. Set only where that tick is actually known, which is
+	 * a boss respawning under the player's nose; a fight that starts any other
+	 * way has nothing to measure from and reports no lag.
+	 */
+	void setEngageFromTick(int tick)
+	{
+		engageFromTick = tick;
+	}
+
+	/**
+	 * Times the first attack against the tick the target became attackable, and
+	 * returns the gap, or 0 if it isn't known.
+	 *
+	 * <p>Kept apart from the in-fight tick loss rather than added to it. That
+	 * figure is measured against a standard the plugin can check — the weapon
+	 * was off cooldown, so an attack was possible — and none of it is
+	 * unavoidable. This gap contains whatever the boss spends unattackable on
+	 * spawn, which no amount of skill removes, so folding it in would make the
+	 * two incomparable and every kill look worse than it was.
+	 */
+	int recordEngaged(int tick)
+	{
+		if (engageFromTick <= 0 || tick <= engageFromTick)
+		{
+			return 0;
+		}
+		final int gap = tick - engageFromTick;
+		// Beyond a minute the player was doing something else entirely — banking,
+		// restocking, away — and timing it says nothing about the kill.
+		ticksToEngage = gap > MAX_ENGAGE_TICKS ? 0 : gap;
+		return ticksToEngage;
 	}
 
 	void recordDamageDealt(int amount, long now)

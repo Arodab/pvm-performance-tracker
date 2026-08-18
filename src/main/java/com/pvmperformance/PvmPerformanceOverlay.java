@@ -168,6 +168,22 @@ class PvmPerformanceOverlay extends OverlayPanel
 			}
 		}
 
+		// Time from a boss respawning to the first attack on it. Its own line
+		// rather than part of the tick loss above: some of this wait is the boss
+		// being unattackable, which no play removes. Over a trip the best one
+		// stands in for that floor, so the gap between it and the average is
+		// what was really lost.
+		final int engage = trip ? session.getBestTicksToEngage() : fight.getTicksToEngage();
+		if (engage > 0)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("Respawn lag")
+				.right(trip
+					? String.format("%.0f (best %d)", session.avgTicksToEngage(), engage)
+					: String.valueOf(engage))
+				.build());
+		}
+
 		final long millis = trip ? session.durationMillis() : fight.durationMillis();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Time")
