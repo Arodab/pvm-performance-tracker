@@ -92,7 +92,7 @@ class CombatCalc
 	/** The gear multipliers for the current loadout against this target. */
 	private GearBonus computeGearBonus(int npcId)
 	{
-		return gearBonuses.compute(attackStyle(), monsters.get(npcId), activeSpell(), config.assumeSlayerTask());
+		return gearBonuses.compute(attackStyle(), monsters.get(npcId), activeSpell(), !config.slayerHelmetOffTask());
 	}
 
 	/**
