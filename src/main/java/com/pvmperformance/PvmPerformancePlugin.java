@@ -461,13 +461,27 @@ public class PvmPerformancePlugin extends Plugin
 			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
 			return;
 		}
+		// The trip totals take the same ticks as they happen, so the share shown
+		// in whole-trip mode moves during a fight rather than only at its end.
+		// Both are gated on the fight having started, which is the fight's rule
+		// for counting a tick at all.
+		final boolean counts = current.isAttacking();
 		if (attackCooldown > 0)
 		{
 			attackCooldown--;
 			current.recordTickSpent();
+			if (counts)
+			{
+				session.recordTickSpent();
+			}
 			return;
 		}
-		current.recordTickLost(isConsuming());
+		final boolean eating = isConsuming();
+		current.recordTickLost(eating);
+		if (counts)
+		{
+			session.recordTickLost(eating);
+		}
 	}
 
 	/** Whether the player is eating or drinking, which costs attack ticks. */
@@ -494,11 +508,16 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
-	 * Notices the intended prayer going up, so a flick counts.
+	 * Notices the intended prayer going up part-way through a tick, so a prayer
+	 * switched on and attacked with on the same tick counts.
 	 *
-	 * <p>A flicked prayer is switched on and off inside one tick. It applies to
-	 * the attack, because the server resolves combat while it is up, but reading
-	 * the prayer once at the end of the tick sees it already off.
+	 * <p>Asks the client's own copy of the prayer varbits, which flips the
+	 * instant the player clicks. The server has not confirmed the prayer yet at
+	 * this point, so its copy would still read as off.
+	 *
+	 * <p>The opposite case — switched off on the tick the attack goes out, which
+	 * the server still resolved with the prayer up — needs nothing here: the
+	 * server's copy of the varbit, which is what the model reads, says it was up.
 	 */
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
@@ -507,7 +526,7 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
-		if (combatCalc.hasOffensivePrayer())
+		if (combatCalc.hasOffensivePrayerNow())
 		{
 			prayedThisTick = true;
 		}

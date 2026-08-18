@@ -74,6 +74,9 @@ class CombatCalc
 	private static final int IDEAL = 1;
 	private static final int PRAYER_HELD = 2;
 	private int mode = REAL;
+	// Whether the prayer reads should answer from the client's own copy of the
+	// prayer varbits rather than the server's. See prayerActive.
+	private boolean clientPrayerView;
 	private BlowpipeDart cachedDart;
 	private ItemEquipmentStats cachedDartStats;
 
@@ -1377,6 +1380,25 @@ class CombatCalc
 	}
 
 	/**
+	 * As {@link #hasOffensivePrayer()}, but from the client's own copy of the
+	 * prayer varbits: what the player has just clicked, whether or not the server
+	 * has confirmed it. Answers "is it up as of this instant" for a prayer
+	 * switched on part-way through a tick.
+	 */
+	boolean hasOffensivePrayerNow()
+	{
+		clientPrayerView = true;
+		try
+		{
+			return hasOffensivePrayer();
+		}
+		finally
+		{
+			clientPrayerView = false;
+		}
+	}
+
+	/**
 	 * Whether every combat stat the current style rolls on is at the full boost
 	 * the best potion here would give.
 	 *
@@ -1409,12 +1431,26 @@ class CombatCalc
 	}
 
 	/**
-	 * Whether a prayer is currently active. Reads the prayer's varbit directly;
-	 * {@code Client.isPrayerActive} is deprecated and has no replacement overload.
+	 * Whether a prayer was active for what the server is resolving now. Reads the
+	 * prayer's varbit directly; {@code Client.isPrayerActive} is deprecated and
+	 * has no replacement overload.
+	 *
+	 * <p>The server's copy of the varbit, not the client's. Clicking a prayer
+	 * flips the client's copy at once so the orb lights up without waiting for a
+	 * reply, which means the client's copy answers for the click rather than for
+	 * the attack: switch a prayer off on the tick an attack goes out and the
+	 * client already reads it as off, while the server resolved the attack with
+	 * it up. The server's copy still says so, and lands with the tick's other
+	 * results. This is how the xp drop plugins colour a flicked drop correctly.
+	 *
+	 * <p>The client's copy is right for the opposite case — a prayer switched
+	 * <em>on</em> during the tick, which the server has not confirmed yet — and
+	 * {@link #hasOffensivePrayerNow()} asks for it there.
 	 */
 	private boolean prayerActive(Prayer prayer)
 	{
-		return client.getVarbitValue(prayer.getVarbit()) == 1;
+		final int varbit = prayer.getVarbit();
+		return (clientPrayerView ? client.getVarbitValue(varbit) : client.getServerVarbitValue(varbit)) == 1;
 	}
 
 	/**
