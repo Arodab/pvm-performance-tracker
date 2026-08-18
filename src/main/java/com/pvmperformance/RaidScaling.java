@@ -96,7 +96,9 @@ final class RaidScaling
 			return tombs(base, toa);
 		}
 		return inChambers(client)
-			? chambers(client, base, chambersDefenceMultiplier(client, name), partyHitpoints) : base;
+			? chambers(base, chambersPartySize(client), partyHitpoints,
+				defenceMultiplier(isChallengeMode(client), chambersPartySize(client), name))
+			: base;
 	}
 
 	/**
@@ -114,7 +116,8 @@ final class RaidScaling
 		{
 			return base;
 		}
-		final int scaled = chambers(client, base, chambersDefenceMultiplier(client, name), partyHitpoints);
+		final int scaled = chambers(base, chambersPartySize(client), partyHitpoints,
+			defenceMultiplier(isChallengeMode(client), chambersPartySize(client), name));
 		// The mage hand rolls on half of it.
 		return isOlmMageHand(npcId) ? scaled / 2 : scaled;
 	}
@@ -124,7 +127,7 @@ final class RaidScaling
 	 * +120% and 500 is +200%. The defence level only — magic level does not
 	 * move, and defence bonuses are armour rather than levels.
 	 */
-	private static int tombs(int base, int raidLevel)
+	static int tombs(int base, int raidLevel)
 	{
 		return base * (100 + 2 * (raidLevel / 5)) / 100;
 	}
@@ -139,9 +142,9 @@ final class RaidScaling
 	 * player's own, and the party plugin's broadcasts are where the rest of it
 	 * is. At 99 the term saturates, so for most raiders it changes nothing.
 	 */
-	private static int chambers(Client client, int base, double cmMultiplier, int partyHitpoints)
+	static int chambers(int base, int partySize, int partyHitpoints, double cmMultiplier)
 	{
-		final int party = chambersPartySize(client);
+		final int party = Math.max(1, Math.min(100, partySize));
 		final int hp = Math.max(1, Math.min(99, partyHitpoints));
 		final int hpTerm = Math.max(55, Math.min(99, 55 + 44 * hp / 99));
 
@@ -156,16 +159,16 @@ final class RaidScaling
 	 * small team and rather more in a large one — and the glowing crystal, whose
 	 * defence it leaves alone.
 	 */
-	private static double chambersDefenceMultiplier(Client client, String name)
+	static double defenceMultiplier(boolean challengeMode, int partySize, String name)
 	{
-		if (client.getVarbitValue(VarbitID.RAIDS_CHALLENGE_MODE) != 1)
+		if (!challengeMode)
 		{
 			return 1;
 		}
 		final String lower = name == null ? "" : name.toLowerCase();
 		if (lower.startsWith("tekton"))
 		{
-			return chambersPartySize(client) < 4 ? 1.2 : 1.35;
+			return partySize < 4 ? 1.2 : 1.35;
 		}
 		return lower.startsWith("glowing crystal") ? 1 : 1.5;
 	}
@@ -204,6 +207,11 @@ final class RaidScaling
 		final int scaled = client.getVarbitValue(VarbitID.RAIDS_CLIENT_PARTYSIZE_SCALED);
 		final int actual = client.getVarbitValue(VarbitID.RAIDS_CLIENT_PARTYSIZE);
 		return Math.max(1, Math.min(100, Math.max(scaled, actual)));
+	}
+
+	private static boolean isChallengeMode(Client client)
+	{
+		return client.getVarbitValue(VarbitID.RAIDS_CHALLENGE_MODE) == 1;
 	}
 
 	private static boolean inChambers(Client client)

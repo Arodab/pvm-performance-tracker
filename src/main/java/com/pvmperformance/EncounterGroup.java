@@ -371,6 +371,14 @@ final class EncounterGroup
 			// The ice demon is only fightable once the brazier is lit, and
 			// Tekton cannot be touched while he is at his anvil healing.
 			NpcID.RAIDS_ICEDEMON_NONCOMBAT, NpcID.RAIDS_TEKTON_HAMMERING,
+			// Sotetseg while the maze runs. Which of his two ids that is remains
+			// unconfirmed; see the note above. The tell is his room reporting no
+			// tick loss at all.
+			NpcID.TOB_SOTETSEG_NONCOMBAT, NpcID.TOB_SOTETSEG_NONCOMBAT_STORY,
+			NpcID.TOB_SOTETSEG_NONCOMBAT_HARD,
+			// A totem is only open once the shield behind it is broken.
+			NpcID.NIGHTMARE_TOTEM_1_DORMANT, NpcID.NIGHTMARE_TOTEM_2_DORMANT,
+			NpcID.NIGHTMARE_TOTEM_3_DORMANT, NpcID.NIGHTMARE_TOTEM_4_DORMANT,
 			// Akkha vanishes for his memory blast and cannot be attacked until
 			// he returns. That much is certain; that these two ids are what he
 			// wears while gone is a guess from their name, and the reason it is
