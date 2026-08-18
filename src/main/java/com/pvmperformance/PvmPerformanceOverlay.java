@@ -46,11 +46,16 @@ class PvmPerformanceOverlay extends OverlayPanel
 		// the room being fought. The room is the default and the narrowest — the
 		// single fight is not offered, because a room whose adds are separate
 		// NPCs would blink between them as they died.
-		final SessionTotals session = config.overlaySessionTotals() ? plugin.getSession() : null;
-		final Raid raid = session != null || config.raidScope() != RaidScope.RAID
+		// Asked for the loadout's figures and nothing else: what this hits for
+		// against this target, with no record of how the fight has gone. None of
+		// the widths below apply, since none of them is being reported.
+		final boolean expectedOnly = config.overlayExpectedOnly();
+		final SessionTotals session = expectedOnly || !config.overlaySessionTotals()
+			? null : plugin.getSession();
+		final Raid raid = expectedOnly || session != null || config.raidScope() != RaidScope.RAID
 			? null : plugin.getCurrentRaid();
 		final Encounter room = session != null || raid != null ? null : plugin.getDisplayEncounter();
-		if (session == null && raid == null && room == null)
+		if (!expectedOnly && session == null && raid == null && room == null)
 		{
 			return null;
 		}
@@ -99,6 +104,11 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.left("Avg hit")
 				.right(String.format("%.2f", expAvgHit))
 				.build());
+		}
+
+		if (expectedOnly)
+		{
+			return super.render(graphics);
 		}
 
 		// Bottom half: what has actually happened, against what the model said to

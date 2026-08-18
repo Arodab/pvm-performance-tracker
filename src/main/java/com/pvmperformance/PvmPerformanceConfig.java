@@ -32,11 +32,23 @@ public interface PvmPerformanceConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "overlayExpectedOnly",
+		name = "Expected figures only",
+		description = "Show what the loadout does against the target and nothing else: no damage, "
+			+ "efficiency or ticks lost",
+		position = 3
+	)
+	default boolean overlayExpectedOnly()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "overlaySessionTotals",
 		name = "Overlay: whole trip",
 		description = "Keep the overlay running across kills instead of resetting each fight, "
 			+ "so a whole trip can be judged rather than one kill. Reset it from the side panel",
-		position = 3
+		position = 4
 	)
 	default boolean overlaySessionTotals()
 	{
@@ -47,7 +59,7 @@ public interface PvmPerformanceConfig extends Config
 		keyName = "raidScope",
 		name = "Inside a raid, show",
 		description = "Whether the overlay reports the room being fought or the whole raid so far",
-		position = 4
+		position = 5
 	)
 	default RaidScope raidScope()
 	{
@@ -60,7 +72,7 @@ public interface PvmPerformanceConfig extends Config
 		description = "Which dart your blowpipe is loaded with. A blowpipe keeps its darts "
 			+ "inside itself and the game does not say which they are, so the max hit is "
 			+ "well short without this",
-		position = 5
+		position = 6
 	)
 	default BlowpipeDart blowpipeDart()
 	{
@@ -72,7 +84,7 @@ public interface PvmPerformanceConfig extends Config
 		name = "Efficiency: melee prayer",
 		description = "The melee prayer you mean to hold up. Efficiency compares the damage "
 			+ "your attacks were set up for against what this prayer would have given",
-		position = 6
+		position = 7
 	)
 	default PrayerChoice meleePrayerGoal()
 	{
@@ -83,7 +95,7 @@ public interface PvmPerformanceConfig extends Config
 		keyName = "rangedPrayerGoal",
 		name = "Efficiency: ranged prayer",
 		description = "The ranged prayer you mean to hold up",
-		position = 7
+		position = 8
 	)
 	default PrayerChoice rangedPrayerGoal()
 	{
@@ -94,7 +106,7 @@ public interface PvmPerformanceConfig extends Config
 		keyName = "magicPrayerGoal",
 		name = "Efficiency: magic prayer",
 		description = "The magic prayer you mean to hold up",
-		position = 8
+		position = 9
 	)
 	default PrayerChoice magicPrayerGoal()
 	{
@@ -105,7 +117,7 @@ public interface PvmPerformanceConfig extends Config
 		keyName = "slayerHelmetOffTask",
 		name = "Slayer helmet off-task",
 		description = "Wearing a slayer helmet while not on task, so its bonus does not count",
-		position = 9
+		position = 10
 	)
 	default boolean slayerHelmetOffTask()
 	{
@@ -116,7 +128,7 @@ public interface PvmPerformanceConfig extends Config
 		keyName = "fightTimeoutTicks",
 		name = "Fight timeout (ticks)",
 		description = "End the current fight after this many game ticks with no damage dealt",
-		position = 10
+		position = 11
 	)
 	default int fightTimeoutTicks()
 	{
