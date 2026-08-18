@@ -367,22 +367,21 @@ class CombatCalc
 		return raidScaled(npc.getDefenceLevel());
 	}
 
-	/** The target's magic level, scaled the same way. Magic rolls against it. */
-	private int magicLevel(MonsterStatsProvider.MonsterStats npc)
-	{
-		return raidScaled(npc.getMagicLevel());
-	}
-
 	/**
 	 * Applies the Tombs of Amascut raid level to a monster stat: every five raid
 	 * levels add 2%, additively, so raid level 300 is +120% and 500 is +200%.
 	 *
-	 * <p>The wiki gives this for hitpoints, defence, accuracy and damage. Magic
-	 * level is scaled here because it is the accuracy stat of a magic attacker,
-	 * and the same number is what magic defends with — it cannot rise for one
-	 * and not the other. Defence bonuses are not scaled: they are the monster's
-	 * armour rather than a level, and the wiki lists them apart from what
-	 * scales.
+	 * <p>The defence level only. The wiki gives the scaling for hitpoints,
+	 * defence, accuracy and damage without naming magic level, and magic level
+	 * demonstrably does not move: a twisted bow's max hit is taken from the
+	 * target's magic level, and it reads the same against the Wardens at
+	 * invocation 0 and at 500. Their magic level of 190 would have been carried
+	 * past the bow's cap of 250 by a +200% scaling, so the figure could not have
+	 * held still if the level had risen. Magic accuracy in the Tombs therefore
+	 * does not change with the raid level.
+	 *
+	 * <p>Defence bonuses are not scaled either: they are the monster's armour
+	 * rather than a level, and the wiki lists them apart from what scales.
 	 *
 	 * <p>Only Tombs of Amascut for now. Chambers of Xeric scales too, by party
 	 * size and by the player's own levels, and is not modelled yet.
@@ -419,7 +418,8 @@ class CombatCalc
 		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
 		final int attRoll = (int) (effMagic * (attackBonus(AttackType.MAGIC) + 64) * gear);
-		final int defRoll = (magicLevel(npc) + 9) * (npc.getDefMagic() + 64);
+		// Magic level is not raid scaled; see raidScaled.
+		final int defRoll = (npc.getMagicLevel() + 9) * (npc.getDefMagic() + 64);
 		if (!hasConflictionGauntlets())
 		{
 			return hitChanceFrom(attRoll, defRoll);
@@ -1147,7 +1147,7 @@ class CombatCalc
 		lines.add(npc == null
 			? "Target: none, or no stats for it"
 			: String.format("Target: %s, defence %d (base %d), magic %d, toa raid level %d",
-				npc.getName(), defenceLevel(npc), npc.getDefenceLevel(), magicLevel(npc),
+				npc.getName(), defenceLevel(npc), npc.getDefenceLevel(), npc.getMagicLevel(),
 				client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL)));
 
 		final double accuracy = hitChance(npcId);
