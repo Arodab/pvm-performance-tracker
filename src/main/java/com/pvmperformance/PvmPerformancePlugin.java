@@ -492,12 +492,6 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
-	 * Whether the player is attacking the NPC this fight is about. Idle and
-	 * walking leave the animation at -1 because they are pose animations, so any
-	 * other animation while targeting the NPC is an attack, barring the things
-	 * on the blocklist such as eating or being hit.
-	 */
-	/**
 	 * Notes that an attack went out this tick. Called only from the two events
 	 * that prove one did, and whose tick is exact: a melee hitsplat lands on the
 	 * tick it was thrown, and a projectile is created on the tick it was fired.
