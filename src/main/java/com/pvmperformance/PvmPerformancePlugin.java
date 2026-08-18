@@ -62,6 +62,7 @@ import net.runelite.client.hiscore.HiscoreSkill;
 import net.runelite.client.hiscore.HiscoreSkillType;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.specialcounter.SpecialCounterUpdate;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -125,6 +126,9 @@ public class PvmPerformancePlugin extends Plugin
 	@Inject
 	private ClientThread clientThread;
 
+	@Inject
+	private DefenceDrain drain;
+
 	private PvmPerformancePanel panel;
 	private NavigationButton navButton;
 
@@ -171,6 +175,7 @@ public class PvmPerformancePlugin extends Plugin
 	// once a boss transforms. Kept from the change events rather than looked up,
 	// so no scan is needed to know whether the target can be fought at all.
 	private int targetLiveId = -1;
+	private NPC targetNpc;
 
 	// The fight currently in progress, or null between fights.
 	private Fight current;
@@ -224,6 +229,8 @@ public class PvmPerformancePlugin extends Plugin
 		history.clear();
 		countedProjectiles.clear();
 		pendingMineHits.clear();
+		drain.clear();
+		targetNpc = null;
 		respawnWatchNpcId = -1;
 		respawnNpcIndex = -1;
 	}
@@ -248,6 +255,9 @@ public class PvmPerformancePlugin extends Plugin
 				session.recordAttempt(hitsplat.getAmount(), now);
 				sampleExpected(current);
 			}
+			// A special's drain is worked out from the hit it landed, so it can
+			// only be applied here.
+			drain.onMyHitsplat(npc, hitsplat.getAmount());
 			// A landed hit resolves one of my pending attacks so it can't later
 			// be mistaken for another player's splash.
 			consumePending(npc.getIndex());
@@ -483,10 +493,27 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
+	/**
+	 * A drain landed by another party member, from the special attack counter's
+	 * own message. It carries only what others did, and only while a party is
+	 * set up, so it adds to rather than replaces watching our own energy.
+	 */
+	@Subscribe
+	public void onSpecialCounterUpdate(SpecialCounterUpdate event)
+	{
+		if (current != null && !current.isEnded()
+			&& current.getTargetIndex() == event.getNpcIndex())
+		{
+			drain.onSpecialCounterUpdate(event, targetNpc);
+		}
+	}
+
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned event)
 	{
 		final NPC npc = event.getNpc();
+		// The drain dies with the NPC, as its stats do.
+		drain.forget(npc.getIndex());
 		if (current != null && !current.isEnded() && current.getTargetIndex() == npc.getIndex())
 		{
 			finalizeFight(npc.isDead(), System.currentTimeMillis());
@@ -612,6 +639,10 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
+		// Watched here rather than on its own, because the energy falling is what
+		// says a special went out and the player's own specials are not carried
+		// by the party message.
+		drain.onEnergyChanged();
 		if (current == null || current.isEnded() || prayedThisTick)
 		{
 			return;
@@ -697,6 +728,8 @@ public class PvmPerformancePlugin extends Plugin
 			}
 			countedProjectiles.clear();
 			pendingMineHits.clear();
+			drain.clear();
+			targetNpc = null;
 			respawnWatchNpcId = -1;
 			respawnNpcIndex = -1;
 		}
@@ -713,6 +746,8 @@ public class PvmPerformancePlugin extends Plugin
 		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), maxHp == null ? -1 : maxHp, now,
 			raidType, raidCounter);
 		targetLiveId = npc.getId();
+		targetNpc = npc;
+		combatCalc.setTargetIndex(npc.getIndex());
 		openEncounterFor(current, now);
 		if (npc.getIndex() == respawnNpcIndex)
 		{
@@ -815,6 +850,10 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		current.end(died, now);
 		pendingMineHits.clear();
+		// Nothing is being fought, so no drain should be read against anything.
+		combatCalc.setTargetIndex(-1);
+		targetNpc = null;
+		targetLiveId = -1;
 		if (current.getAttempts() == 0)
 		{
 			// Opened because the player looked at something and then didn't

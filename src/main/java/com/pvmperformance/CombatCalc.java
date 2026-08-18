@@ -60,6 +60,7 @@ class CombatCalc
 	private final GearBonusCalc gearBonuses;
 	private final PvmPerformanceConfig config;
 	private final NPCManager npcManager;
+	private final DefenceDrain drain;
 
 	// A manual cast counts for a few ticks past the click, so it survives the
 	// gap between casts while the player keeps going.
@@ -77,12 +78,16 @@ class CombatCalc
 	// Whether the prayer reads should answer from the client's own copy of the
 	// prayer varbits rather than the server's. See prayerActive.
 	private boolean clientPrayerView;
+	// The index of the NPC the figures are being computed against, so the
+	// defence read can account for what has been drained off it.
+	private int targetIndex = -1;
 	private BlowpipeDart cachedDart;
 	private ItemEquipmentStats cachedDartStats;
 
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
-		GearBonusCalc gearBonuses, PvmPerformanceConfig config, NPCManager npcManager)
+		GearBonusCalc gearBonuses, PvmPerformanceConfig config, NPCManager npcManager,
+		DefenceDrain drain)
 	{
 		this.client = client;
 		this.itemManager = itemManager;
@@ -90,6 +95,7 @@ class CombatCalc
 		this.gearBonuses = gearBonuses;
 		this.config = config;
 		this.npcManager = npcManager;
+		this.drain = drain;
 	}
 
 	/** The gear multipliers for the current loadout against this target. */
@@ -364,7 +370,16 @@ class CombatCalc
 	 */
 	private int defenceLevel(MonsterStatsProvider.MonsterStats npc)
 	{
-		return raidScaled(npc.getDefenceLevel());
+		// What the target has left, not what it started with. Warhammers and
+		// godswords take real levels off it, and a model that keeps reading the
+		// book figure reports the player as less accurate than they were.
+		return Math.max(0, raidScaled(npc.getDefenceLevel()) - drain.drainedFrom(targetIndex));
+	}
+
+	/** The NPC the expected figures are being asked about, for the drain lookup. */
+	void setTargetIndex(int npcIndex)
+	{
+		this.targetIndex = npcIndex;
 	}
 
 	/**
@@ -388,13 +403,7 @@ class CombatCalc
 	 */
 	private int raidScaled(int level)
 	{
-		// Reads in the lobby as well, where nothing is fought.
-		final int raidLevel = client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL);
-		if (raidLevel <= 0)
-		{
-			return level;
-		}
-		return level * (100 + 2 * (raidLevel / 5)) / 100;
+		return RaidScaling.defence(client, level);
 	}
 
 	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
