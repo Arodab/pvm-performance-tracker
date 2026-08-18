@@ -798,7 +798,7 @@ class GearBonusCalc
 		return inTombsOfAmascut() ? 4 : 3;
 	}
 
-	private boolean inChambersOfXeric()
+	boolean inChambersOfXeric()
 	{
 		return client.getVarbitValue(VarbitID.RAIDS_CLIENT_INDUNGEON) == 1;
 	}

@@ -57,12 +57,46 @@ public interface PvmPerformanceConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "meleePrayerGoal",
+		name = "Efficiency: melee prayer",
+		description = "The melee prayer you mean to hold up. Efficiency compares the damage "
+			+ "your attacks were set up for against what this prayer would have given",
+		position = 5
+	)
+	default PrayerChoice meleePrayerGoal()
+	{
+		return PrayerChoice.PIETY;
+	}
+
+	@ConfigItem(
+		keyName = "rangedPrayerGoal",
+		name = "Efficiency: ranged prayer",
+		description = "The ranged prayer you mean to hold up",
+		position = 6
+	)
+	default PrayerChoice rangedPrayerGoal()
+	{
+		return PrayerChoice.RIGOUR;
+	}
+
+	@ConfigItem(
+		keyName = "magicPrayerGoal",
+		name = "Efficiency: magic prayer",
+		description = "The magic prayer you mean to hold up",
+		position = 7
+	)
+	default PrayerChoice magicPrayerGoal()
+	{
+		return PrayerChoice.AUGURY;
+	}
+
+	@ConfigItem(
 		keyName = "assumeSlayerTask",
 		name = "Assume on slayer task",
 		description = "Count the black mask / slayer helmet bonus in the expected figures. "
 			+ "There is no reliable way to tell whether the current target is your task, "
 			+ "so this is a manual switch: leave it off unless you are on task",
-		position = 5
+		position = 8
 	)
 	default boolean assumeSlayerTask()
 	{
@@ -73,7 +107,7 @@ public interface PvmPerformanceConfig extends Config
 		keyName = "fightTimeoutTicks",
 		name = "Fight timeout (ticks)",
 		description = "End the current fight after this many game ticks with no damage dealt",
-		position = 6
+		position = 9
 	)
 	default int fightTimeoutTicks()
 	{

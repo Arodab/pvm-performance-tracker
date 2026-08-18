@@ -41,11 +41,14 @@ class Fight
 	// max hit is known, and are counted separately.
 	private int expectedTargetSamples;
 
-	// How well each attack was set up: whether an offensive prayer for the style
-	// was up, and whether the stats it rolls on were boosted.
+	// What the attacks were set up to deal, against what they would have dealt
+	// set up properly. The ratio prices each slip in damage rather than counting
+	// them all alike.
 	private int attacksMade;
 	private int attacksPrayed;
 	private int attacksBoosted;
+	private double sumActualSetup;
+	private double sumIdealSetup;
 
 	// Ticks the weapon was off cooldown but no attack was made, against the
 	// ticks elapsed since the first attack. Eating is separated out because it
@@ -175,7 +178,7 @@ class Fight
 	 * Sampled here rather than where the damage lands, because that is the tick
 	 * the prayers and boosts actually applied to the attack.
 	 */
-	void recordAttackMade(boolean prayed, boolean boosted)
+	void recordAttackMade(boolean prayed, boolean boosted, double actualSetup, double idealSetup)
 	{
 		attacking = true;
 		combatTicks++;
@@ -188,19 +191,21 @@ class Fight
 		{
 			attacksBoosted++;
 		}
+		if (actualSetup >= 0 && idealSetup > 0)
+		{
+			sumActualSetup += actualSetup;
+			sumIdealSetup += idealSetup;
+		}
 	}
 
 	/**
-	 * Share of attacks that were both correctly prayed and boosted, or -1 before
-	 * any were made.
+	 * Damage the attacks were set up to deal as a share of what they would have
+	 * dealt with the intended prayer up and stats at full boost. -1 until an
+	 * attack has been made against a target with stats to compare on.
 	 */
 	double efficiency()
 	{
-		if (attacksMade == 0)
-		{
-			return -1;
-		}
-		return (double) (attacksPrayed + attacksBoosted) / (2 * attacksMade);
+		return sumIdealSetup <= 0 ? -1 : sumActualSetup / sumIdealSetup;
 	}
 
 	/**

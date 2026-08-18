@@ -431,8 +431,13 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			// Read on the attack tick: this is when the prayers and boosts are
 			// the ones the attack actually rolled with.
-			current.recordAttackMade(combatCalc.hasOffensivePrayer(), combatCalc.isBoosted());
-			session.recordAttackMade(combatCalc.hasOffensivePrayer(), combatCalc.isBoosted());
+			final int targetId = current.getTargetId();
+			final boolean prayed = combatCalc.hasOffensivePrayer();
+			final boolean boosted = combatCalc.isBoosted();
+			final double actualSetup = combatCalc.averageHit(targetId);
+			final double idealSetup = combatCalc.idealAverageHit(targetId);
+			current.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
+			session.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
 			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
 			return;
 		}

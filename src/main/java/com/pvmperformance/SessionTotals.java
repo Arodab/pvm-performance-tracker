@@ -23,6 +23,8 @@ class SessionTotals
 	private int attacksMade;
 	private int attacksPrayed;
 	private int attacksBoosted;
+	private double sumActualSetup;
+	private double sumIdealSetup;
 	private int ticksLostEating;
 	private int ticksLostOther;
 	private int combatTicks;
@@ -50,6 +52,8 @@ class SessionTotals
 		attacksMade = 0;
 		attacksPrayed = 0;
 		attacksBoosted = 0;
+		sumActualSetup = 0;
+		sumIdealSetup = 0;
 		ticksLostEating = 0;
 		ticksLostOther = 0;
 		combatTicks = 0;
@@ -89,9 +93,14 @@ class SessionTotals
 	 * the overlay shows it live for whatever is held now.
 	 */
 	/** How well one attack was set up, sampled on the tick it was made. */
-	void recordAttackMade(boolean prayed, boolean boosted)
+	void recordAttackMade(boolean prayed, boolean boosted, double actualSetup, double idealSetup)
 	{
 		attacksMade++;
+		if (actualSetup >= 0 && idealSetup > 0)
+		{
+			sumActualSetup += actualSetup;
+			sumIdealSetup += idealSetup;
+		}
 		if (prayed)
 		{
 			attacksPrayed++;
@@ -104,7 +113,7 @@ class SessionTotals
 
 	double efficiency()
 	{
-		return attacksMade == 0 ? -1 : (double) (attacksPrayed + attacksBoosted) / (2 * attacksMade);
+		return sumIdealSetup <= 0 ? -1 : sumActualSetup / sumIdealSetup;
 	}
 
 	void recordExpected(double accuracy, double averageHit)

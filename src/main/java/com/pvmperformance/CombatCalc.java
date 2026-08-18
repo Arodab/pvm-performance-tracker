@@ -65,6 +65,9 @@ class CombatCalc
 	private static final int MANUAL_CAST_TICKS = 8;
 	private Spell manualCastSpell;
 	private int manualCastTick = Integer.MIN_VALUE;
+	// Set while computing what an attack should have been, so the level and
+	// prayer reads answer with the intended setup instead of the real one.
+	private boolean ideal;
 	private BlowpipeDart cachedDart;
 	private ItemEquipmentStats cachedDartStats;
 
@@ -220,7 +223,7 @@ class CombatCalc
 
 	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
 	{
-		final int effAtk = (int) Math.floor(client.getBoostedSkillLevel(Skill.ATTACK) * meleeAccuracyPrayer())
+		final int effAtk = (int) Math.floor(boostedLevel(Skill.ATTACK) * meleeAccuracyPrayer())
 			+ style.attackLevelBonus() + 8;
 		final int attRoll = (int) (effAtk * (attackBonus(type) + 64) * gear);
 		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
@@ -236,7 +239,7 @@ class CombatCalc
 	 */
 	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
 	{
-		final int effMagic = (int) Math.floor(client.getBoostedSkillLevel(Skill.MAGIC) * magicAccuracyPrayer())
+		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
 		final int attRoll = (int) (effMagic * (attackBonus(AttackType.MAGIC) + 64) * gear);
 		final int defRoll = (npc.getMagicLevel() + 9) * (npc.getDefMagic() + 64);
@@ -285,7 +288,7 @@ class CombatCalc
 
 	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
 	{
-		final int effRanged = (int) Math.floor(client.getBoostedSkillLevel(Skill.RANGED) * rangedAccuracyPrayer())
+		final int effRanged = (int) Math.floor(boostedLevel(Skill.RANGED) * rangedAccuracyPrayer())
 			+ style.attackLevelBonus() + 8;
 		final int attRoll = (int) (effRanged * (attackBonus(AttackType.RANGED) + 64) * gear);
 		final int defRoll = (npc.getDefenceLevel() + 9) * (npc.getDefRanged() + 64);
@@ -356,6 +359,10 @@ class CombatCalc
 
 	private double meleeAccuracyPrayer()
 	{
+		if (ideal)
+		{
+			return prayerGoal().getAttackMultiplier();
+		}
 		if (prayerActive(Prayer.RP_INTENSIFY))
 		{
 			return 1.50;
@@ -759,7 +766,7 @@ class CombatCalc
 		}
 		if (weapon == ItemID.NIGHTMARE_STAFF_VOLATILE || weapon == ItemID.DEADMAN_BLIGHTED_VOLATILE_STAFF)
 		{
-			final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
+			final int magic = boostedLevel(Skill.MAGIC);
 			// The spec is its own attack, not a spell, so no ancient bonus applies.
 			return applyMagicDamage(Math.min(58, 58 * magic / 99 + 1), null);
 		}
@@ -782,7 +789,7 @@ class CombatCalc
 
 	private int meleeMaxHit()
 	{
-		final int level = client.getBoostedSkillLevel(Skill.STRENGTH);
+		final int level = boostedLevel(Skill.STRENGTH);
 		if (level <= 0)
 		{
 			return 0;
@@ -793,7 +800,7 @@ class CombatCalc
 
 	private int rangedMaxHit()
 	{
-		final int level = client.getBoostedSkillLevel(Skill.RANGED);
+		final int level = boostedLevel(Skill.RANGED);
 		if (level <= 0)
 		{
 			return 0;
@@ -904,7 +911,7 @@ class CombatCalc
 		{
 			return 0;
 		}
-		final int magic = client.getBoostedSkillLevel(Skill.MAGIC);
+		final int magic = boostedLevel(Skill.MAGIC);
 		// Trident of the seas is floor(magic / 3) - 5; the rest are offsets of it.
 		final int seas = magic / 3 - 5;
 		final String lower = name.toLowerCase();
@@ -1023,6 +1030,10 @@ class CombatCalc
 
 	private double meleePrayer()
 	{
+		if (ideal)
+		{
+			return prayerGoal().getStrengthMultiplier();
+		}
 		if (prayerActive(Prayer.RP_DECIMATE))
 		{
 			return 1.27;
@@ -1059,6 +1070,82 @@ class CombatCalc
 	}
 
 	/**
+	 * Expected damage per attack if the attack had been set up properly: the
+	 * configured prayer up and stats at full boost, with everything else — gear,
+	 * target, style — exactly as it is.
+	 *
+	 * <p>Comparing this against what the attack was really set up for prices the
+	 * mistake in damage. A missing prayer costs what it costs, rather than
+	 * counting the same as any other slip.
+	 */
+	double idealAverageHit(int npcId)
+	{
+		ideal = true;
+		try
+		{
+			return averageHit(npcId);
+		}
+		finally
+		{
+			ideal = false;
+		}
+	}
+
+	/**
+	 * The level a skill rolls at. While computing the ideal, this is the base
+	 * level plus the full boost of the potion expected here, so a dose that has
+	 * decayed or was never drunk shows up as the damage it costs.
+	 */
+	private int boostedLevel(Skill skill)
+	{
+		if (!ideal)
+		{
+			return client.getBoostedSkillLevel(skill);
+		}
+		final int base = client.getRealSkillLevel(skill);
+		return base + maxBoost(skill, base);
+	}
+
+	/**
+	 * The boost the best potion for this content gives. Inside a raid that is
+	 * the raid's own potion, which is what a player there would be holding;
+	 * outside it is the ordinary best for the style.
+	 */
+	private int maxBoost(Skill skill, int base)
+	{
+		if (gearBonuses.inChambersOfXeric())
+		{
+			return base * 13 / 100 + 5;
+		}
+		if (gearBonuses.inTombsOfAmascut())
+		{
+			return base * 16 / 100 + 11; // smelling salts
+		}
+		switch (skill)
+		{
+			case RANGED: // ranging potion
+			case MAGIC:  // saturated heart
+				return base / 10 + 4;
+			default: // super combat
+				return base * 15 / 100 + 5;
+		}
+	}
+
+	/** The prayer the player means to be using for the style in hand. */
+	private PrayerChoice prayerGoal()
+	{
+		switch (attackStyle().getAttackType())
+		{
+			case MAGIC:
+				return config.magicPrayerGoal();
+			case RANGED:
+				return config.rangedPrayerGoal();
+			default:
+				return config.meleePrayerGoal();
+		}
+	}
+
+	/**
 	 * Whether an offensive prayer for the style being attacked with is active.
 	 *
 	 * <p>Style specific on purpose: piety while shooting a bow is not a prayer
@@ -1082,14 +1169,13 @@ class CombatCalc
 	}
 
 	/**
-	 * Whether every combat stat the current style rolls on is above its base
-	 * level, meaning a boost is up.
+	 * Whether every combat stat the current style rolls on is at the full boost
+	 * the best potion here would give.
 	 *
-	 * <p>Catches the two cases worth catching: attacking having never potted,
-	 * and attacking after a dose has worn all the way off. It does not judge how
-	 * far a boost has decayed, which would need to know which potion was drunk.
-	 * A brew taken without re-dosing drops the stat below base and so reads as
-	 * unboosted, which is the intent.
+	 * <p>Full, not merely above base: a brew sipped once leaves the stat above
+	 * base but below where it should be, and that is a mistake. Decay counts
+	 * against it for the same reason. The efficiency ratio is what says how much
+	 * any of it actually cost; this flag only says whether it was perfect.
 	 */
 	boolean isBoosted()
 	{
@@ -1106,7 +1192,8 @@ class CombatCalc
 
 	private boolean isBoosted(Skill skill)
 	{
-		return client.getBoostedSkillLevel(skill) > client.getRealSkillLevel(skill);
+		final int base = client.getRealSkillLevel(skill);
+		return client.getBoostedSkillLevel(skill) >= base + maxBoost(skill, base);
 	}
 
 	/**
@@ -1127,6 +1214,10 @@ class CombatCalc
 	 */
 	private double magicAccuracyPrayer()
 	{
+		if (ideal)
+		{
+			return prayerGoal().getAttackMultiplier();
+		}
 		if (prayerActive(Prayer.RP_INTENSIFY))
 		{
 			return 1.50;
@@ -1194,6 +1285,10 @@ class CombatCalc
 	/** Ranged attack prayer multiplier. Rigour gives less here than it does to strength. */
 	private double rangedAccuracyPrayer()
 	{
+		if (ideal)
+		{
+			return prayerGoal().getAttackMultiplier();
+		}
 		if (prayerActive(Prayer.RP_INTENSIFY))
 		{
 			return 1.50;
@@ -1235,6 +1330,10 @@ class CombatCalc
 
 	private double rangedPrayer()
 	{
+		if (ideal)
+		{
+			return prayerGoal().getStrengthMultiplier();
+		}
 		if (prayerActive(Prayer.RP_ANNIHILATE))
 		{
 			return 1.27;
