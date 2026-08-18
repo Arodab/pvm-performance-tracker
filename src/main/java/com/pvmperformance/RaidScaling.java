@@ -28,8 +28,8 @@ final class RaidScaling
 	private static final Set<String> MAGIC_SCALED = Collections.unmodifiableSet(new HashSet<>(
 		Arrays.asList("deathly ranger", "abyssal portal", "vespula", "vespine soldier")));
 
-	// Olm's hands mitigate 66% of an off-style hit, leaving this much.
-	private static final double MITIGATED = 0.34;
+	// Olm's hands mitigate two thirds of an off-style hit, leaving a third.
+	private static final double MITIGATED = 1.0 / 3.0;
 
 	private RaidScaling()
 	{

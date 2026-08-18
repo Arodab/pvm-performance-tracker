@@ -149,6 +149,28 @@ final class EncounterGroup
 		// Tombs of Amascut. Zebak and Kephri change id mid-fight for the same
 		// fight; the monkey room's baboons are a room rather than a set of
 		// kills.
+		// Phosani's Nightmare takes her totems, which are the other half of the
+		// fight. Her adds are grouped too but scored out below: they are killed
+		// in one hit, and their guaranteed max hits would drag the room towards
+		// perfect accuracy the longer one was spent on them.
+		//
+		// The totem ids are shared with The Nightmare, whose totems will file
+		// under her room as a result. Nothing in the id tells the two apart.
+		put(groups, "Phosani's Nightmare",
+			NpcID.NIGHTMARE_CHALLENGE_INITIAL, NpcID.NIGHTMARE_CHALLENGE_BLAST,
+			NpcID.NIGHTMARE_CHALLENGE_PHASE_01, NpcID.NIGHTMARE_CHALLENGE_PHASE_02,
+			NpcID.NIGHTMARE_CHALLENGE_PHASE_03, NpcID.NIGHTMARE_CHALLENGE_PHASE_04,
+			NpcID.NIGHTMARE_CHALLENGE_PHASE_05,
+			NpcID.NIGHTMARE_CHALLENGE_WEAK_PHASE_01, NpcID.NIGHTMARE_CHALLENGE_WEAK_PHASE_02,
+			NpcID.NIGHTMARE_CHALLENGE_WEAK_PHASE_03, NpcID.NIGHTMARE_CHALLENGE_WEAK_PHASE_04,
+			NpcID.NIGHTMARE_TOTEM_1_READY, NpcID.NIGHTMARE_TOTEM_1_CHARGED,
+			NpcID.NIGHTMARE_TOTEM_2_READY, NpcID.NIGHTMARE_TOTEM_2_CHARGED,
+			NpcID.NIGHTMARE_TOTEM_3_READY, NpcID.NIGHTMARE_TOTEM_3_CHARGED,
+			NpcID.NIGHTMARE_TOTEM_4_READY, NpcID.NIGHTMARE_TOTEM_4_CHARGED,
+			NpcID.NIGHTMARE_CHALLENGE_HUSK_MAGIC, NpcID.NIGHTMARE_CHALLENGE_HUSK_RANGED,
+			NpcID.NIGHTMARE_CHALLENGE_PARASITE, NpcID.NIGHTMARE_CHALLENGE_PARASITE_WEAK,
+			NpcID.NIGHTMARE_CHALLENGE_SLEEPWALKER);
+
 		put(groups, "Yama", NpcID.YAMA, NpcID.YAMA_JUDGE_OF_YAMA, NpcID.LEAGUE6_JUDGE_OF_YAMA);
 
 		put(groups, "Zebak", NpcID.TOA_ZEBAK, NpcID.TOA_ZEBAK_ENRAGED);
@@ -278,7 +300,14 @@ final class EncounterGroup
 			// his. Ignoring it outright would have been worse than either: with
 			// nothing tracking the Judge, the time spent killing its 400
 			// hitpoints would have been booked against Yama as ticks lost.
-			NpcID.YAMA_JUDGE_OF_YAMA, NpcID.LEAGUE6_JUDGE_OF_YAMA)));
+			NpcID.YAMA_JUDGE_OF_YAMA, NpcID.LEAGUE6_JUDGE_OF_YAMA,
+			// Phosani's adds, killed in one hit apiece. Grouped rather than
+			// ignored, or the time spent on them would be booked against her as
+			// ticks lost; unscored, or their guaranteed max hits would flatter
+			// whoever spent longest on them.
+			NpcID.NIGHTMARE_CHALLENGE_HUSK_MAGIC, NpcID.NIGHTMARE_CHALLENGE_HUSK_RANGED,
+			NpcID.NIGHTMARE_CHALLENGE_PARASITE, NpcID.NIGHTMARE_CHALLENGE_PARASITE_WEAK,
+			NpcID.NIGHTMARE_CHALLENGE_SLEEPWALKER)));
 	}
 
 	private static Set<Integer> buildUnattackable()
