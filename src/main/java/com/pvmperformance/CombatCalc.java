@@ -61,6 +61,7 @@ class CombatCalc
 	private final PvmPerformanceConfig config;
 	private final NPCManager npcManager;
 	private final DefenceDrain drain;
+	private final PartyHitpoints partyHitpoints;
 
 	// A manual cast counts for a few ticks past the click, so it survives the
 	// gap between casts while the player keeps going.
@@ -87,7 +88,7 @@ class CombatCalc
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
 		GearBonusCalc gearBonuses, PvmPerformanceConfig config, NPCManager npcManager,
-		DefenceDrain drain)
+		DefenceDrain drain, PartyHitpoints partyHitpoints)
 	{
 		this.client = client;
 		this.itemManager = itemManager;
@@ -96,6 +97,7 @@ class CombatCalc
 		this.config = config;
 		this.npcManager = npcManager;
 		this.drain = drain;
+		this.partyHitpoints = partyHitpoints;
 	}
 
 	/** The gear multipliers for the current loadout against this target. */
@@ -403,7 +405,7 @@ class CombatCalc
 	 */
 	private int raidScaled(MonsterStatsProvider.MonsterStats npc)
 	{
-		return RaidScaling.defence(client, npc.getDefenceLevel(), npc.getName());
+		return RaidScaling.defence(client, npc.getDefenceLevel(), npc.getName(), partyHitpoints.highest());
 	}
 
 	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
@@ -434,7 +436,7 @@ class CombatCalc
 		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
 		final int attRoll = (int) (effMagic * (attackBonus(AttackType.MAGIC) + 64) * gear);
-		final int magic = RaidScaling.magic(client, npc.getMagicLevel(), npc.getName());
+		final int magic = RaidScaling.magic(client, npc.getMagicLevel(), npc.getName(), partyHitpoints.highest());
 		final int defRoll = (magic + 9) * (npc.getDefMagic() + 64);
 		if (!hasConflictionGauntlets())
 		{

@@ -44,6 +44,7 @@ class DefenceDrain
 
 	private final Client client;
 	private final MonsterStatsProvider monsters;
+	private final PartyHitpoints partyHitpoints;
 
 	// npc index -> defence levels taken off it.
 	private final Map<Integer, Integer> drained = new HashMap<>();
@@ -53,10 +54,11 @@ class DefenceDrain
 	private int firedTick = Integer.MIN_VALUE;
 
 	@Inject
-	DefenceDrain(Client client, MonsterStatsProvider monsters)
+	DefenceDrain(Client client, MonsterStatsProvider monsters, PartyHitpoints partyHitpoints)
 	{
 		this.client = client;
 		this.monsters = monsters;
+		this.partyHitpoints = partyHitpoints;
 	}
 
 	/** Levels of defence already taken off this NPC. */
@@ -131,7 +133,7 @@ class DefenceDrain
 			return;
 		}
 		// The scaled figure, since that is the defence the drain is a share of.
-		final int base = RaidScaling.defence(client, stats.getDefenceLevel(), stats.getName());
+		final int base = RaidScaling.defence(client, stats.getDefenceLevel(), stats.getName(), partyHitpoints.highest());
 		final int already = drainedFrom(npc.getIndex());
 		final int remaining = base - already;
 		if (remaining <= 0)

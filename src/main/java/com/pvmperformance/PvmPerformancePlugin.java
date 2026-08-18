@@ -63,6 +63,8 @@ import net.runelite.client.hiscore.HiscoreSkill;
 import net.runelite.client.hiscore.HiscoreSkillType;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.party.events.UserPart;
+import net.runelite.client.plugins.party.messages.StatusUpdate;
 import net.runelite.client.plugins.specialcounter.SpecialCounterUpdate;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
@@ -129,6 +131,9 @@ public class PvmPerformancePlugin extends Plugin
 
 	@Inject
 	private DefenceDrain drain;
+
+	@Inject
+	private PartyHitpoints partyHitpoints;
 
 	private PvmPerformancePanel panel;
 	private NavigationButton navButton;
@@ -235,6 +240,7 @@ public class PvmPerformancePlugin extends Plugin
 		countedProjectiles.clear();
 		pendingMineHits.clear();
 		drain.clear();
+		partyHitpoints.clear();
 		targetNpc = null;
 		respawnWatchNpcId = -1;
 		respawnNpcIndex = -1;
@@ -540,6 +546,23 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			drain.onSpecialCounterUpdate(event, targetNpc);
 		}
+	}
+
+	/**
+	 * Takes the party's hitpoints levels from the party plugin's own broadcasts,
+	 * which is where the Chambers scaling term comes from — the game gives only
+	 * the player's own level, and raiding beside a higher one made it wrong.
+	 */
+	@Subscribe
+	public void onStatusUpdate(StatusUpdate event)
+	{
+		partyHitpoints.onStatusUpdate(event);
+	}
+
+	@Subscribe
+	public void onUserPart(UserPart event)
+	{
+		partyHitpoints.forget(event.getMemberId());
 	}
 
 	@Subscribe

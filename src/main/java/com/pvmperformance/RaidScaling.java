@@ -5,7 +5,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import net.runelite.api.Client;
-import net.runelite.api.Skill;
 import net.runelite.api.gameval.VarbitID;
 
 /**
@@ -33,14 +32,15 @@ final class RaidScaling
 	}
 
 	/** A monster's defence level as the raid it stands in leaves it. */
-	static int defence(Client client, int base, String name)
+	static int defence(Client client, int base, String name, int partyHitpoints)
 	{
 		final int toa = tombsRaidLevel(client);
 		if (toa > 0)
 		{
 			return tombs(base, toa);
 		}
-		return inChambers(client) ? chambers(client, base, chambersDefenceMultiplier(client, name)) : base;
+		return inChambers(client)
+			? chambers(client, base, chambersDefenceMultiplier(client, name), partyHitpoints) : base;
 	}
 
 	/**
@@ -52,13 +52,13 @@ final class RaidScaling
 	 * The Chambers scale it, but only for the few whose magic is worth rolling
 	 * against.
 	 */
-	static int magic(Client client, int base, String name)
+	static int magic(Client client, int base, String name, int partyHitpoints)
 	{
 		if (!inChambers(client) || !scalesMagic(name))
 		{
 			return base;
 		}
-		return chambers(client, base, chambersDefenceMultiplier(client, name));
+		return chambers(client, base, chambersDefenceMultiplier(client, name), partyHitpoints);
 	}
 
 	/**
@@ -77,14 +77,14 @@ final class RaidScaling
 	 * and the order they are applied in changes the answer, so it is kept.
 	 *
 	 * <p>The hitpoints term is the party's <em>highest</em> hitpoints level,
-	 * which only the player's own is readable. At 99 the term is exactly 99/99
-	 * and nothing happens, so this is only wrong for a low level raiding with
-	 * someone higher, and wrong in the direction of expecting too little.
+	 * which comes from {@link PartyHitpoints}: the game exposes only the
+	 * player's own, and the party plugin's broadcasts are where the rest of it
+	 * is. At 99 the term saturates, so for most raiders it changes nothing.
 	 */
-	private static int chambers(Client client, int base, double cmMultiplier)
+	private static int chambers(Client client, int base, double cmMultiplier, int partyHitpoints)
 	{
 		final int party = chambersPartySize(client);
-		final int hp = Math.max(1, Math.min(99, client.getRealSkillLevel(Skill.HITPOINTS)));
+		final int hp = Math.max(1, Math.min(99, partyHitpoints));
 		final int hpTerm = Math.max(55, Math.min(99, 55 + 44 * hp / 99));
 
 		int level = base * hpTerm / 99;
