@@ -2,7 +2,16 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-/** Aggregated actual performance across every fight against one NPC name. */
+/**
+ * Aggregated performance across every fight against one target, where a target
+ * is a room when the NPCs of that room are grouped and a single NPC otherwise.
+ * So the nylocas add up per colour and Kephri's whole room reads as Kephri,
+ * while a Vorkath is still a Vorkath.
+ *
+ * <p>Damage and accuracy count only the fights worth scoring; ticks count all
+ * of them, so Kephri's healing scarabs cost time without lending their
+ * guaranteed max hits to the room's accuracy.
+ */
 @Getter
 class NpcStats
 {
@@ -15,6 +24,10 @@ class NpcStats
 	private long totalDurationMillis;
 	private int totalAttempts;
 	private int totalHits;
+	private int ticksLost;
+	private int combatTicks;
+	private double sumActualSetup;
+	private double sumIdealSetup;
 
 	NpcStats(String name)
 	{
@@ -28,12 +41,35 @@ class NpcStats
 		{
 			kills++;
 		}
-		maxHp = Math.max(maxHp, fight.getMaxHp());
-		totalDamageDealt += fight.getDamageDealt();
 		totalDamageTaken += fight.getDamageTaken();
 		totalDurationMillis += fight.durationMillis();
+		ticksLost += fight.getTicksLost();
+		combatTicks += fight.getCombatTicks();
+		if (!fight.isScored())
+		{
+			return;
+		}
+		maxHp = Math.max(maxHp, fight.getMaxHp());
+		totalDamageDealt += fight.getDamageDealt();
 		totalAttempts += fight.getAttempts();
 		totalHits += fight.getHits();
+		sumActualSetup += fight.getSumActualSetup();
+		sumIdealSetup += fight.getSumIdealSetup();
+	}
+
+	/**
+	 * Damage the attacks were set up to deal against what they would have with
+	 * the intended prayer and a full boost, or -1 if nothing was comparable.
+	 */
+	double efficiency()
+	{
+		return sumIdealSetup <= 0 ? -1 : sumActualSetup / sumIdealSetup;
+	}
+
+	/** Share of attackable ticks that went unused, or -1 if none were counted. */
+	double ticksLostShare()
+	{
+		return combatTicks <= 0 ? -1 : (double) ticksLost / combatTicks;
 	}
 
 	double avgDps()

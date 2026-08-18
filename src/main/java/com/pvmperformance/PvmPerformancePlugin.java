@@ -1007,7 +1007,9 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				continue;
 			}
-			byName.computeIfAbsent(fight.getTargetName(), NpcStats::new).add(fight);
+			// Keyed on the room rather than the NPC, so a grouped room reads as
+			// one line instead of one per add.
+			byName.computeIfAbsent(fight.encounterName(), NpcStats::new).add(fight);
 		}
 		return new ArrayList<>(byName.values());
 	}
@@ -1067,7 +1069,7 @@ public class PvmPerformancePlugin extends Plugin
 		final List<Fight> fights = new ArrayList<>();
 		for (Fight fight : history)
 		{
-			if (fight.getTargetName().equals(name))
+			if (fight.encounterName().equals(name))
 			{
 				fights.add(fight);
 			}

@@ -227,6 +227,35 @@ class PvmPerformancePanel extends PluginPanel
 		});
 	}
 
+	/**
+	 * The efficiency and tick loss line, left off entirely when neither was
+	 * measured — an empty pair of dashes reads as a bad score rather than as no
+	 * score, which is what a history recorded before these existed would show.
+	 */
+	private static String quality(NpcStats s)
+	{
+		final double efficiency = s.efficiency();
+		final double lost = s.ticksLostShare();
+		if (efficiency < 0 && lost < 0)
+		{
+			return "";
+		}
+		final StringBuilder line = new StringBuilder("<br><font color='#a0a0a0'>");
+		if (efficiency >= 0)
+		{
+			line.append(String.format("%.0f%% efficiency", efficiency * 100));
+		}
+		if (lost >= 0)
+		{
+			if (efficiency >= 0)
+			{
+				line.append(" &middot; ");
+			}
+			line.append(String.format("%.0f%% ticks lost", lost * 100));
+		}
+		return line.append("</font>").toString();
+	}
+
 	private JPanel buildRow(NpcStats s)
 	{
 		final JPanel row = new JPanel(new BorderLayout(6, 0));
@@ -234,10 +263,15 @@ class PvmPerformancePanel extends PluginPanel
 		row.setBorder(new EmptyBorder(6, 8, 6, 8));
 		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
 
+		// Two lines: what was fought, then how well. Efficiency and lost ticks
+		// are the two that say where to improve, so they go on the end where the
+		// eye lands after the totals rather than being buried among them.
 		final String info = String.format(
-			"<html><b>%s</b><br><font color='#a0a0a0'>%d fights &middot; %d kills &middot; %.2f avg hit &middot; %.0f%% acc &middot; %s dmg</font></html>",
+			"<html><b>%s</b><br><font color='#a0a0a0'>%d fights &middot; %d kills &middot; "
+				+ "%.2f avg hit &middot; %.0f%% acc &middot; %s dmg</font>%s</html>",
 			s.getName(), s.getFights(), s.getKills(), s.avgHit(), s.accuracy() * 100,
-			QuantityFormatter.formatNumber(s.getTotalDamageDealt()));
+			QuantityFormatter.formatNumber(s.getTotalDamageDealt()),
+			quality(s));
 		final JLabel label = new JLabel(info);
 		label.setForeground(Color.WHITE);
 		row.add(label, BorderLayout.CENTER);
