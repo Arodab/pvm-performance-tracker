@@ -1,18 +1,20 @@
 package com.pvmperformance;
 
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.EnumComposition;
-import net.runelite.api.StructComposition;
-import net.runelite.api.NPC;
-import net.runelite.api.Player;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.NPC;
+import net.runelite.api.Player;
 import net.runelite.api.Prayer;
 import net.runelite.api.Skill;
+import net.runelite.api.StructComposition;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarPlayerID;
@@ -65,9 +67,6 @@ class CombatCalc
 	// Enum mapping a weapon category to its list of combat option structs, as
 	// read by RuneLite's own attack styles plugin. No gameval constant exists.
 	private static final int WEAPON_CATEGORY_STYLES_ENUM = 3908;
-	// Last loadout written to the debug log, so it is written only on a change.
-	private int loggedWeapon = Integer.MIN_VALUE;
-	private int loggedCategory = Integer.MIN_VALUE;
 
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
@@ -635,7 +634,6 @@ class CombatCalc
 	 */
 	int maxHit(int npcId)
 	{
-		logLoadout();
 		final int hit = (int) (baseMaxHit() * gearBonus(npcId).getDamage()) + colossalBladeBonus(npcId);
 		final EnchantedBolt bolt = loadedBolt(npcId);
 		if (bolt == null)
@@ -873,56 +871,68 @@ class CombatCalc
 	}
 
 	/**
-	 * Logs what the loadout resolved to, once per weapon or category change.
-	 * Cheap to leave in: it only fires when something is swapped, and it is the
-	 * quickest way to see why a weapon is being read the way it is.
+	 * A human readable dump of how the current loadout was resolved, for the
+	 * ::loadout command. Written so a player can paste it into a bug report and
+	 * have it say why a figure came out the way it did, rather than only that it
+	 * looked wrong.
 	 */
-	private void logLoadout()
+	List<String> describeLoadout(int npcId)
 	{
-		final int weapon = weaponItemId();
+		final List<String> lines = new ArrayList<>();
 		final int categoryVarbit = client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY);
-		if (weapon == loggedWeapon && categoryVarbit == loggedCategory)
-		{
-			return;
-		}
-		loggedWeapon = weapon;
-		loggedCategory = categoryVarbit;
+		final int varp = client.getVarpValue(VarPlayerID.COM_MODE);
 		final AttackStyle style = attackStyle();
-		logStyleStructs(categoryVarbit);
-		log.debug("PvM Performance loadout: weapon={} name='{}' categoryVarbit={} mappedCategory={} "
-				+ "comMode={} type={} style={} poweredStaffHit={} autocast={} baseMaxHit={}",
-			weapon, weaponName(), categoryVarbit, WeaponCategory.forVarbit(categoryVarbit),
-			client.getVarpValue(VarPlayerID.COM_MODE), style.getAttackType(), style.getCombatStyle(),
-			poweredStaffMaxHit(), autocastSpell(), baseMaxHit());
+
+		lines.add(String.format("Weapon: %s (%d), category varbit %d -> %s",
+			weaponName() == null ? "unarmed" : weaponName(), weaponItemId(),
+			categoryVarbit, WeaponCategory.forVarbit(categoryVarbit)));
+		lines.add(String.format("Style: com mode %d -> %s / %s, %d tick",
+			varp, style.getAttackType(), style.getCombatStyle(), attackSpeedTicks()));
+
+		final Spell spell = activeSpell();
+		lines.add(String.format("Magic: spell %s, powered staff hit %d, shadow x%d",
+			spell == null ? "none" : spell.getDisplayName(), poweredStaffMaxHit(),
+			gearBonuses.shadowMultiplier()));
+
+		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		if (npc == null)
+		{
+			lines.add("Target: no monster data" + (npcId > 0 ? " for id " + npcId : ""));
+		}
+		else
+		{
+			lines.add(String.format("Target: %s (%d), def %d, magic %d, attributes %s",
+				npc.getName(), npcId, npc.getDefenceLevel(), npc.getMagicLevel(), npc.getAttributes()));
+		}
+
+		final GearBonus gear = gearBonus(npcId);
+		lines.add(String.format("Gear: accuracy x%.3f, damage x%.3f, expected x%.3f",
+			gear.getAccuracy(), gear.getDamage(), gear.getExpectedDamage()));
+		lines.add(String.format("Result: max hit %d, spec max %d, accuracy %.1f%%, avg hit %.2f",
+			maxHit(npcId), specialAttackMaxHit(npcId), hitChance(npcId) * 100, averageHit(npcId)));
+		return lines;
 	}
 
 	/**
-	 * Dumps the game's own description of this weapon category's combat options.
-	 * Temporary: it is here to rebuild the category table against the live cache
-	 * rather than against a source that has drifted, and comes out once per
-	 * category change.
-	 *
-	 * <p>Enum 3908 maps a weapon category to an enum of structs, one per combat
-	 * option. RuneLite's own attack styles plugin reads the combat style from
-	 * param 1407; the surrounding params are probed to find which one carries
-	 * the attack type.
+	 * Writes the game's own description of this weapon category's combat options
+	 * to the debug log. Enum 3908 maps a category to its combat option structs,
+	 * one per option, and RuneLite's attack styles plugin reads the combat style
+	 * from param 1407; the surrounding params are probed to see what else the
+	 * struct carries.
 	 */
-	private void logStyleStructs(int categoryVarbit)
+	void logStyleStructs()
 	{
+		final int categoryVarbit = client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY);
 		final EnumComposition categories = client.getEnum(WEAPON_CATEGORY_STYLES_ENUM);
 		if (categories == null)
 		{
 			return;
 		}
 		final int styleEnumId = categories.getIntValue(categoryVarbit);
-		if (styleEnumId == -1)
-		{
-			log.debug("PvM Performance styles: category {} has no style enum", categoryVarbit);
-			return;
-		}
-		final EnumComposition styles = client.getEnum(styleEnumId);
+		final EnumComposition styles = styleEnumId == -1 ? null : client.getEnum(styleEnumId);
 		if (styles == null)
 		{
+			log.debug("PvM Performance styles: category {} has no style enum", categoryVarbit);
 			return;
 		}
 		for (int structId : styles.getIntVals())
@@ -935,20 +945,43 @@ class CombatCalc
 			final StringBuilder params = new StringBuilder();
 			for (int param = 1395; param <= 1425; param++)
 			{
-				final String text = struct.getStringValue(param);
-				if (text != null && !text.isEmpty())
-				{
-					params.append(' ').append(param).append("='").append(text).append("'");
-					continue;
-				}
-				final int value = struct.getIntValue(param);
-				if (value != 0)
-				{
-					params.append(' ').append(param).append('=').append(value);
-				}
+				params.append(describeParam(struct, param));
 			}
 			log.debug("PvM Performance styles: category={} struct={}{}", categoryVarbit, structId, params);
 		}
+	}
+
+	/**
+	 * Reads one param off a struct without knowing its type. There is no way to
+	 * ask, and asking for the wrong one throws, so both are tried.
+	 */
+	private static String describeParam(StructComposition struct, int param)
+	{
+		try
+		{
+			final String text = struct.getStringValue(param);
+			if (text != null && !text.isEmpty())
+			{
+				return " " + param + "='" + text + "'";
+			}
+		}
+		catch (RuntimeException notAString)
+		{
+			// Falls through to reading it as an int.
+		}
+		try
+		{
+			final int value = struct.getIntValue(param);
+			if (value != 0)
+			{
+				return " " + param + "=" + value;
+			}
+		}
+		catch (RuntimeException notAnInt)
+		{
+			// Param isn't set on this struct at all.
+		}
+		return "";
 	}
 
 	/** The equipped weapon's name, or null when unarmed. */

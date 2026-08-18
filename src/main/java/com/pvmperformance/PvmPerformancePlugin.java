@@ -38,6 +38,7 @@ import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GraphicChanged;
@@ -45,9 +46,9 @@ import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.ProjectileMoved;
-import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.SpotanimID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -228,6 +229,28 @@ public class PvmPerformancePlugin extends Plugin
 			// Damage on us during an active fight is attributed to it.
 			current.recordDamageTaken(hitsplat.getAmount(), now);
 		}
+	}
+
+	/**
+	 * Prints how the current loadout was resolved, so a player hitting a wrong
+	 * figure can report why it is wrong rather than only that it is. Also writes
+	 * the game's own combat option data for the equipped weapon to the log,
+	 * which is what identifies a weapon category this plugin has wrong.
+	 */
+	@Subscribe
+	public void onCommandExecuted(CommandExecuted event)
+	{
+		if (!"loadout".equalsIgnoreCase(event.getCommand()))
+		{
+			return;
+		}
+		final Fight shown = getDisplayFight();
+		final int targetId = shown == null ? -1 : shown.getTargetId();
+		for (String line : combatCalc.describeLoadout(targetId))
+		{
+			client.addChatMessage(ChatMessageType.CONSOLE, "PvM Performance", line, null);
+		}
+		combatCalc.logStyleStructs();
 	}
 
 	/**
