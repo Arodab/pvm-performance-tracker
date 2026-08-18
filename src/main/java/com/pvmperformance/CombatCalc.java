@@ -1151,10 +1151,12 @@ class CombatCalc
 		}
 
 		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		// The id is printed either way. When there are no stats for it, the id is
+		// the only thing that identifies what the player was actually looking at.
 		lines.add(npc == null
-			? "Target: none, or no stats for it"
-			: String.format("Target: %s, defence %d (base %d), magic %d, toa raid level %d",
-				npc.getName(), defenceLevel(npc), npc.getDefenceLevel(), npc.getMagicLevel(),
+			? String.format("Target: npc %d, no stats for it", npcId)
+			: String.format("Target: %s (npc %d), defence %d (base %d), magic %d, toa raid level %d",
+				npc.getName(), npcId, defenceLevel(npc), npc.getDefenceLevel(), npc.getMagicLevel(),
 				client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL)));
 
 		final double accuracy = hitChance(npcId);
