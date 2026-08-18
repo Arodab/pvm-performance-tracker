@@ -619,6 +619,9 @@ public class PvmPerformancePlugin extends Plugin
 			}
 			final boolean prayed = prayedThisTick || combatCalc.hasOffensivePrayer();
 			final boolean boosted = combatCalc.isBoosted();
+			log.debug("PvM Performance: attack tick {} prayed={} (seenThisTick={} server={} client={})",
+				client.getTickCount(), prayed, prayedThisTick,
+				combatCalc.hasOffensivePrayer(), combatCalc.hasOffensivePrayerNow());
 			final double actualSetup = combatCalc.actualAverageHit(targetId, prayed);
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
 			current.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
@@ -707,6 +710,7 @@ public class PvmPerformancePlugin extends Plugin
 		if (combatCalc.hasOffensivePrayerNow())
 		{
 			prayedThisTick = true;
+			log.debug("PvM Performance: prayer seen up mid-tick {}", client.getTickCount());
 		}
 	}
 
@@ -873,6 +877,9 @@ public class PvmPerformancePlugin extends Plugin
 			}
 		}
 		currentEncounter.add(fight);
+		log.debug("PvM Performance: fight on {} (npc {}) -> room '{}' group={} fights={}",
+			fight.getTargetName(), fight.getTargetId(), currentEncounter.getName(),
+			fight.getGroupName(), currentEncounter.getFights().size());
 	}
 
 	/**
