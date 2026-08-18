@@ -104,6 +104,25 @@ final class EncounterGroup
 		put(groups, "Vasa Nistirio",
 			NpcID.RAIDS_VASANISTIRIO_DORMANT, NpcID.RAIDS_VASANISTIRIO_WALKING,
 			NpcID.RAIDS_VASANISTIRIO_HEALING, NpcID.RAIDS_VASANISTIRIO_CRYSTAL);
+		put(groups, "Tekton",
+			NpcID.RAIDS_TEKTON_WAITING, NpcID.RAIDS_TEKTON_HAMMERING,
+			NpcID.RAIDS_TEKTON_WALKING_STANDARD, NpcID.RAIDS_TEKTON_FIGHTING_STANDARD,
+			NpcID.RAIDS_TEKTON_WALKING_ENRAGED, NpcID.RAIDS_TEKTON_FIGHTING_ENRAGED);
+		// Vespula's portal is a separate NPC and is what most teams actually
+		// kill, so ungrouped the room's damage would file itself under the
+		// portal and leave Vespula looking untouched.
+		put(groups, "Vespula",
+			NpcID.RAIDS_VESPULA_FLYING, NpcID.RAIDS_VESPULA_WALKING, NpcID.RAIDS_VESPULA_ENRAGED,
+			NpcID.RAIDS_VESPULA_PORTAL,
+			NpcID.RAIDS_VESPULA_VESPINE_FLYING, NpcID.RAIDS_VESPULA_VESPINE_WALKING);
+		put(groups, "Guardians",
+			NpcID.RAIDS_STONEGUARDIANS_LEFT, NpcID.RAIDS_STONEGUARDIANS_RIGHT);
+		put(groups, "Lizardman shamans",
+			NpcID.RAIDS_LIZARDSHAMAN_A, NpcID.RAIDS_LIZARDSHAMAN_B, NpcID.RAIDS_LIZARDSHAMAN_BLOCKER);
+		put(groups, "Skeletal mystics",
+			NpcID.RAIDS_SKELETONMYSTIC_A, NpcID.RAIDS_SKELETONMYSTIC_B, NpcID.RAIDS_SKELETONMYSTIC_C);
+		put(groups, "Tightrope",
+			NpcID.RAIDS_TIGHTROPE_RANGER, NpcID.RAIDS_TIGHTROPE_MAGE);
 		put(groups, "Great Olm (hands)",
 			NpcID.OLM_HAND_LEFT_SPAWNING, NpcID.OLM_HAND_LEFT, NpcID.OLM_HAND_LEFT_DYING,
 			NpcID.OLM_HAND_RIGHT_SPAWNING, NpcID.OLM_HAND_RIGHT, NpcID.OLM_HAND_RIGHT_DYING);
@@ -112,6 +131,12 @@ final class EncounterGroup
 		// fight; the monkey room's baboons are a room rather than a set of
 		// kills.
 		put(groups, "Zebak", NpcID.TOA_ZEBAK, NpcID.TOA_ZEBAK_ENRAGED);
+		// Akkha takes his shadows and his enrage with him: the shadows are the
+		// same fight interrupted, not four separate kills.
+		put(groups, "Akkha",
+			NpcID.AKKHA_SPAWN, NpcID.AKKHA_MELEE, NpcID.AKKHA_RANGE, NpcID.AKKHA_MAGE,
+			NpcID.AKKHA_ENRAGE_SPAWN, NpcID.AKKHA_ENRAGE_INITIAL, NpcID.AKKHA_ENRAGE,
+			NpcID.AKKHA_SHADOW, NpcID.AKKHA_SHADOW_ENRAGE);
 		// Kephri takes her whole room: her own forms, the scarabs that come with
 		// them, and the eggs — which are grouped rather than ignored because
 		// killing them is a real job for anyone whose gear cannot outpace them.
@@ -187,6 +212,11 @@ final class EncounterGroup
 			// Dead or dying, but still standing in the scene.
 			NpcID.TOA_KEPHRI_BOSS_DEAD, NpcID.TOA_ZEBAK_DEAD,
 			NpcID.OLM_HAND_LEFT_DYING, NpcID.OLM_HAND_RIGHT_DYING,
+			NpcID.RAIDS_STONEGUARDIANS_LEFT_DEAD, NpcID.RAIDS_STONEGUARDIANS_RIGHT_DEAD,
+			// The ice demon is only fightable once the brazier is lit.
+			NpcID.RAIDS_ICEDEMON_NONCOMBAT,
+			// Akkha's stand-ins while his shadows are up, and Kephri's corpse.
+			NpcID.AKKHA_ENRAGE_DUMMY, NpcID.AKKHA_SHADOW_ENRAGE_DUMMY,
 			NpcID.TOB_MAIDEN_DYING_A, NpcID.TOB_MAIDEN_DYING_B,
 			NpcID.TOB_MAIDEN_DYING_A_STORY, NpcID.TOB_MAIDEN_DYING_B_STORY,
 			NpcID.TOB_MAIDEN_DYING_A_HARD, NpcID.TOB_MAIDEN_DYING_B_HARD)));
