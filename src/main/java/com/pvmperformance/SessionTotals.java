@@ -20,6 +20,9 @@ class SessionTotals
 	private int damageDealt;
 	private int attempts;
 	private int hits;
+	private int attacksMade;
+	private int attacksPrayed;
+	private int attacksBoosted;
 	private int ticksLostEating;
 	private int ticksLostOther;
 	private int combatTicks;
@@ -44,6 +47,9 @@ class SessionTotals
 		damageDealt = 0;
 		attempts = 0;
 		hits = 0;
+		attacksMade = 0;
+		attacksPrayed = 0;
+		attacksBoosted = 0;
 		ticksLostEating = 0;
 		ticksLostOther = 0;
 		combatTicks = 0;
@@ -82,6 +88,25 @@ class SessionTotals
 	 * it is a property of the loadout rather than something that adds up, and
 	 * the overlay shows it live for whatever is held now.
 	 */
+	/** How well one attack was set up, sampled on the tick it was made. */
+	void recordAttackMade(boolean prayed, boolean boosted)
+	{
+		attacksMade++;
+		if (prayed)
+		{
+			attacksPrayed++;
+		}
+		if (boosted)
+		{
+			attacksBoosted++;
+		}
+	}
+
+	double efficiency()
+	{
+		return attacksMade == 0 ? -1 : (double) (attacksPrayed + attacksBoosted) / (2 * attacksMade);
+	}
+
 	void recordExpected(double accuracy, double averageHit)
 	{
 		if (accuracy >= 0 && averageHit >= 0)

@@ -41,6 +41,12 @@ class Fight
 	// max hit is known, and are counted separately.
 	private int expectedTargetSamples;
 
+	// How well each attack was set up: whether an offensive prayer for the style
+	// was up, and whether the stats it rolls on were boosted.
+	private int attacksMade;
+	private int attacksPrayed;
+	private int attacksBoosted;
+
 	// Ticks the weapon was off cooldown but no attack was made, against the
 	// ticks elapsed since the first attack. Eating is separated out because it
 	// is a choice with a known cost, unlike the rest of the idle time.
@@ -164,11 +170,37 @@ class Fight
 		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
 	}
 
-	/** Marks that an attack was made this tick, starting the count if it is the first. */
-	void recordAttackMade()
+	/**
+	 * Marks that an attack was made this tick, recording how well it was set up.
+	 * Sampled here rather than where the damage lands, because that is the tick
+	 * the prayers and boosts actually applied to the attack.
+	 */
+	void recordAttackMade(boolean prayed, boolean boosted)
 	{
 		attacking = true;
 		combatTicks++;
+		attacksMade++;
+		if (prayed)
+		{
+			attacksPrayed++;
+		}
+		if (boosted)
+		{
+			attacksBoosted++;
+		}
+	}
+
+	/**
+	 * Share of attacks that were both correctly prayed and boosted, or -1 before
+	 * any were made.
+	 */
+	double efficiency()
+	{
+		if (attacksMade == 0)
+		{
+			return -1;
+		}
+		return (double) (attacksPrayed + attacksBoosted) / (2 * attacksMade);
 	}
 
 	/**

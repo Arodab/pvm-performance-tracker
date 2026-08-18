@@ -429,7 +429,10 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		if (attacked)
 		{
-			current.recordAttackMade();
+			// Read on the attack tick: this is when the prayers and boosts are
+			// the ones the attack actually rolled with.
+			current.recordAttackMade(combatCalc.hasOffensivePrayer(), combatCalc.isBoosted());
+			session.recordAttackMade(combatCalc.hasOffensivePrayer(), combatCalc.isBoosted());
 			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
 			return;
 		}
@@ -822,7 +825,8 @@ public class PvmPerformancePlugin extends Plugin
 				{
 					writer.write("started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
 						+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
-						+ "ticksLost,ticksLostPct,ticksLostEating\n");
+						+ "ticksLost,ticksLostPct,ticksLostEating,"
+						+ "attacksMade,attacksPrayed,attacksBoosted,efficiencyPct\n");
 					for (Fight fight : fights)
 					{
 						writer.write(csvRow(fight));
@@ -845,7 +849,7 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
-		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d%n",
+		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d,%d,%d,%d,%s%n",
 			started,
 			fight.getTargetName().replace('"', '\''),
 			fight.getTargetId(),
@@ -864,7 +868,11 @@ public class PvmPerformancePlugin extends Plugin
 			csvExpected(fight.expectedAverageHit(), 2),
 			fight.getTicksLost(),
 			csvExpected(fight.ticksLostShare() * 100, 1),
-			fight.getTicksLostEating());
+			fight.getTicksLostEating(),
+			fight.getAttacksMade(),
+			fight.getAttacksPrayed(),
+			fight.getAttacksBoosted(),
+			csvExpected(fight.efficiency() * 100, 1));
 	}
 
 	/**

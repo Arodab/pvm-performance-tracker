@@ -120,6 +120,35 @@ class PvmPerformanceOverlay extends OverlayPanel
 				: String.valueOf(hits))
 			.build());
 
+		// How well the attacks were set up, with the parts shown only when one of
+		// them slipped — a clean fight needs no breakdown.
+		final double efficiency = trip ? session.efficiency() : fight.efficiency();
+		if (efficiency >= 0)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("Efficiency")
+				.right(String.format("%.0f%%", efficiency * 100))
+				.build());
+
+			final int made = trip ? session.getAttacksMade() : fight.getAttacksMade();
+			final int prayed = trip ? session.getAttacksPrayed() : fight.getAttacksPrayed();
+			final int boosted = trip ? session.getAttacksBoosted() : fight.getAttacksBoosted();
+			if (prayed < made)
+			{
+				panelComponent.getChildren().add(LineComponent.builder()
+					.left("  prayed")
+					.right(prayed + "/" + made)
+					.build());
+			}
+			if (boosted < made)
+			{
+				panelComponent.getChildren().add(LineComponent.builder()
+					.left("  boosted")
+					.right(boosted + "/" + made)
+					.build());
+			}
+		}
+
 		final double lostShare = trip ? session.ticksLostShare() : fight.ticksLostShare();
 		if (lostShare >= 0)
 		{

@@ -1059,6 +1059,57 @@ class CombatCalc
 	}
 
 	/**
+	 * Whether an offensive prayer for the style being attacked with is active.
+	 *
+	 * <p>Style specific on purpose: piety while shooting a bow is not a prayer
+	 * for that attack, and counts the same as none at all.
+	 *
+	 * <p>Only asks whether some offensive prayer is up, not whether it is the
+	 * best one available, since which prayers a player has unlocked isn't
+	 * readable.
+	 */
+	boolean hasOffensivePrayer()
+	{
+		switch (attackStyle().getAttackType())
+		{
+			case MAGIC:
+				return magicAccuracyPrayer() > 1.0;
+			case RANGED:
+				return rangedPrayer() > 1.0 || rangedAccuracyPrayer() > 1.0;
+			default:
+				return meleePrayer() > 1.0 || meleeAccuracyPrayer() > 1.0;
+		}
+	}
+
+	/**
+	 * Whether every combat stat the current style rolls on is above its base
+	 * level, meaning a boost is up.
+	 *
+	 * <p>Catches the two cases worth catching: attacking having never potted,
+	 * and attacking after a dose has worn all the way off. It does not judge how
+	 * far a boost has decayed, which would need to know which potion was drunk.
+	 * A brew taken without re-dosing drops the stat below base and so reads as
+	 * unboosted, which is the intent.
+	 */
+	boolean isBoosted()
+	{
+		switch (attackStyle().getAttackType())
+		{
+			case MAGIC:
+				return isBoosted(Skill.MAGIC);
+			case RANGED:
+				return isBoosted(Skill.RANGED);
+			default:
+				return isBoosted(Skill.ATTACK) && isBoosted(Skill.STRENGTH);
+		}
+	}
+
+	private boolean isBoosted(Skill skill)
+	{
+		return client.getBoostedSkillLevel(skill) > client.getRealSkillLevel(skill);
+	}
+
+	/**
 	 * Whether a prayer is currently active. Reads the prayer's varbit directly;
 	 * {@code Client.isPrayerActive} is deprecated and has no replacement overload.
 	 */
