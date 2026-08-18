@@ -250,7 +250,6 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			client.addChatMessage(ChatMessageType.CONSOLE, "PvM Performance", line, null);
 		}
-		combatCalc.logStyleStructs();
 	}
 
 	/**

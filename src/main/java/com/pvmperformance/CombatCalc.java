@@ -1,6 +1,7 @@
 package com.pvmperformance;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,8 @@ import net.runelite.api.Player;
 import net.runelite.api.Prayer;
 import net.runelite.api.Skill;
 import net.runelite.api.StructComposition;
+import net.runelite.api.widgets.Widget;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarPlayerID;
@@ -23,6 +26,7 @@ import net.runelite.client.game.ItemEquipmentStats;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 import net.runelite.client.game.NPCManager;
+import net.runelite.client.util.Text;
 
 /**
  * Expected combat figures computed from the player's live loadout: max hit, hit
@@ -910,30 +914,53 @@ class CombatCalc
 			gear.getAccuracy(), gear.getDamage(), gear.getExpectedDamage()));
 		lines.add(String.format("Result: max hit %d, spec max %d, accuracy %.1f%%, avg hit %.2f",
 			maxHit(npcId), specialAttackMaxHit(npcId), hitChance(npcId) * 100, averageHit(npcId)));
+		lines.addAll(describeCombatTab());
+		lines.addAll(describeStyleStructs());
 		return lines;
 	}
 
 	/**
-	 * Writes the game's own description of this weapon category's combat options
-	 * to the debug log. Enum 3908 maps a category to its combat option structs,
-	 * one per option, and RuneLite's attack styles plugin reads the combat style
-	 * from param 1407; the surrounding params are probed to see what else the
-	 * struct carries.
+	 * What the combat tab itself is showing: the category heading and the label
+	 * on each option button. These come from the game rather than from any table
+	 * here, so they say what the weapon's options really are.
 	 */
-	void logStyleStructs()
+	private List<String> describeCombatTab()
 	{
+		final int[] textIds = {
+			InterfaceID.CombatInterface._0_TEXT,
+			InterfaceID.CombatInterface._1_TEXT,
+			InterfaceID.CombatInterface._2_TEXT,
+			InterfaceID.CombatInterface._3_TEXT,
+		};
+		final StringBuilder options = new StringBuilder();
+		for (int i = 0; i < textIds.length; i++)
+		{
+			final Widget widget = client.getWidget(textIds[i]);
+			options.append(' ').append(i).append("='")
+				.append(widget == null ? "?" : Text.removeTags(widget.getText())).append("'");
+		}
+		final Widget category = client.getWidget(InterfaceID.CombatInterface.CATEGORY);
+		return Collections.singletonList(String.format("Tab: category='%s' options%s",
+			category == null ? "?" : Text.removeTags(category.getText()), options));
+	}
+
+	/**
+	 * The game's own description of this weapon category's combat options. Enum
+	 * 3908 maps a category to a struct per option, and RuneLite's attack styles
+	 * plugin reads the combat style from param 1407; the surrounding params are
+	 * probed to see what else each struct carries.
+	 */
+	private List<String> describeStyleStructs()
+	{
+		final List<String> lines = new ArrayList<>();
 		final int categoryVarbit = client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY);
 		final EnumComposition categories = client.getEnum(WEAPON_CATEGORY_STYLES_ENUM);
-		if (categories == null)
-		{
-			return;
-		}
-		final int styleEnumId = categories.getIntValue(categoryVarbit);
+		final int styleEnumId = categories == null ? -1 : categories.getIntValue(categoryVarbit);
 		final EnumComposition styles = styleEnumId == -1 ? null : client.getEnum(styleEnumId);
 		if (styles == null)
 		{
-			log.debug("PvM Performance styles: category {} has no style enum", categoryVarbit);
-			return;
+			lines.add("Structs: none for category " + categoryVarbit);
+			return lines;
 		}
 		for (int structId : styles.getIntVals())
 		{
@@ -947,8 +974,9 @@ class CombatCalc
 			{
 				params.append(describeParam(struct, param));
 			}
-			log.debug("PvM Performance styles: category={} struct={}{}", categoryVarbit, structId, params);
+			lines.add("Struct " + structId + ":" + params);
 		}
+		return lines;
 	}
 
 	/**
