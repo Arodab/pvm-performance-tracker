@@ -66,9 +66,14 @@ class CombatCalc
 	private static final int MANUAL_CAST_TICKS = 8;
 	private Spell manualCastSpell;
 	private int manualCastTick = Integer.MIN_VALUE;
-	// Set while computing what an attack should have been, so the level and
-	// prayer reads answer with the intended setup instead of the real one.
-	private boolean ideal;
+	// Which setup the level and prayer reads should answer for. REAL is what the
+	// player had; IDEAL is the intended prayer at full boost; PRAYER_HELD is the
+	// intended prayer at the real boost, used when a prayer was flicked and so
+	// applied to the attack even though it reads as off by the tick's end.
+	private static final int REAL = 0;
+	private static final int IDEAL = 1;
+	private static final int PRAYER_HELD = 2;
+	private int mode = REAL;
 	private BlowpipeDart cachedDart;
 	private ItemEquipmentStats cachedDartStats;
 
@@ -117,8 +122,8 @@ class CombatCalc
 	private final boolean[] memoAttackBonusSet = new boolean[AttackType.values().length];
 	private final int[] memoEquipmentBonus = new int[2];
 	private final boolean[] memoEquipmentBonusSet = new boolean[2];
-	private final int[] memoBaseMaxHit = new int[2];
-	private final boolean[] memoBaseMaxHitSet = new boolean[2];
+	private final int[] memoBaseMaxHit = new int[3];
+	private final boolean[] memoBaseMaxHitSet = new boolean[3];
 	private int memoGearNpc = Integer.MIN_VALUE;
 	private GearBonus memoGear;
 
@@ -193,7 +198,7 @@ class CombatCalc
 	private int baseMaxHit()
 	{
 		expireMemo();
-		final int slot = ideal ? 1 : 0;
+		final int slot = mode;
 		if (!memoBaseMaxHitSet[slot])
 		{
 			memoBaseMaxHit[slot] = computeBaseMaxHit();
@@ -483,7 +488,7 @@ class CombatCalc
 
 	private double meleeAccuracyPrayer()
 	{
-		if (ideal)
+		if (mode != REAL)
 		{
 			return prayerGoal().getAttackMultiplier();
 		}
@@ -1162,7 +1167,7 @@ class CombatCalc
 
 	private double meleePrayer()
 	{
-		if (ideal)
+		if (mode != REAL)
 		{
 			return prayerGoal().getStrengthMultiplier();
 		}
@@ -1212,14 +1217,29 @@ class CombatCalc
 	 */
 	double idealAverageHit(int npcId)
 	{
-		ideal = true;
+		return averageHitAs(npcId, IDEAL);
+	}
+
+	/**
+	 * Expected damage for the attack as it was really set up. A prayer flicked
+	 * within the tick counts as held: it was up while the server resolved the
+	 * attack, even though reading it afterwards finds it off.
+	 */
+	double actualAverageHit(int npcId, boolean prayerHeld)
+	{
+		return averageHitAs(npcId, prayerHeld ? PRAYER_HELD : REAL);
+	}
+
+	private double averageHitAs(int npcId, int as)
+	{
+		mode = as;
 		try
 		{
 			return averageHit(npcId);
 		}
 		finally
 		{
-			ideal = false;
+			mode = REAL;
 		}
 	}
 
@@ -1230,7 +1250,7 @@ class CombatCalc
 	 */
 	private int boostedLevel(Skill skill)
 	{
-		if (!ideal)
+		if (mode != IDEAL)
 		{
 			return client.getBoostedSkillLevel(skill);
 		}
@@ -1322,26 +1342,38 @@ class CombatCalc
 	}
 
 	/**
-	 * Whether an offensive prayer for the style being attacked with is active.
+	 * Whether the prayer that was up is at least the one intended for the style.
 	 *
-	 * <p>Style specific on purpose: piety while shooting a bow is not a prayer
-	 * for that attack, and counts the same as none at all.
+	 * <p>Compares what the active prayers give against what the configured one
+	 * would, rather than asking merely whether some offensive prayer is up.
+	 * Ultimate Strength where piety was meant is a mistake, and counting it as
+	 * correct hid exactly the lapse this is here to find. Praying something
+	 * better than intended still counts.
 	 *
-	 * <p>Only asks whether some offensive prayer is up, not whether it is the
-	 * best one available, since which prayers a player has unlocked isn't
-	 * readable.
+	 * <p>Style specific, so piety while shooting a bow is not a prayer for that
+	 * attack and counts as none.
 	 */
 	boolean hasOffensivePrayer()
 	{
+		final PrayerChoice goal = prayerGoal();
+		final double attack;
+		final double strength;
 		switch (attackStyle().getAttackType())
 		{
 			case MAGIC:
-				return magicAccuracyPrayer() > 1.0;
+				attack = magicAccuracyPrayer();
+				strength = 1.0;
+				break;
 			case RANGED:
-				return rangedPrayer() > 1.0 || rangedAccuracyPrayer() > 1.0;
+				attack = rangedAccuracyPrayer();
+				strength = rangedPrayer();
+				break;
 			default:
-				return meleePrayer() > 1.0 || meleeAccuracyPrayer() > 1.0;
+				attack = meleeAccuracyPrayer();
+				strength = meleePrayer();
+				break;
 		}
+		return attack >= goal.getAttackMultiplier() && strength >= goal.getStrengthMultiplier();
 	}
 
 	/**
@@ -1394,7 +1426,7 @@ class CombatCalc
 	 */
 	private double magicAccuracyPrayer()
 	{
-		if (ideal)
+		if (mode != REAL)
 		{
 			return prayerGoal().getAttackMultiplier();
 		}
@@ -1465,7 +1497,7 @@ class CombatCalc
 	/** Ranged attack prayer multiplier. Rigour gives less here than it does to strength. */
 	private double rangedAccuracyPrayer()
 	{
-		if (ideal)
+		if (mode != REAL)
 		{
 			return prayerGoal().getAttackMultiplier();
 		}
@@ -1510,7 +1542,7 @@ class CombatCalc
 
 	private double rangedPrayer()
 	{
-		if (ideal)
+		if (mode != REAL)
 		{
 			return prayerGoal().getStrengthMultiplier();
 		}

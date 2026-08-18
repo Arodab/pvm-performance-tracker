@@ -46,6 +46,7 @@ import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.ProjectileMoved;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.SpotanimID;
 import net.runelite.api.widgets.Widget;
@@ -138,6 +139,10 @@ public class PvmPerformancePlugin extends Plugin
 	// The tick an attack was last seen going out on, set from the events that
 	// prove one happened rather than from what the player looks like.
 	private int attackObservedTick = -1;
+	// Whether the intended prayer was up at any point during this tick. Reading
+	// it once at the end of the tick misses a flick, which is off again by then
+	// but was up while the server resolved the attack.
+	private boolean prayedThisTick;
 
 	// Running totals for the trip, shown instead of the current fight when the
 	// overlay is set to whole-trip mode.
@@ -292,13 +297,13 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
-		if (!isProjectileMine(projectile, me, target))
-		{
-			return;
-		}
 		if (!countedProjectiles.add(projectile))
 		{
 			return; // this projectile was already counted on an earlier frame
+		}
+		if (!isProjectileMine(projectile, me, target))
+		{
+			return;
 		}
 
 		final NPC npc = (NPC) target;
@@ -327,9 +332,24 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return source == me;
 		}
-		log.debug("PvM Performance: projectile {} names no source actor", projectile.getId());
+		// Spell projectiles name no source, so the tile it left from is all
+		// there is. Requiring the target to match whatever the player was
+		// interacting with as well is what dropped casts: that lapses between
+		// the cast going out and the projectile appearing, and every cast it
+		// dropped took its splash with it.
 		final WorldPoint from = projectile.getSourcePoint();
-		return from != null && from.equals(me.getWorldLocation()) && me.getInteracting() == target;
+		if (from == null || !from.equals(me.getWorldLocation()))
+		{
+			return false;
+		}
+		// Still not anyone standing on me: it has to be aimed at what I am
+		// fighting, by the interaction or by the fight already under way.
+		if (me.getInteracting() == target)
+		{
+			return true;
+		}
+		return current != null && !current.isEnded()
+			&& current.getTargetIndex() == ((NPC) target).getIndex();
 	}
 
 	@Subscribe
@@ -432,9 +452,9 @@ public class PvmPerformancePlugin extends Plugin
 			// Read on the attack tick: this is when the prayers and boosts are
 			// the ones the attack actually rolled with.
 			final int targetId = current.getTargetId();
-			final boolean prayed = combatCalc.hasOffensivePrayer();
+			final boolean prayed = prayedThisTick || combatCalc.hasOffensivePrayer();
 			final boolean boosted = combatCalc.isBoosted();
-			final double actualSetup = combatCalc.averageHit(targetId);
+			final double actualSetup = combatCalc.actualAverageHit(targetId, prayed);
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
 			current.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
 			session.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
@@ -473,11 +493,32 @@ public class PvmPerformancePlugin extends Plugin
 		attackObservedTick = client.getTickCount();
 	}
 
+	/**
+	 * Notices the intended prayer going up, so a flick counts.
+	 *
+	 * <p>A flicked prayer is switched on and off inside one tick. It applies to
+	 * the attack, because the server resolves combat while it is up, but reading
+	 * the prayer once at the end of the tick sees it already off.
+	 */
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		if (current == null || current.isEnded() || prayedThisTick)
+		{
+			return;
+		}
+		if (combatCalc.hasOffensivePrayer())
+		{
+			prayedThisTick = true;
+		}
+	}
+
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
 		startFightOnTarget();
 		trackAttackCooldown();
+		prayedThisTick = false;
 
 		// Drop projectiles that have landed so the set doesn't retain them.
 		countedProjectiles.removeIf(p -> p.getRemainingCycles() <= 0);
