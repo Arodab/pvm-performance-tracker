@@ -279,7 +279,11 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final Fight shown = getDisplayFight();
-		final int targetId = shown == null ? -1 : shown.getTargetId();
+		// The form the target is wearing now, not the one the fight opened on.
+		// A boss that has transformed is described as it stands, which is what
+		// makes a report about a phase worth reading.
+		final int targetId = current != null && !current.isEnded() ? targetLiveId
+			: shown == null ? -1 : shown.getTargetId();
 		for (String line : combatCalc.describeLoadout(targetId))
 		{
 			client.addChatMessage(ChatMessageType.CONSOLE, "PvM Performance", line, null);

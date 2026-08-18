@@ -85,6 +85,9 @@ final class EncounterGroup
 	 * told from his animation. Akkha channels immunity from his shadows and has
 	 * to be lured to a dispelled corner to be damaged at all — which is a matter
 	 * of where he is standing rather than what he is, so no id can carry it.
+	 * His memory blast is covered, but on an unconfirmed guess at which id he
+	 * wears while away; {@code ::loadout} prints the target's live id, which is
+	 * what would settle it.
 	 */
 	static boolean isUnattackable(int npcId)
 	{
@@ -139,7 +142,8 @@ final class EncounterGroup
 		put(groups, "Akkha",
 			NpcID.AKKHA_SPAWN, NpcID.AKKHA_MELEE, NpcID.AKKHA_RANGE, NpcID.AKKHA_MAGE,
 			NpcID.AKKHA_ENRAGE_SPAWN, NpcID.AKKHA_ENRAGE_INITIAL, NpcID.AKKHA_ENRAGE,
-			NpcID.AKKHA_SHADOW, NpcID.AKKHA_SHADOW_ENRAGE);
+			NpcID.AKKHA_SHADOW, NpcID.AKKHA_SHADOW_ENRAGE,
+			NpcID.AKKHA_ENRAGE_DUMMY, NpcID.AKKHA_SHADOW_ENRAGE_DUMMY);
 		// Kephri takes her whole room: her own forms, the scarabs that come with
 		// them, and the eggs — which are grouped rather than ignored because
 		// killing them is a real job for anyone whose gear cannot outpace them.
@@ -219,6 +223,14 @@ final class EncounterGroup
 			// The ice demon is only fightable once the brazier is lit, and
 			// Tekton cannot be touched while he is at his anvil healing.
 			NpcID.RAIDS_ICEDEMON_NONCOMBAT, NpcID.RAIDS_TEKTON_HAMMERING,
+			// Akkha vanishes for his memory blast and cannot be attacked until
+			// he returns. That much is certain; that these two ids are what he
+			// wears while gone is a guess from their name, and the reason it is
+			// worth making is that it is free either way. If he transforms into
+			// one, this stops the blast being counted against the player. If he
+			// despawns instead, the fight ends on its own and nothing is
+			// counted regardless, so a wrong guess costs nothing.
+			NpcID.AKKHA_ENRAGE_DUMMY, NpcID.AKKHA_SHADOW_ENRAGE_DUMMY,
 			NpcID.TOB_MAIDEN_DYING_A, NpcID.TOB_MAIDEN_DYING_B,
 			NpcID.TOB_MAIDEN_DYING_A_STORY, NpcID.TOB_MAIDEN_DYING_B_STORY,
 			NpcID.TOB_MAIDEN_DYING_A_HARD, NpcID.TOB_MAIDEN_DYING_B_HARD)));
