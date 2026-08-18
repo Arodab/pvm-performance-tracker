@@ -92,15 +92,16 @@ public interface PvmPerformanceConfig extends Config
 
 	@ConfigItem(
 		keyName = "assumeSlayerTask",
-		name = "Assume on slayer task",
+		name = "Slayer helmet counts",
 		description = "Count the black mask / slayer helmet bonus in the expected figures. "
-			+ "There is no reliable way to tell whether the current target is your task, "
-			+ "so this is a manual switch: leave it off unless you are on task",
+			+ "Whether a target is your task can't be read, so this is a manual switch, "
+			+ "left on because a slayer helmet is nearly always worn on task. Turn it off "
+			+ "for the odd fight where you are wearing one and are not",
 		position = 8
 	)
 	default boolean assumeSlayerTask()
 	{
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
