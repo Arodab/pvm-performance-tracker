@@ -1107,9 +1107,14 @@ class CombatCalc
 	}
 
 	/**
-	 * The boost the best potion for this content gives. Inside a raid that is
-	 * the raid's own potion, which is what a player there would be holding;
-	 * outside it is the ordinary best for the style.
+	 * The boost the potion for this content gives, applied to every stat the
+	 * style rolls on — attack as well as strength for melee, so the accuracy a
+	 * dose buys is counted and not just the damage.
+	 *
+	 * <p>Inside a raid this is the raid's own dose, which renews itself. Outside
+	 * it is the divine variant of the ordinary potion, which boosts by the same
+	 * amount as the plain one but holds it, so the figure is what a player who
+	 * kept themselves dosed would have.
 	 */
 	private int maxBoost(Skill skill, int base)
 	{
@@ -1172,10 +1177,14 @@ class CombatCalc
 	 * Whether every combat stat the current style rolls on is at the full boost
 	 * the best potion here would give.
 	 *
-	 * <p>Full, not merely above base: a brew sipped once leaves the stat above
-	 * base but below where it should be, and that is a mistake. Decay counts
-	 * against it for the same reason. The efficiency ratio is what says how much
-	 * any of it actually cost; this flag only says whether it was perfect.
+	 * <p>Full, not merely above base. A brew sipped once leaves the stat above
+	 * base but below where it should be, and there is no allowance for decay
+	 * either: the divine potions hold their boost for their whole duration, and
+	 * the raid doses renew themselves, so anything short of full is a dose that
+	 * was not taken rather than one that faded.
+	 *
+	 * <p>This flag only says whether an attack was perfect. What it cost is the
+	 * efficiency ratio's job.
 	 */
 	boolean isBoosted()
 	{
