@@ -121,12 +121,12 @@ class Raid
 		return total;
 	}
 
-	int getAttacksBoosted()
+	int getAttacksPotted()
 	{
 		int total = 0;
 		for (Encounter encounter : encounters)
 		{
-			total += encounter.getAttacksBoosted();
+			total += encounter.getAttacksPotted();
 		}
 		return total;
 	}

@@ -112,7 +112,7 @@ public class FightAccountingTest
 		assertEquals(2, room.getAttempts());
 		assertEquals(25.0, room.averageHit(), 0.0001);
 		assertEquals(1.0, room.accuracy(), 0.0001);
-		// Both attacks were prayed and boosted, so nothing was given away.
+		// Both attacks were prayed and potted, so nothing was given away.
 		assertEquals(1.0, room.efficiency(), 0.0001);
 	}
 

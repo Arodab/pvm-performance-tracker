@@ -106,7 +106,7 @@ public class PvmPerformancePlugin extends Plugin
 		+ "started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
 		+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
 		+ "ticksLost,ticksLostPct,ticksLostEating,ticksToEngage,"
-		+ "attacksMade,attacksPrayed,attacksBoosted,efficiencyPct\n";
+		+ "attacksMade,attacksPrayed,attacksPotted,efficiencyPct\n";
 
 	private static final DateTimeFormatter ROW_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -642,16 +642,16 @@ public class PvmPerformancePlugin extends Plugin
 				}
 			}
 			final boolean prayed = prayedThisTick || combatCalc.hasOffensivePrayer();
-			final boolean boosted = combatCalc.isBoosted();
+			final boolean potted = combatCalc.isPotted();
 			final double actualSetup = combatCalc.actualAverageHit(targetId, prayed);
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
-			current.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
+			current.recordAttackMade(prayed, potted, actualSetup, idealSetup);
 			if (current.isScored())
 			{
-				session.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
+				session.recordAttackMade(prayed, potted, actualSetup, idealSetup);
 			}
 			else
 			{
@@ -1408,7 +1408,7 @@ public class PvmPerformancePlugin extends Plugin
 				room.getTicksLostEating(),
 				room.getAttacksMade(),
 				room.getAttacksPrayed(),
-				room.getAttacksBoosted(),
+				room.getAttacksPotted(),
 				csvExpected(room.efficiency() * 100, 1));
 	}
 
@@ -1440,7 +1440,7 @@ public class PvmPerformancePlugin extends Plugin
 				raid.getTicksLostEating(),
 				raid.getAttacksMade(),
 				raid.getAttacksPrayed(),
-				raid.getAttacksBoosted(),
+				raid.getAttacksPotted(),
 				csvExpected(raid.efficiency() * 100, 1));
 	}
 
@@ -1476,7 +1476,7 @@ public class PvmPerformancePlugin extends Plugin
 			fight.getTicksToEngage() == 0 ? "" : String.valueOf(fight.getTicksToEngage()),
 			fight.getAttacksMade(),
 			fight.getAttacksPrayed(),
-			fight.getAttacksBoosted(),
+			fight.getAttacksPotted(),
 			csvExpected(fight.efficiency() * 100, 1));
 	}
 

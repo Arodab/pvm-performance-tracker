@@ -462,7 +462,7 @@ class GearBonusCalc
 		}
 		final double damage = weapon == ItemID.KERIS_PARTISAN_AMASCUT ? 1.15 : 1.33;
 		final double accuracy = weapon == ItemID.KERIS_PARTISAN_BREACH ? 1.33 : 1.0;
-		// The crit triples whatever the passive already boosted.
+		// The crit triples whatever the passive already potted.
 		return GearBonus.split(accuracy, damage * 3.0, damage * (1.0 + 2.0 / 51.0));
 	}
 

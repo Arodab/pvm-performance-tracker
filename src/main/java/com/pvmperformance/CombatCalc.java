@@ -1501,20 +1501,20 @@ class CombatCalc
 	 * <p>This flag only says whether an attack was perfect. What it cost is the
 	 * efficiency ratio's job.
 	 */
-	boolean isBoosted()
+	boolean isPotted()
 	{
 		switch (attackStyle().getAttackType())
 		{
 			case MAGIC:
-				return isBoosted(Skill.MAGIC);
+				return isPotted(Skill.MAGIC);
 			case RANGED:
-				return isBoosted(Skill.RANGED);
+				return isPotted(Skill.RANGED);
 			default:
-				return isBoosted(Skill.ATTACK) && isBoosted(Skill.STRENGTH);
+				return isPotted(Skill.ATTACK) && isPotted(Skill.STRENGTH);
 		}
 	}
 
-	private boolean isBoosted(Skill skill)
+	private boolean isPotted(Skill skill)
 	{
 		final int base = client.getRealSkillLevel(skill);
 		return client.getBoostedSkillLevel(skill) >= base + maxBoost(skill, base);

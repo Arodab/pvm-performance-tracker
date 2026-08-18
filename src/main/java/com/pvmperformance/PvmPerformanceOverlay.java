@@ -153,8 +153,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 				: raid != null ? raid.getAttacksMade() : room.getAttacksMade();
 			final int prayed = session != null ? session.getAttacksPrayed()
 				: raid != null ? raid.getAttacksPrayed() : room.getAttacksPrayed();
-			final int boosted = session != null ? session.getAttacksBoosted()
-				: raid != null ? raid.getAttacksBoosted() : room.getAttacksBoosted();
+			final int potted = session != null ? session.getAttacksPotted()
+				: raid != null ? raid.getAttacksPotted() : room.getAttacksPotted();
 			if (prayed < made)
 			{
 				panelComponent.getChildren().add(LineComponent.builder()
@@ -162,11 +162,11 @@ class PvmPerformanceOverlay extends OverlayPanel
 					.right(prayed + "/" + made)
 					.build());
 			}
-			if (boosted < made)
+			if (potted < made)
 			{
 				panelComponent.getChildren().add(LineComponent.builder()
-					.left("  boosted")
-					.right(boosted + "/" + made)
+					.left("  potted")
+					.right(potted + "/" + made)
 					.build());
 			}
 		}

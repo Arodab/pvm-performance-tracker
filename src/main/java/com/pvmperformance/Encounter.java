@@ -182,14 +182,14 @@ class Encounter
 		return total;
 	}
 
-	int getAttacksBoosted()
+	int getAttacksPotted()
 	{
 		int total = 0;
 		for (Fight fight : fights)
 		{
 			if (fight.isScored())
 			{
-				total += fight.getAttacksBoosted();
+				total += fight.getAttacksPotted();
 			}
 		}
 		return total;

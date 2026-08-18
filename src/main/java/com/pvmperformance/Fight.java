@@ -65,7 +65,7 @@ class Fight
 	// them all alike.
 	private int attacksMade;
 	private int attacksPrayed;
-	private int attacksBoosted;
+	private int attacksPotted;
 	private double sumActualSetup;
 	private double sumIdealSetup;
 
@@ -271,7 +271,7 @@ class Fight
 	 * Sampled here rather than where the damage lands, because that is the tick
 	 * the prayers and boosts actually applied to the attack.
 	 */
-	void recordAttackMade(boolean prayed, boolean boosted, double actualSetup, double idealSetup)
+	void recordAttackMade(boolean prayed, boolean potted, double actualSetup, double idealSetup)
 	{
 		attacking = true;
 		combatTicks++;
@@ -280,9 +280,9 @@ class Fight
 		{
 			attacksPrayed++;
 		}
-		if (boosted)
+		if (potted)
 		{
-			attacksBoosted++;
+			attacksPotted++;
 		}
 		if (actualSetup >= 0 && idealSetup > 0)
 		{
