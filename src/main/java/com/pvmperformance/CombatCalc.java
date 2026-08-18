@@ -1,13 +1,11 @@
 package com.pvmperformance;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
-import net.runelite.api.EnumComposition;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
@@ -15,7 +13,6 @@ import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Prayer;
 import net.runelite.api.Skill;
-import net.runelite.api.StructComposition;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
@@ -68,9 +65,6 @@ class CombatCalc
 	private static final int MANUAL_CAST_TICKS = 8;
 	private Spell manualCastSpell;
 	private int manualCastTick = Integer.MIN_VALUE;
-	// Enum mapping a weapon category to its list of combat option structs, as
-	// read by RuneLite's own attack styles plugin. No gameval constant exists.
-	private static final int WEAPON_CATEGORY_STYLES_ENUM = 3908;
 
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
@@ -406,9 +400,26 @@ class CombatCalc
 	 * <p>Never null: categories missing from {@link WeaponCategory} fall back to
 	 * {@link #fallbackStyle()}.
 	 */
+	/**
+	 * The equipped weapon's category, read from the name the combat tab shows
+	 * and falling back to the varbit id.
+	 *
+	 * <p>The name is preferred because the ids have drifted: powered staff now
+	 * reports 24, which this table had as banner, so every trident resolved as a
+	 * melee weapon. A name the game itself prints cannot go stale that way.
+	 */
 	private WeaponCategory weaponCategory()
 	{
-		return WeaponCategory.forVarbit(client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY));
+		final WeaponCategory named = WeaponCategory.forName(combatTabCategory());
+		return named != null ? named
+			: WeaponCategory.forVarbit(client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY));
+	}
+
+	/** The category heading on the combat tab, e.g. "Category: Whip". */
+	private String combatTabCategory()
+	{
+		final Widget widget = client.getWidget(InterfaceID.CombatInterface.CATEGORY);
+		return widget == null ? null : Text.removeTags(widget.getText());
 	}
 
 	/** The spell currently set to autocast, or null if none is. */
@@ -525,6 +536,26 @@ class CombatCalc
 		return w.getAslash() >= w.getAcrush() ? AttackType.SLASH : AttackType.CRUSH;
 	}
 
+	/**
+	 * The dart loaded in the blowpipe, or null when a blowpipe isn't held. The
+	 * game doesn't say which dart it holds, so this comes from the config.
+	 */
+	private ItemEquipmentStats blowpipeDart()
+	{
+		final String weapon = weaponName();
+		if (weapon == null || !weapon.toLowerCase().contains("blowpipe"))
+		{
+			return null;
+		}
+		final BlowpipeDart dart = config.blowpipeDart();
+		if (dart == BlowpipeDart.NONE)
+		{
+			return null;
+		}
+		final ItemStats stats = itemManager.getItemStats(dart.getItemId());
+		return stats == null ? null : stats.getEquipment();
+	}
+
 	/** Sum of the worn gear's attack bonus for the type being rolled. */
 	private int attackBonus(AttackType type)
 	{
@@ -564,6 +595,14 @@ class CombatCalc
 		{
 			// The shadow multiplies the magic accuracy of everything else worn.
 			total *= gearBonuses.shadowMultiplier();
+		}
+		if (type == AttackType.RANGED)
+		{
+			final ItemEquipmentStats dart = blowpipeDart();
+			if (dart != null)
+			{
+				total += dart.getArange();
+			}
 		}
 		return total;
 	}
@@ -875,141 +914,50 @@ class CombatCalc
 	}
 
 	/**
-	 * A human readable dump of how the current loadout was resolved, for the
-	 * ::loadout command. Written so a player can paste it into a bug report and
-	 * have it say why a figure came out the way it did, rather than only that it
-	 * looked wrong.
+	 * A short summary of how the current loadout was resolved, for the ::loadout
+	 * command. Written for a player pasting it into a bug report, so it says
+	 * which weapon and target were read and what came out. The cache internals
+	 * it used to print meant nothing to anyone but me, and only while the weapon
+	 * category table was being fixed.
 	 */
 	List<String> describeLoadout(int npcId)
 	{
 		final List<String> lines = new ArrayList<>();
-		final int categoryVarbit = client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY);
-		final int varp = client.getVarpValue(VarPlayerID.COM_MODE);
 		final AttackStyle style = attackStyle();
+		final WeaponCategory category = weaponCategory();
 
-		lines.add(String.format("Weapon: %s (%d), category varbit %d -> %s",
-			weaponName() == null ? "unarmed" : weaponName(), weaponItemId(),
-			categoryVarbit, WeaponCategory.forVarbit(categoryVarbit)));
-		lines.add(String.format("Style: com mode %d -> %s / %s, %d tick",
-			varp, style.getAttackType(), style.getCombatStyle(), attackSpeedTicks()));
+		lines.add(String.format("%s - %s, %s %s, %d tick",
+			weaponName() == null ? "Unarmed" : weaponName(),
+			category == null ? "unknown category" : category.getGameName(),
+			style.getAttackType(), style.getCombatStyle(), attackSpeedTicks()));
 
 		final Spell spell = activeSpell();
-		lines.add(String.format("Magic: spell %s, powered staff hit %d, shadow x%d",
-			spell == null ? "none" : spell.getDisplayName(), poweredStaffMaxHit(),
-			gearBonuses.shadowMultiplier()));
+		if (spell != null)
+		{
+			lines.add("Casting " + spell.getDisplayName());
+		}
 
 		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
-		if (npc == null)
-		{
-			lines.add("Target: no monster data" + (npcId > 0 ? " for id " + npcId : ""));
-		}
-		else
-		{
-			lines.add(String.format("Target: %s (%d), def %d, magic %d, attributes %s",
-				npc.getName(), npcId, npc.getDefenceLevel(), npc.getMagicLevel(), npc.getAttributes()));
-		}
+		lines.add(npc == null
+			? "Target: none, or no stats for it"
+			: String.format("Target: %s, defence %d", npc.getName(), npc.getDefenceLevel()));
 
-		final GearBonus gear = gearBonus(npcId);
-		lines.add(String.format("Gear: accuracy x%.3f, damage x%.3f, expected x%.3f",
-			gear.getAccuracy(), gear.getDamage(), gear.getExpectedDamage()));
-		lines.add(String.format("Result: max hit %d, spec max %d, accuracy %.1f%%, avg hit %.2f",
-			maxHit(npcId), specialAttackMaxHit(npcId), hitChance(npcId) * 100, averageHit(npcId)));
-		lines.addAll(describeCombatTab());
-		lines.addAll(describeStyleStructs());
+		final double accuracy = hitChance(npcId);
+		lines.add(accuracy < 0
+			? String.format("Max hit %d, no accuracy without target stats", maxHit(npcId))
+			: String.format("Max hit %d, accuracy %.0f%%, avg hit %.2f",
+				maxHit(npcId), accuracy * 100, averageHit(npcId)));
+
+		final int spec = specialAttackMaxHit(npcId);
+		if (spec > 0)
+		{
+			lines.add("Spec max hit " + spec);
+		}
+		// Kept for bug reports: this pairing is what exposes a category read wrong.
+		lines.add(String.format("(category varbit %d, com mode %d)",
+			client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY),
+			client.getVarpValue(VarPlayerID.COM_MODE)));
 		return lines;
-	}
-
-	/**
-	 * What the combat tab itself is showing: the category heading and the label
-	 * on each option button. These come from the game rather than from any table
-	 * here, so they say what the weapon's options really are.
-	 */
-	private List<String> describeCombatTab()
-	{
-		final int[] textIds = {
-			InterfaceID.CombatInterface._0_TEXT,
-			InterfaceID.CombatInterface._1_TEXT,
-			InterfaceID.CombatInterface._2_TEXT,
-			InterfaceID.CombatInterface._3_TEXT,
-		};
-		final StringBuilder options = new StringBuilder();
-		for (int i = 0; i < textIds.length; i++)
-		{
-			final Widget widget = client.getWidget(textIds[i]);
-			options.append(' ').append(i).append("='")
-				.append(widget == null ? "?" : Text.removeTags(widget.getText())).append("'");
-		}
-		final Widget category = client.getWidget(InterfaceID.CombatInterface.CATEGORY);
-		return Collections.singletonList(String.format("Tab: category='%s' options%s",
-			category == null ? "?" : Text.removeTags(category.getText()), options));
-	}
-
-	/**
-	 * The game's own description of this weapon category's combat options. Enum
-	 * 3908 maps a category to a struct per option, and RuneLite's attack styles
-	 * plugin reads the combat style from param 1407; the surrounding params are
-	 * probed to see what else each struct carries.
-	 */
-	private List<String> describeStyleStructs()
-	{
-		final List<String> lines = new ArrayList<>();
-		final int categoryVarbit = client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY);
-		final EnumComposition categories = client.getEnum(WEAPON_CATEGORY_STYLES_ENUM);
-		final int styleEnumId = categories == null ? -1 : categories.getIntValue(categoryVarbit);
-		final EnumComposition styles = styleEnumId == -1 ? null : client.getEnum(styleEnumId);
-		if (styles == null)
-		{
-			lines.add("Structs: none for category " + categoryVarbit);
-			return lines;
-		}
-		for (int structId : styles.getIntVals())
-		{
-			final StructComposition struct = client.getStructComposition(structId);
-			if (struct == null)
-			{
-				continue;
-			}
-			final StringBuilder params = new StringBuilder();
-			for (int param = 1395; param <= 1425; param++)
-			{
-				params.append(describeParam(struct, param));
-			}
-			lines.add("Struct " + structId + ":" + params);
-		}
-		return lines;
-	}
-
-	/**
-	 * Reads one param off a struct without knowing its type. There is no way to
-	 * ask, and asking for the wrong one throws, so both are tried.
-	 */
-	private static String describeParam(StructComposition struct, int param)
-	{
-		try
-		{
-			final String text = struct.getStringValue(param);
-			if (text != null && !text.isEmpty())
-			{
-				return " " + param + "='" + text + "'";
-			}
-		}
-		catch (RuntimeException notAString)
-		{
-			// Falls through to reading it as an int.
-		}
-		try
-		{
-			final int value = struct.getIntValue(param);
-			if (value != 0)
-			{
-				return " " + param + "=" + value;
-			}
-		}
-		catch (RuntimeException notAnInt)
-		{
-			// Param isn't set on this struct at all.
-		}
-		return "";
 	}
 
 	/** The equipped weapon's name, or null when unarmed. */
@@ -1264,6 +1212,14 @@ class CombatCalc
 			if (stats != null && stats.getEquipment() != null)
 			{
 				total += melee ? stats.getEquipment().getStr() : stats.getEquipment().getRstr();
+			}
+		}
+		if (!melee)
+		{
+			final ItemEquipmentStats dart = blowpipeDart();
+			if (dart != null)
+			{
+				total += dart.getRstr();
 			}
 		}
 		return total;

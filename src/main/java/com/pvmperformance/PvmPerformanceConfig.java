@@ -44,12 +44,25 @@ public interface PvmPerformanceConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "blowpipeDart",
+		name = "Blowpipe dart",
+		description = "Which dart your blowpipe is loaded with. A blowpipe keeps its darts "
+			+ "inside itself and the game does not say which they are, so the max hit is "
+			+ "well short without this",
+		position = 4
+	)
+	default BlowpipeDart blowpipeDart()
+	{
+		return BlowpipeDart.DRAGON;
+	}
+
+	@ConfigItem(
 		keyName = "assumeSlayerTask",
 		name = "Assume on slayer task",
 		description = "Count the black mask / slayer helmet bonus in the expected figures. "
 			+ "There is no reliable way to tell whether the current target is your task, "
 			+ "so this is a manual switch: leave it off unless you are on task",
-		position = 4
+		position = 5
 	)
 	default boolean assumeSlayerTask()
 	{
@@ -60,7 +73,7 @@ public interface PvmPerformanceConfig extends Config
 		keyName = "fightTimeoutTicks",
 		name = "Fight timeout (ticks)",
 		description = "End the current fight after this many game ticks with no damage dealt",
-		position = 5
+		position = 6
 	)
 	default int fightTimeoutTicks()
 	{
