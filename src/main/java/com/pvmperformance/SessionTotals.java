@@ -68,12 +68,35 @@ class SessionTotals
 		{
 			kills++;
 		}
-		// Tick loss is only meaningful per fight, since the gap between one
-		// fight's last attack and the next fight's first is travel, not waste.
-		ticksLostEating += fight.getTicksLostEating();
-		ticksLostOther += fight.getTicksLostOther();
-		combatTicks += fight.getCombatTicks();
 		lastActivityMillis = now;
+	}
+
+	/**
+	 * Books a tick that passed with the weapon off cooldown and no attack made.
+	 *
+	 * <p>Taken tick by tick from the fight in progress rather than summed from
+	 * finished fights, which left the trip's tick loss frozen until something
+	 * died. Only ticks the fight itself counts are passed here, so the gap
+	 * between one fight's last attack and the next fight's first stays out: that
+	 * is travel, not waste.
+	 */
+	void recordTickLost(boolean eating)
+	{
+		if (eating)
+		{
+			ticksLostEating++;
+		}
+		else
+		{
+			ticksLostOther++;
+		}
+		combatTicks++;
+	}
+
+	/** A tick that passed while the weapon was still on cooldown. */
+	void recordTickSpent()
+	{
+		combatTicks++;
 	}
 
 	void recordAttempt(int damage, long now)
@@ -96,6 +119,7 @@ class SessionTotals
 	void recordAttackMade(boolean prayed, boolean boosted, double actualSetup, double idealSetup)
 	{
 		attacksMade++;
+		combatTicks++;
 		if (actualSetup >= 0 && idealSetup > 0)
 		{
 			sumActualSetup += actualSetup;
