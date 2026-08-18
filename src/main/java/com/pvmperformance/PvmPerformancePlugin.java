@@ -93,6 +93,9 @@ public class PvmPerformancePlugin extends Plugin
 	// loss is measured from the attacks themselves and is unaffected.
 	private static final Set<Integer> CONSUME_ANIMATIONS = Collections.unmodifiableSet(new HashSet<>(
 		Arrays.asList(AnimationID.HUMAN_EAT, AnimationID.HUMAN_KILLERWATT_ELECTRICSHOCK)));
+	// An eat pauses the attack for three ticks while showing its animation for
+	// one. Combo eating a karambwan alongside another food costs the same three.
+	private static final int EAT_TICKS = 3;
 	private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 	/** The column names, kept beside the row builders so the two cannot drift. */
 	static final String CSV_HEADER =
@@ -164,6 +167,9 @@ public class PvmPerformancePlugin extends Plugin
 	// it once at the end of the tick misses a flick, which is off again by then
 	// but was up while the server resolved the attack.
 	private boolean prayedThisTick;
+	// The tick an eat was last seen on, so the pause it causes is credited to it
+	// rather than only the one tick its animation shows for.
+	private int lastConsumeTick;
 
 	// Running totals for the trip, shown instead of the current fight when the
 	// overlay is set to whole-trip mode.
@@ -677,11 +683,27 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	/** Whether the player is eating or drinking, which costs attack ticks. */
+	/**
+	 * Whether this lost tick was spent eating.
+	 *
+	 * <p>An eat shows its animation for one tick but costs three, so reading the
+	 * animation alone credited the first tick to eating and left the other two
+	 * looking like idling. A karambwan is the case that makes this visible: it
+	 * is eaten with another food on the same tick, one animation for a three
+	 * tick pause, and two thirds of it was landing in the wrong column.
+	 *
+	 * <p>The window is generous rather than exact, since foods differ. It can
+	 * only mislabel a tick that was already lost, never add one — an attack made
+	 * inside the window is an attack, and is never offered here.
+	 */
 	private boolean isConsuming()
 	{
 		final Player me = client.getLocalPlayer();
-		return me != null && CONSUME_ANIMATIONS.contains(me.getAnimation());
+		if (me != null && CONSUME_ANIMATIONS.contains(me.getAnimation()))
+		{
+			lastConsumeTick = client.getTickCount();
+		}
+		return lastConsumeTick > 0 && client.getTickCount() - lastConsumeTick < EAT_TICKS;
 	}
 
 	/**
