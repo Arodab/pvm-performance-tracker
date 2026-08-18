@@ -138,8 +138,6 @@ public class PvmPerformancePlugin extends Plugin
 	// The tick an attack was last seen going out on, set from the events that
 	// prove one happened rather than from what the player looks like.
 	private int attackObservedTick = -1;
-	// The tick a splash was last counted on, so one splash counts once.
-	private int lastSplashTick = -1;
 
 	// Running totals for the trip, shown instead of the current fight when the
 	// overlay is set to whole-trip mode.
@@ -284,9 +282,9 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onProjectileMoved(ProjectileMoved event)
 	{
-		// Magic/ranged attacks fire a projectile before impact. One that starts
-		// on my tile is mine, which lets a fight begin on my first cast (even if
-		// it splashes) and lets a later splash be attributed to me, not others.
+		// Magic and ranged attacks fire a projectile before impact. Recognising
+		// mine lets a fight begin on my first cast even if it splashes, and lets
+		// the splash that follows be attributed to me rather than to others.
 		final Projectile projectile = event.getProjectile();
 		final Player me = client.getLocalPlayer();
 		final Actor target = projectile.getTargetActor();
@@ -294,14 +292,7 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
-		final WorldPoint source = projectile.getSourcePoint();
-		if (source == null || !source.equals(me.getWorldLocation()))
-		{
-			return;
-		}
-		// The tile alone can't separate two players stacked on it, so also
-		// require the projectile to target the NPC I'm actually attacking.
-		if (me.getInteracting() != target)
+		if (!isProjectileMine(projectile, me, target))
 		{
 			return;
 		}
@@ -321,6 +312,26 @@ public class PvmPerformancePlugin extends Plugin
 		recordAttackObserved();
 	}
 
+	/**
+	 * Whether this projectile came from me. The projectile names its own source
+	 * actor, which settles it outright and, unlike anything positional, cannot
+	 * confuse me with another player standing on my tile.
+	 *
+	 * <p>Falls back to the tile and target test only when the projectile names
+	 * no source at all, which is the weaker rule this replaced.
+	 */
+	private boolean isProjectileMine(Projectile projectile, Player me, Actor target)
+	{
+		final Actor source = projectile.getSourceActor();
+		if (source != null)
+		{
+			return source == me;
+		}
+		log.debug("PvM Performance: projectile {} names no source actor", projectile.getId());
+		final WorldPoint from = projectile.getSourcePoint();
+		return from != null && from.equals(me.getWorldLocation()) && me.getInteracting() == target;
+	}
+
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
@@ -338,51 +349,17 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final int index = ((NPC) actor).getIndex();
-		if (current.getTargetIndex() != index || !isSplashMine(index))
+		// A splash names no caster, so it only counts as mine when it resolves a
+		// projectile I fired. Attribution is exact now that the projectile names
+		// its source, so this no longer drops casts the way it did.
+		if (current.getTargetIndex() != index || !consumePending(index))
 		{
 			return;
 		}
-		// One splash can raise more than one graphic event, and the fallback
-		// route has nothing to consume, so a tick is only ever counted once.
-		if (client.getTickCount() == lastSplashTick)
-		{
-			return;
-		}
-		lastSplashTick = client.getTickCount();
 		final long now = System.currentTimeMillis();
 		current.recordSplash(now);
 		session.recordAttempt(0, now);
 		sampleExpected(current);
-	}
-
-	/**
-	 * Whether a splash on this NPC was my cast. A splash carries no caster, so
-	 * it has to be attributed some other way.
-	 *
-	 * <p>Preferably by matching it to a projectile seen leaving my tile. That
-	 * fails whenever the projectile could not be attributed, though, and a
-	 * dropped splash is invisible: landed hits are recorded whether or not a
-	 * projectile was matched, so only the misses would go missing, quietly
-	 * flattering the measured accuracy and stalling the expected damage.
-	 *
-	 * <p>So a splash on the NPC I am interacting with counts too. That admits
-	 * another player's splash on the same target in multi-combat, which is the
-	 * lesser error: it costs a rare over-count instead of dropping every miss.
-	 */
-	private boolean isSplashMine(int npcIndex)
-	{
-		if (consumePending(npcIndex))
-		{
-			return true;
-		}
-		final Player me = client.getLocalPlayer();
-		final Actor target = me == null ? null : me.getInteracting();
-		final boolean mine = target instanceof NPC && ((NPC) target).getIndex() == npcIndex;
-		if (mine)
-		{
-			log.debug("PvM Performance: splash counted without a matched projectile");
-		}
-		return mine;
 	}
 
 	/**
