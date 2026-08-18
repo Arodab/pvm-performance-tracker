@@ -412,6 +412,13 @@ class CombatCalc
 	 * Magic rolls against the target's magic level rather than its defence
 	 * level, and its effective level starts from +9 rather than the +8 melee and
 	 * ranged use.
+	 *
+	 * <p>Its defence level does not come into it at all. Players defend against
+	 * magic with a blend of the two, but the wiki is explicit that a monster's
+	 * magic defence comes solely from its Magic stat and its magic defence
+	 * bonus. Together with magic level not being raid scaled, that means magic
+	 * accuracy in the Tombs does not move with the raid level at all, which is
+	 * the arithmetic behind magic being the better style at high invocations.
 	 */
 	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
 	{
