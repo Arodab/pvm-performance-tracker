@@ -1,6 +1,7 @@
 package com.pvmperformance;
 
 import javax.inject.Inject;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.NPC;
@@ -37,6 +38,7 @@ import net.runelite.client.game.NPCManager;
  * (BSD-2). Not yet modelled: void, and set/weapon multipliers (Salve, slayer
  * helm, DHL, crystal, ...).
  */
+@Slf4j
 class CombatCalc
 {
 	enum Style
@@ -58,6 +60,9 @@ class CombatCalc
 	private static final int MANUAL_CAST_TICKS = 8;
 	private Spell manualCastSpell;
 	private int manualCastTick = Integer.MIN_VALUE;
+	// Last loadout written to the debug log, so it is written only on a change.
+	private int loggedWeapon = Integer.MIN_VALUE;
+	private int loggedCategory = Integer.MIN_VALUE;
 
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
@@ -592,8 +597,11 @@ class CombatCalc
 		final WeaponCategory category = weaponCategory();
 		// A manual cast runs on the spell's clock even from a powered staff, so
 		// a trident being barraged off is 5 ticks, not the trident's own speed.
-		if (activeManualCast() == null
-			&& (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER))
+		// Recognising the staff by name matters here too: going by category
+		// alone put an unmapped one on the 5 tick spell clock.
+		final boolean ownAttack = poweredStaffMaxHit() > 0
+			|| category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER;
+		if (activeManualCast() == null && ownAttack)
 		{
 			return weaponTicks;
 		}
@@ -614,6 +622,7 @@ class CombatCalc
 	 */
 	int maxHit(int npcId)
 	{
+		logLoadout();
 		final int hit = (int) (baseMaxHit() * gearBonus(npcId).getDamage()) + colossalBladeBonus(npcId);
 		final EnchantedBolt bolt = loadedBolt(npcId);
 		if (bolt == null)
@@ -743,15 +752,21 @@ class CombatCalc
 		{
 			return applyMagicDamage(manual.getBaseMaxHit(), manual);
 		}
+		// A staff recognised by name fires its own attack. Tested before the
+		// weapon category, so it still holds when the category varbit is one
+		// this plugin has no entry for — relying on the category meant an
+		// unmapped one fell through and reported the autocast spell instead.
+		final int staff = poweredStaffMaxHit();
+		if (staff > 0)
+		{
+			return applyMagicDamage(staff, null);
+		}
 		final WeaponCategory category = weaponCategory();
 		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
 		{
-			// These fire their own attack and never cast the autocast spell, so
-			// one that isn't recognised is unknown, not spell-shaped. Falling
-			// through here would report whatever spell happened to be left set
-			// to autocast, which is a wrong number rather than no number.
-			final int base = poweredStaffMaxHit();
-			return base <= 0 ? 0 : applyMagicDamage(base, null);
+			// A powered staff never casts the autocast spell, so one that isn't
+			// recognised is unknown rather than spell-shaped.
+			return 0;
 		}
 		final Spell spell = autocastSpell();
 		return spell == null ? 0 : applyMagicDamage(spell.getBaseMaxHit(), spell);
@@ -842,6 +857,29 @@ class CombatCalc
 			return Math.max(1, (8 * magic + 96) / 37);
 		}
 		return 0;
+	}
+
+	/**
+	 * Logs what the loadout resolved to, once per weapon or category change.
+	 * Cheap to leave in: it only fires when something is swapped, and it is the
+	 * quickest way to see why a weapon is being read the way it is.
+	 */
+	private void logLoadout()
+	{
+		final int weapon = weaponItemId();
+		final int categoryVarbit = client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY);
+		if (weapon == loggedWeapon && categoryVarbit == loggedCategory)
+		{
+			return;
+		}
+		loggedWeapon = weapon;
+		loggedCategory = categoryVarbit;
+		final AttackStyle style = attackStyle();
+		log.debug("PvM Performance loadout: weapon={} name='{}' categoryVarbit={} mappedCategory={} "
+				+ "comMode={} type={} style={} poweredStaffHit={} autocast={} baseMaxHit={}",
+			weapon, weaponName(), categoryVarbit, WeaponCategory.forVarbit(categoryVarbit),
+			client.getVarpValue(VarPlayerID.COM_MODE), style.getAttackType(), style.getCombatStyle(),
+			poweredStaffMaxHit(), autocastSpell(), baseMaxHit());
 	}
 
 	/** The equipped weapon's name, or null when unarmed. */
