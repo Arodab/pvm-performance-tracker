@@ -15,6 +15,18 @@ class Fight
 	private static final int MAX_ENGAGE_TICKS = 100;
 
 	private final String targetName;
+	// The room or boss this fight is a part of, or null if it stands alone.
+	private final String groupName;
+	// Stored the wrong way round on purpose. Deserialisation fills fields
+	// without running their initialisers, so a fight read back from a history
+	// file written before this existed gets false — which has to mean the
+	// ordinary case, that the fight counts.
+	private final boolean unscored;
+	// The raid this was fought in, and which run of it, so the history can be
+	// read back as raids without a second file to keep in step. Null and 0
+	// outside a raid, which is also what an older history file reads as.
+	private final String raidName;
+	private final int raidId;
 	private final int targetId;
 	private final int targetIndex;
 	// The NPC's max HP (from NPCManager), or -1 if unknown; used to classify bosses.
@@ -70,9 +82,14 @@ class Fight
 	private transient int engageFromTick;
 	private int ticksToEngage;
 
-	Fight(String targetName, int targetId, int targetIndex, int maxHp, long now)
+	Fight(String targetName, int targetId, int targetIndex, int maxHp, long now,
+		RaidType raid, int raidId)
 	{
 		this.targetName = targetName == null ? "NPC" : targetName;
+		this.groupName = EncounterGroup.of(targetId);
+		this.unscored = EncounterGroup.isUnscored(targetId);
+		this.raidName = raid == null ? null : raid.getDisplayName();
+		this.raidId = raid == null ? 0 : raidId;
 		this.targetId = targetId;
 		this.targetIndex = targetIndex;
 		this.maxHp = maxHp;
@@ -113,6 +130,22 @@ class Fight
 		// restocking, away — and timing it says nothing about the kill.
 		ticksToEngage = gap > MAX_ENGAGE_TICKS ? 0 : gap;
 		return ticksToEngage;
+	}
+
+	/**
+	 * Whether this fight's damage counts towards the room it belongs to. An
+	 * unscored fight still spends time and still loses ticks; it just does not
+	 * get to speak for how well the player was hitting.
+	 */
+	boolean isScored()
+	{
+		return !unscored;
+	}
+
+	/** The room or boss this belongs to, falling back to the target's own name. */
+	String encounterName()
+	{
+		return groupName == null ? getTargetName() : groupName;
 	}
 
 	void recordDamageDealt(int amount, long now)

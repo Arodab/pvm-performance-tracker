@@ -42,15 +42,21 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return null;
 		}
 
-		// In whole-trip mode the measured side comes from the running totals; the
-		// expected max hit stays live, since it describes the loadout worn now.
+		// Three widths of the same numbers: the whole trip, the raid so far, or
+		// the room being fought. The room is the default and the narrowest — the
+		// single fight is not offered, because a room whose adds are separate
+		// NPCs would blink between them as they died.
 		final SessionTotals session = config.overlaySessionTotals() ? plugin.getSession() : null;
-		final boolean trip = session != null;
+		final Raid raid = session != null || config.raidScope() != RaidScope.RAID
+			? null : plugin.getCurrentRaid();
+		final Encounter room = session != null || raid != null ? null : plugin.getDisplayEncounter();
+		if (session == null && raid == null && room == null)
+		{
+			return null;
+		}
 
 		panelComponent.getChildren().add(TitleComponent.builder()
-			.text(trip
-				? String.format("Trip: %d kill%s", session.getKills(), session.getKills() == 1 ? "" : "s")
-				: fight.getTargetName())
+			.text(title(session, raid, room, fight))
 			.build());
 
 		final int maxHit = plugin.getExpectedMaxHit();
@@ -100,9 +106,10 @@ class PvmPerformanceOverlay extends OverlayPanel
 		// figure, so swapping weapons mid-fight adds each weapon's own share.
 		panelComponent.getChildren().add(LineComponent.builder().left("").right("").build());
 
-		final int damage = trip ? session.getDamageDealt() : fight.getDamageDealt();
-		final double expDamage = trip
-			? session.getSumExpectedAverageHit() : fight.getSumExpectedAverageHit();
+		final int damage = session != null ? session.getDamageDealt()
+			: raid != null ? raid.getDamageDealt() : room.getDamageDealt();
+		final double expDamage = session != null ? session.getSumExpectedAverageHit()
+			: raid != null ? raid.sumExpectedAverageHit() : room.sumExpectedAverageHit();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Damage")
 			.right(expDamage > 0
@@ -110,9 +117,10 @@ class PvmPerformanceOverlay extends OverlayPanel
 				: QuantityFormatter.formatNumber(damage))
 			.build());
 
-		final int hits = trip ? session.getHits() : fight.getHits();
-		final double expHits = trip
-			? session.getSumExpectedAccuracy() : fight.getSumExpectedAccuracy();
+		final int hits = session != null ? session.getHits()
+			: raid != null ? raid.getHits() : room.getHits();
+		final double expHits = session != null ? session.getSumExpectedAccuracy()
+			: raid != null ? raid.sumExpectedAccuracy() : room.sumExpectedAccuracy();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Hits")
 			.right(expHits > 0
@@ -122,7 +130,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 
 		// How well the attacks were set up, with the parts shown only when one of
 		// them slipped — a clean fight needs no breakdown.
-		final double efficiency = trip ? session.efficiency() : fight.efficiency();
+		final double efficiency = session != null ? session.efficiency()
+			: raid != null ? raid.efficiency() : room.efficiency();
 		if (efficiency >= 0)
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
@@ -130,9 +139,12 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.right(String.format("%.0f%%", efficiency * 100))
 				.build());
 
-			final int made = trip ? session.getAttacksMade() : fight.getAttacksMade();
-			final int prayed = trip ? session.getAttacksPrayed() : fight.getAttacksPrayed();
-			final int boosted = trip ? session.getAttacksBoosted() : fight.getAttacksBoosted();
+			final int made = session != null ? session.getAttacksMade()
+				: raid != null ? raid.getAttacksMade() : room.getAttacksMade();
+			final int prayed = session != null ? session.getAttacksPrayed()
+				: raid != null ? raid.getAttacksPrayed() : room.getAttacksPrayed();
+			final int boosted = session != null ? session.getAttacksBoosted()
+				: raid != null ? raid.getAttacksBoosted() : room.getAttacksBoosted();
 			if (prayed < made)
 			{
 				panelComponent.getChildren().add(LineComponent.builder()
@@ -149,16 +161,19 @@ class PvmPerformanceOverlay extends OverlayPanel
 			}
 		}
 
-		final double lostShare = trip ? session.ticksLostShare() : fight.ticksLostShare();
+		final double lostShare = session != null ? session.ticksLostShare()
+			: raid != null ? raid.ticksLostShare() : room.ticksLostShare();
 		if (lostShare >= 0)
 		{
-			final int lost = trip ? session.getTicksLost() : fight.getTicksLost();
+			final int lost = session != null ? session.getTicksLost()
+				: raid != null ? raid.getTicksLost() : room.getTicksLost();
 			panelComponent.getChildren().add(LineComponent.builder()
 				.left("Ticks lost")
 				.right(String.format("%d (%.0f%%)", lost, lostShare * 100))
 				.build());
 
-			final int eating = trip ? session.getTicksLostEating() : fight.getTicksLostEating();
+			final int eating = session != null ? session.getTicksLostEating()
+				: raid != null ? raid.getTicksLostEating() : room.getTicksLostEating();
 			if (eating > 0)
 			{
 				panelComponent.getChildren().add(LineComponent.builder()
@@ -173,6 +188,7 @@ class PvmPerformanceOverlay extends OverlayPanel
 		// being unattackable, which no play removes. Over a trip the best one
 		// stands in for that floor, so the gap between it and the average is
 		// what was really lost.
+		final boolean trip = session != null;
 		final int engage = trip ? session.getBestTicksToEngage() : fight.getTicksToEngage();
 		if (engage > 0)
 		{
@@ -184,13 +200,33 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 		}
 
-		final long millis = trip ? session.durationMillis() : fight.durationMillis();
+		final long millis = session != null ? session.durationMillis()
+			: raid != null ? raid.durationMillis() : room.durationMillis();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Time")
 			.right(trip ? formatDuration(millis) : String.format("%.1fs", millis / 1000.0))
 			.build());
 
 		return super.render(graphics);
+	}
+
+	/**
+	 * What is being reported on. A raid names itself and how far in it is; a
+	 * room names itself, which for a grouped room is the room rather than
+	 * whichever of its NPCs happens to be dying.
+	 */
+	private static String title(SessionTotals session, Raid raid, Encounter room, Fight fight)
+	{
+		if (session != null)
+		{
+			return String.format("Trip: %d kill%s", session.getKills(), session.getKills() == 1 ? "" : "s");
+		}
+		if (raid != null)
+		{
+			return String.format("%s: %d room%s", raid.getName(),
+				raid.getEncounters().size(), raid.getEncounters().size() == 1 ? "" : "s");
+		}
+		return room == null ? fight.getTargetName() : room.getName();
 	}
 
 	private static String formatDuration(long millis)

@@ -17,6 +17,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -45,6 +46,7 @@ import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
+import net.runelite.api.events.NpcChanged;
 import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.ProjectileMoved;
 import net.runelite.api.events.VarbitChanged;
@@ -157,6 +159,19 @@ public class PvmPerformancePlugin extends Plugin
 	private int respawnNpcIndex = -1;
 	private int respawnTick;
 
+	// The room the fights are adding up to, and the raid the rooms are adding
+	// up to. Both are views over the fights rather than separate counters, so
+	// the three widths cannot disagree.
+	private Encounter currentEncounter;
+	private Raid currentRaid;
+	private RaidType raidType;
+	private int raidCounter;
+
+	// The id the target is wearing now, which is not the id the fight opened on
+	// once a boss transforms. Kept from the change events rather than looked up,
+	// so no scan is needed to know whether the target can be fought at all.
+	private int targetLiveId = -1;
+
 	// The fight currently in progress, or null between fights.
 	private Fight current;
 	// The most recently finished fight, kept so the overlay lingers briefly.
@@ -220,7 +235,7 @@ public class PvmPerformancePlugin extends Plugin
 		final Hitsplat hitsplat = event.getHitsplat();
 		final long now = System.currentTimeMillis();
 
-		if (actor instanceof NPC && hitsplat.isMine())
+		if (actor instanceof NPC && hitsplat.isMine() && !EncounterGroup.isIgnored(((NPC) actor).getId()))
 		{
 			final NPC npc = (NPC) actor;
 			if (current == null || current.isEnded() || current.getTargetIndex() != npc.getIndex())
@@ -228,8 +243,11 @@ public class PvmPerformancePlugin extends Plugin
 				startFight(npc, now);
 			}
 			current.recordDamageDealt(hitsplat.getAmount(), now);
-			session.recordAttempt(hitsplat.getAmount(), now);
-			sampleExpected(current);
+			if (current.isScored())
+			{
+				session.recordAttempt(hitsplat.getAmount(), now);
+				sampleExpected(current);
+			}
 			// A landed hit resolves one of my pending attacks so it can't later
 			// be mistaken for another player's splash.
 			consumePending(npc.getIndex());
@@ -318,6 +336,10 @@ public class PvmPerformancePlugin extends Plugin
 		}
 
 		final NPC npc = (NPC) target;
+		if (EncounterGroup.isIgnored(npc.getId()))
+		{
+			return;
+		}
 		final long now = System.currentTimeMillis();
 		if (current == null || current.isEnded() || current.getTargetIndex() != npc.getIndex())
 		{
@@ -442,6 +464,21 @@ public class PvmPerformancePlugin extends Plugin
 		respawnTick = client.getTickCount();
 	}
 
+	/**
+	 * Follows the target through a transform. A boss that changes form keeps its
+	 * index and changes its id, and the new id is what says whether it can be
+	 * fought at all — Sotetseg wears a separate one for the maze.
+	 */
+	@Subscribe
+	public void onNpcChanged(NpcChanged event)
+	{
+		final NPC npc = event.getNpc();
+		if (current != null && !current.isEnded() && current.getTargetIndex() == npc.getIndex())
+		{
+			targetLiveId = npc.getId();
+		}
+	}
+
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned event)
 	{
@@ -497,7 +534,14 @@ public class PvmPerformancePlugin extends Plugin
 			final double actualSetup = combatCalc.actualAverageHit(targetId, prayed);
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
 			current.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
-			session.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
+			if (current.isScored())
+			{
+				session.recordAttackMade(prayed, boosted, actualSetup, idealSetup);
+			}
+			else
+			{
+				session.recordTickSpent();
+			}
 			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
 			return;
 		}
@@ -505,6 +549,14 @@ public class PvmPerformancePlugin extends Plugin
 		// in whole-trip mode moves during a fight rather than only at its end.
 		// Both are gated on the fight having started, which is the fight's rule
 		// for counting a tick at all.
+		if (EncounterGroup.isUnattackable(targetLiveId))
+		{
+			// Between phases, charging, or dead but still standing. The tick is
+			// booked neither lost nor spent: no attack was possible, so counting
+			// it either way would move a figure that measures choices.
+			attackCooldown = Math.max(0, attackCooldown - 1);
+			return;
+		}
 		final boolean counts = current.isAttacking();
 		if (attackCooldown > 0)
 		{
@@ -569,6 +621,7 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
+		trackRaid(System.currentTimeMillis());
 		startFightOnTarget();
 		trackAttackCooldown();
 		prayedThisTick = false;
@@ -653,7 +706,10 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		// getHealth is nullable, and the fight takes an int.
 		final Integer maxHp = npcManager.getHealth(npc.getId());
-		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), maxHp == null ? -1 : maxHp, now);
+		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), maxHp == null ? -1 : maxHp, now,
+			raidType, raidCounter);
+		targetLiveId = npc.getId();
+		openEncounterFor(current, now);
 		if (npc.getIndex() == respawnNpcIndex)
 		{
 			// This is the boss whose respawn was watched, so the wait for it can
@@ -690,6 +746,65 @@ public class PvmPerformancePlugin extends Plugin
 			return; // not something that can be fought
 		}
 		startFight(npc, System.currentTimeMillis());
+	}
+
+	/**
+	 * Files a fight under the room it belongs to, continuing the room already
+	 * open when it is the same one.
+	 *
+	 * <p>This is what keeps the overlay still while a room is being fought. The
+	 * nylocas are the case it was written for: a barrage that splashes the wrong
+	 * colour, or a deliberate hit on it, opens a new fight but not a new room,
+	 * so nothing on screen resets. No hitsplat has to be judged AoE or not.
+	 */
+	private void openEncounterFor(Fight fight, long now)
+	{
+		// Only a grouped NPC continues a room. Without that, a second Vorkath
+		// would join the first — same name, so the same room — and the overlay
+		// would quietly turn into a running total of the trip.
+		final String name = fight.encounterName();
+		if (currentEncounter == null || fight.getGroupName() == null || !currentEncounter.accepts(name))
+		{
+			if (currentEncounter != null)
+			{
+				currentEncounter.end(now);
+			}
+			currentEncounter = new Encounter(name, raidType, now);
+			if (currentRaid != null)
+			{
+				currentRaid.add(currentEncounter);
+			}
+		}
+		currentEncounter.add(fight);
+	}
+
+	/**
+	 * Opens and closes raids from the game's own varbits, so a run is bounded by
+	 * entering and leaving rather than by what happens to be fought.
+	 */
+	private void trackRaid(long now)
+	{
+		final RaidType now_ = RaidType.current(client);
+		if (now_ == raidType)
+		{
+			return;
+		}
+		if (currentRaid != null)
+		{
+			currentRaid.end(now);
+			currentRaid = null;
+		}
+		// A room does not span two raids, nor a raid and the world outside it.
+		if (currentEncounter != null)
+		{
+			currentEncounter.end(now);
+			currentEncounter = null;
+		}
+		raidType = now_;
+		if (raidType != null)
+		{
+			currentRaid = new Raid(raidType, ++raidCounter, now);
+		}
 	}
 
 	private void finalizeFight(boolean died, long now)
@@ -795,6 +910,18 @@ public class PvmPerformancePlugin extends Plugin
 	Fight getDisplayFight()
 	{
 		return current != null ? current : lastFinished;
+	}
+
+	/** The room the overlay should display, or null if nothing has been fought. */
+	Encounter getDisplayEncounter()
+	{
+		return currentEncounter;
+	}
+
+	/** The raid in progress, or null outside one. */
+	Raid getCurrentRaid()
+	{
+		return currentRaid;
 	}
 
 	/** Expected max hit for the current loadout/style (0 if unknown). */
@@ -936,14 +1063,12 @@ public class PvmPerformancePlugin extends Plugin
 				try (Writer writer = new BufferedWriter(new java.io.OutputStreamWriter(
 					Files.newOutputStream(out.toPath()), StandardCharsets.UTF_8)))
 				{
-					writer.write("started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
+					writer.write("level,raid,raidRun,room,"
+						+ "started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
 						+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
 						+ "ticksLost,ticksLostPct,ticksLostEating,ticksToEngage,"
 						+ "attacksMade,attacksPrayed,attacksBoosted,efficiencyPct\n");
-					for (Fight fight : fights)
-					{
-						writer.write(csvRow(fight));
-					}
+					writeRows(writer, fights);
 				}
 				final String path = out.getAbsolutePath();
 				setStatus("Exported " + fights.size() + " fights → " + path);
@@ -956,6 +1081,138 @@ public class PvmPerformancePlugin extends Plugin
 				setStatus("Export failed: " + e.getMessage());
 			}
 		});
+	}
+
+	/**
+	* Writes each fight, then the room it belonged to, then the raid the rooms
+	* belonged to: the same numbers at three widths, told apart by the level
+	* column. Phases are written whole rather than summed away, so which phase
+	* a kill went wrong on survives into the file, and anyone who wants only
+	* the rooms can filter on one column.
+	*
+	* <p>The rooms are rebuilt from the fights here rather than stored, so a
+	* history written before rooms existed still exports as rooms and there is
+	* no second structure on disk to fall out of step with the first.
+	*/
+	private static void writeRows(Writer writer, List<Fight> fights) throws IOException
+	{
+		final List<Fight> ordered = new ArrayList<>(fights);
+		ordered.sort(Comparator.comparingLong(Fight::getStartMillis));
+
+		List<Encounter> raidRooms = new ArrayList<>();
+		Encounter room = null;
+		int raidRun = 0;
+		String raidName = null;
+
+		for (Fight fight : ordered)
+		{
+			final boolean newRaid = fight.getRaidId() != raidRun;
+			if (newRaid && !raidRooms.isEmpty())
+			{
+				writer.write(csvRaidRow(raidName, raidRun, raidRooms));
+				raidRooms = new ArrayList<>();
+			}
+			if (room == null || newRaid || fight.getGroupName() == null
+				|| !room.accepts(fight.encounterName()))
+			{
+				if (room != null)
+				{
+					writer.write(csvRoomRow(raidName, raidRun, room));
+				}
+				room = new Encounter(fight.encounterName(), null, fight.getStartMillis());
+				if (fight.getRaidId() > 0)
+				{
+					raidRooms.add(room);
+				}
+			}
+			raidRun = fight.getRaidId();
+			raidName = fight.getRaidName();
+			room.add(fight);
+			writer.write(csvFightRow(raidName, raidRun, fight));
+		}
+		if (room != null)
+		{
+			writer.write(csvRoomRow(raidName, raidRun, room));
+		}
+		if (!raidRooms.isEmpty())
+		{
+			writer.write(csvRaidRow(raidName, raidRun, raidRooms));
+		}
+	}
+
+	/** The first four columns, which say what the row is a row of. */
+	private static String csvScope(String level, String raidName, int raidRun, String room)
+	{
+		return String.format("%s,%s,%s,\"%s\",", level,
+			raidName == null ? "" : raidName,
+			raidRun > 0 ? String.valueOf(raidRun) : "",
+			room == null ? "" : room.replace('"', '\''));
+	}
+
+	private static String csvRoomRow(String raidName, int raidRun, Encounter room)
+	{
+		final String started = ROW_TS.format(LocalDateTime.ofInstant(
+			Instant.ofEpochMilli(room.getStartMillis()), ZoneId.systemDefault()));
+		final double seconds = Math.max(0.6, room.durationMillis() / 1000.0);
+		final int attempts = room.getAttempts();
+		return csvScope("room", raidName, raidRun, room.getName())
+			+ String.format("%s,,,,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,,%d,%d,%d,%s%n",
+				started,
+				room.isKilled(),
+				room.getDamageDealt(),
+				room.getDamageTaken(),
+				attempts,
+				room.getHits(),
+				room.accuracy() * 100,
+				room.durationMillis() / 1000.0,
+				room.getDamageDealt() / seconds,
+				room.averageHit(),
+				csvExpected(attempts == 0 ? -1 : room.sumExpectedAccuracy() / attempts * 100, 1),
+				csvExpected(attempts == 0 ? -1 : room.sumExpectedAverageHit() / attempts, 2),
+				room.getTicksLost(),
+				csvExpected(room.ticksLostShare() * 100, 1),
+				room.getTicksLostEating(),
+				room.getAttacksMade(),
+				room.getAttacksPrayed(),
+				room.getAttacksBoosted(),
+				csvExpected(room.efficiency() * 100, 1));
+	}
+
+	private static String csvRaidRow(String raidName, int raidRun, List<Encounter> rooms)
+	{
+		final Raid raid = new Raid(raidName, raidRun, rooms.get(0).getStartMillis());
+		for (Encounter room : rooms)
+		{
+			raid.add(room);
+		}
+		final String started = ROW_TS.format(LocalDateTime.ofInstant(
+			Instant.ofEpochMilli(raid.getStartMillis()), ZoneId.systemDefault()));
+		final double seconds = Math.max(0.6, raid.durationMillis() / 1000.0);
+		final int attempts = raid.getAttempts();
+		return csvScope("raid", raidName, raidRun, null)
+			+ String.format("%s,,,,,%d,,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,,%d,%d,%d,%s%n",
+				started,
+				raid.getDamageDealt(),
+				attempts,
+				raid.getHits(),
+				attempts == 0 ? 0 : 100.0 * raid.getHits() / attempts,
+				raid.durationMillis() / 1000.0,
+				raid.getDamageDealt() / seconds,
+				attempts == 0 ? 0 : (double) raid.getDamageDealt() / attempts,
+				csvExpected(attempts == 0 ? -1 : raid.sumExpectedAccuracy() / attempts * 100, 1),
+				csvExpected(attempts == 0 ? -1 : raid.sumExpectedAverageHit() / attempts, 2),
+				raid.getTicksLost(),
+				csvExpected(raid.ticksLostShare() * 100, 1),
+				raid.getTicksLostEating(),
+				raid.getAttacksMade(),
+				raid.getAttacksPrayed(),
+				raid.getAttacksBoosted(),
+				csvExpected(raid.efficiency() * 100, 1));
+	}
+
+	private static String csvFightRow(String raidName, int raidRun, Fight fight)
+	{
+		return csvScope("phase", raidName, raidRun, fight.encounterName()) + csvRow(fight);
 	}
 
 	private static String csvRow(Fight fight)
