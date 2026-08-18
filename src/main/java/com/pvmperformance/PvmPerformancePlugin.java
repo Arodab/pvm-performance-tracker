@@ -138,6 +138,8 @@ public class PvmPerformancePlugin extends Plugin
 	// The tick an attack was last seen going out on, set from the events that
 	// prove one happened rather than from what the player looks like.
 	private int attackObservedTick = -1;
+	// The tick a splash was last counted on, so one splash counts once.
+	private int lastSplashTick = -1;
 
 	// Running totals for the trip, shown instead of the current fight when the
 	// overlay is set to whole-trip mode.
@@ -336,13 +338,51 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final int index = ((NPC) actor).getIndex();
-		if (consumePending(index) && current.getTargetIndex() == index)
+		if (current.getTargetIndex() != index || !isSplashMine(index))
 		{
-			final long now = System.currentTimeMillis();
-			current.recordSplash(now);
-			session.recordAttempt(0, now);
-			sampleExpected(current);
+			return;
 		}
+		// One splash can raise more than one graphic event, and the fallback
+		// route has nothing to consume, so a tick is only ever counted once.
+		if (client.getTickCount() == lastSplashTick)
+		{
+			return;
+		}
+		lastSplashTick = client.getTickCount();
+		final long now = System.currentTimeMillis();
+		current.recordSplash(now);
+		session.recordAttempt(0, now);
+		sampleExpected(current);
+	}
+
+	/**
+	 * Whether a splash on this NPC was my cast. A splash carries no caster, so
+	 * it has to be attributed some other way.
+	 *
+	 * <p>Preferably by matching it to a projectile seen leaving my tile. That
+	 * fails whenever the projectile could not be attributed, though, and a
+	 * dropped splash is invisible: landed hits are recorded whether or not a
+	 * projectile was matched, so only the misses would go missing, quietly
+	 * flattering the measured accuracy and stalling the expected damage.
+	 *
+	 * <p>So a splash on the NPC I am interacting with counts too. That admits
+	 * another player's splash on the same target in multi-combat, which is the
+	 * lesser error: it costs a rare over-count instead of dropping every miss.
+	 */
+	private boolean isSplashMine(int npcIndex)
+	{
+		if (consumePending(npcIndex))
+		{
+			return true;
+		}
+		final Player me = client.getLocalPlayer();
+		final Actor target = me == null ? null : me.getInteracting();
+		final boolean mine = target instanceof NPC && ((NPC) target).getIndex() == npcIndex;
+		if (mine)
+		{
+			log.debug("PvM Performance: splash counted without a matched projectile");
+		}
+		return mine;
 	}
 
 	/**
