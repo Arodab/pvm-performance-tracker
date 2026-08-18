@@ -14,10 +14,14 @@ import net.runelite.api.gameval.ItemID;
  *
  * <p>Only the item is named here; its bonuses are read from the game's own item
  * stats, so they cannot drift from a hardcoded copy.
+ *
+ * <p>Public because the config interface returns it. That interface is served by
+ * a dynamic proxy, which sits in its own runtime package and cannot reach a
+ * package-private type — it throws IllegalAccessError on every call instead.
  */
 @Getter
 @RequiredArgsConstructor
-enum BlowpipeDart
+public enum BlowpipeDart
 {
 	NONE("None", -1),
 	BRONZE("Bronze", ItemID.BRONZE_DART),
