@@ -103,6 +103,11 @@ class CombatCalc
 	 * <p>The ideal figures share this cache safely. Substituting the intended
 	 * prayer and a full boost changes levels, not gear, so none of what is held
 	 * here differs between the real and the intended attack.
+	 *
+	 * <p>A tick is the right scope rather than a compromise. Combat resolves per
+	 * tick: an attack used whatever was worn when the server resolved it, and a
+	 * switch made after it lands is processed on the tick after. Holding the
+	 * answers for the tick they belong to is what the game itself does.
 	 */
 	private int memoTick = Integer.MIN_VALUE;
 	private AttackStyle memoStyle;
@@ -1545,6 +1550,14 @@ class CombatCalc
 	}
 
 	/** Sum of the melee (str) or ranged (rstr) strength bonus across worn gear. */
+	/**
+	 * Sums the strength bonus across worn gear.
+	 *
+	 * <p>Summed per item because the totals the equipment screen shows are not
+	 * readable: no varbit carries them, the interface exposes no component for
+	 * them, and RuneLite offers per-item stats only. A client script works them
+	 * out when that screen is built, so they exist only while it is open.
+	 */
 	private int computeEquipmentBonus(boolean melee)
 	{
 		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
