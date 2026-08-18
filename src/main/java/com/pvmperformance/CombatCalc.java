@@ -982,10 +982,18 @@ class CombatCalc
 		{
 			lines.add("Spec max hit " + spec);
 		}
-		// Kept for bug reports: this pairing is what exposes a category read wrong.
-		lines.add(String.format("(category varbit %d, com mode %d)",
+		final Skill main = attackStyle().getAttackType() == AttackType.MAGIC ? Skill.MAGIC
+			: attackStyle().getAttackType() == AttackType.RANGED ? Skill.RANGED : Skill.STRENGTH;
+		final int base = client.getRealSkillLevel(main);
+		lines.add(String.format("Efficiency goal: %s, %s at %d (+%d)",
+			prayerGoal(), main, base + maxBoost(main, base), maxBoost(main, base)));
+
+		// Kept for bug reports: these raw values are what expose a misread.
+		lines.add(String.format("(category varbit %d, com mode %d, cox tier %d, salts %d)",
 			client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY),
-			client.getVarpValue(VarPlayerID.COM_MODE)));
+			client.getVarpValue(VarPlayerID.COM_MODE),
+			client.getVarbitValue(VarbitID.RAIDS_OVERLOAD_TIER),
+			client.getVarbitValue(VarbitID.STATRENEWAL_POTION_TIMER)));
 		return lines;
 	}
 
@@ -1129,7 +1137,7 @@ class CombatCalc
 		// raid does not allow.
 		if (gearBonuses.inChambersOfXeric())
 		{
-			return base * 13 / 100 + 5;
+			return chambersOverloadBoost(base);
 		}
 		if (gearBonuses.inTombsOfAmascut())
 		{
@@ -1148,9 +1156,31 @@ class CombatCalc
 		}
 		if (client.getVarbitValue(VarbitID.RAIDS_OVERLOAD_TIMER) > 0)
 		{
-			boost = Math.max(boost, base * 13 / 100 + 5);
+			boost = Math.max(boost, chambersOverloadBoost(base));
 		}
 		return boost;
+	}
+
+	/**
+	 * The boost from the Chambers overload the player brewed. The three tiers
+	 * are far apart — at 99 they give 13, 17 and 21 — so treating them alike
+	 * would misjudge the standard by up to eight levels.
+	 *
+	 * <p>Which was brewed is read from the raid's tier varbit. An unrecognised
+	 * value falls to the middle tier rather than the best, so a player is not
+	 * marked down against a potion their Herblore may not allow.
+	 */
+	private int chambersOverloadBoost(int base)
+	{
+		switch (client.getVarbitValue(VarbitID.RAIDS_OVERLOAD_TIER))
+		{
+			case 1: // Overload (-)
+				return base / 10 + 4;
+			case 3: // Overload (+)
+				return base * 16 / 100 + 6;
+			default: // Overload
+				return base * 13 / 100 + 5;
+		}
 	}
 
 	/** The prayer the player means to be using for the style in hand. */
