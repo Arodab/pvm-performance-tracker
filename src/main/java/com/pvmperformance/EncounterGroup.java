@@ -82,12 +82,14 @@ final class EncounterGroup
 	 * <p>This only catches bosses that change id to say so, and only where the
 	 * id has been checked to mean it. Two are known to be missing. Bloat keeps
 	 * one id whether he is walking or down, so his walking phase can only be
-	 * told from his animation. Akkha channels immunity from his shadows and has
-	 * to be lured to a dispelled corner to be damaged at all — which is a matter
-	 * of where he is standing rather than what he is, so no id can carry it.
-	 * His memory blast is covered, but on an unconfirmed guess at which id he
-	 * wears while away; {@code ::loadout} prints the target's live id, which is
-	 * what would settle it.
+	 * told from his animation.
+	 *
+	 * <p>Akkha's memory blast is covered, though on an unconfirmed guess at
+	 * which id he wears while away; {@code ::loadout} prints the target's live
+	 * id, which is what would settle it. His other immunity, channelled from
+	 * his shadows until he is lured to a dispelled corner, needs nothing: the
+	 * shadows are grouped with him and are what the player is attacking while
+	 * luring, so those ticks are attacks rather than idle time.
 	 */
 	static boolean isUnattackable(int npcId)
 	{
@@ -136,6 +138,8 @@ final class EncounterGroup
 		// Tombs of Amascut. Zebak and Kephri change id mid-fight for the same
 		// fight; the monkey room's baboons are a room rather than a set of
 		// kills.
+		put(groups, "Yama", NpcID.YAMA, NpcID.YAMA_JUDGE_OF_YAMA, NpcID.LEAGUE6_JUDGE_OF_YAMA);
+
 		put(groups, "Zebak", NpcID.TOA_ZEBAK, NpcID.TOA_ZEBAK_ENRAGED);
 		// Akkha takes his shadows and his enrage with him: the shadows are the
 		// same fight interrupted, not four separate kills.
@@ -197,8 +201,14 @@ final class EncounterGroup
 
 	private static Set<Integer> buildUnscored()
 	{
-		return Collections.unmodifiableSet(new HashSet<>(Collections.singletonList(
-			NpcID.TOA_KEPHRI_SHIELD_SCARAB)));
+		return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+			NpcID.TOA_KEPHRI_SHIELD_SCARAB,
+			// The Judge is Yama's own add. Grouped so killing it does not reset
+			// what is on screen, and unscored so it does not lend its figures to
+			// his. Ignoring it outright would have been worse than either: with
+			// nothing tracking the Judge, the time spent killing its 400
+			// hitpoints would have been booked against Yama as ticks lost.
+			NpcID.YAMA_JUDGE_OF_YAMA, NpcID.LEAGUE6_JUDGE_OF_YAMA)));
 	}
 
 	private static Set<Integer> buildUnattackable()
