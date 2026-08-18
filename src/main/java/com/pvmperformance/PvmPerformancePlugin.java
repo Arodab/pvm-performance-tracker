@@ -692,9 +692,10 @@ public class PvmPerformancePlugin extends Plugin
 	 * instant the player clicks. The server has not confirmed the prayer yet at
 	 * this point, so its copy would still read as off.
 	 *
-	 * <p>The opposite case — switched off on the tick the attack goes out, which
-	 * the server still resolved with the prayer up — needs nothing here: the
-	 * server's copy of the varbit, which is what the model reads, says it was up.
+	 * <p>The opposite case — already up, and switched off on the tick the attack
+	 * goes out — is not caught here at all, because switching off is the only
+	 * event it raises and by then the varbit reads as off. That one is carried
+	 * across from the end of the previous tick instead; see onGameTick.
 	 */
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
@@ -720,7 +721,14 @@ public class PvmPerformancePlugin extends Plugin
 		trackRaid(System.currentTimeMillis());
 		startFightOnTarget();
 		trackAttackCooldown();
-		prayedThisTick = false;
+		// Carried, not cleared. The flag has to mean "the prayer was up at some
+		// point this tick", and a prayer already up from the tick before leaves
+		// no event of its own — only its switching off does, by which time
+		// reading the varbit says no. Ending each tick with what is up now makes
+		// the next tick start knowing it, which is what the attack rolled with:
+		// a prayer switched off during a tick still applied to that tick's
+		// attack, which is what makes flicking work and why it drains nothing.
+		prayedThisTick = combatCalc.hasOffensivePrayerNow();
 
 		// Drop projectiles that have landed so the set doesn't retain them.
 		countedProjectiles.removeIf(p -> p.getRemainingCycles() <= 0);
