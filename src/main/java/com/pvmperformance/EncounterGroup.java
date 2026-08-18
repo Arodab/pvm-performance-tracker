@@ -213,8 +213,9 @@ final class EncounterGroup
 			NpcID.TOA_KEPHRI_BOSS_DEAD, NpcID.TOA_ZEBAK_DEAD,
 			NpcID.OLM_HAND_LEFT_DYING, NpcID.OLM_HAND_RIGHT_DYING,
 			NpcID.RAIDS_STONEGUARDIANS_LEFT_DEAD, NpcID.RAIDS_STONEGUARDIANS_RIGHT_DEAD,
-			// The ice demon is only fightable once the brazier is lit.
-			NpcID.RAIDS_ICEDEMON_NONCOMBAT,
+			// The ice demon is only fightable once the brazier is lit, and
+			// Tekton cannot be touched while he is at his anvil healing.
+			NpcID.RAIDS_ICEDEMON_NONCOMBAT, NpcID.RAIDS_TEKTON_HAMMERING,
 			// Akkha's stand-ins while his shadows are up, and Kephri's corpse.
 			NpcID.AKKHA_ENRAGE_DUMMY, NpcID.AKKHA_SHADOW_ENRAGE_DUMMY,
 			NpcID.TOB_MAIDEN_DYING_A, NpcID.TOB_MAIDEN_DYING_B,
