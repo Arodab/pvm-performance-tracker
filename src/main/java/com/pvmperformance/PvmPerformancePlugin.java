@@ -94,6 +94,14 @@ public class PvmPerformancePlugin extends Plugin
 	private static final Set<Integer> CONSUME_ANIMATIONS = Collections.unmodifiableSet(new HashSet<>(
 		Arrays.asList(AnimationID.HUMAN_EAT, AnimationID.HUMAN_KILLERWATT_ELECTRICSHOCK)));
 	private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+	/** The column names, kept beside the row builders so the two cannot drift. */
+	static final String CSV_HEADER =
+		"level,raid,raidRun,room,"
+		+ "started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
+		+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
+		+ "ticksLost,ticksLostPct,ticksLostEating,ticksToEngage,"
+		+ "attacksMade,attacksPrayed,attacksBoosted,efficiencyPct\n";
+
 	private static final DateTimeFormatter ROW_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
 	@Inject
@@ -1219,11 +1227,7 @@ public class PvmPerformancePlugin extends Plugin
 				try (Writer writer = new BufferedWriter(new java.io.OutputStreamWriter(
 					Files.newOutputStream(out.toPath()), StandardCharsets.UTF_8)))
 				{
-					writer.write("level,raid,raidRun,room,"
-						+ "started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
-						+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
-						+ "ticksLost,ticksLostPct,ticksLostEating,ticksToEngage,"
-						+ "attacksMade,attacksPrayed,attacksBoosted,efficiencyPct\n");
+					writer.write(CSV_HEADER);
 					writeRows(writer, fights);
 				}
 				final String path = out.getAbsolutePath();
@@ -1305,7 +1309,7 @@ public class PvmPerformancePlugin extends Plugin
 			room == null ? "" : room.replace('"', '\''));
 	}
 
-	private static String csvRoomRow(String raidName, int raidRun, Encounter room)
+	static String csvRoomRow(String raidName, int raidRun, Encounter room)
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(room.getStartMillis()), ZoneId.systemDefault()));
@@ -1334,7 +1338,7 @@ public class PvmPerformancePlugin extends Plugin
 				csvExpected(room.efficiency() * 100, 1));
 	}
 
-	private static String csvRaidRow(String raidName, int raidRun, List<Encounter> rooms)
+	static String csvRaidRow(String raidName, int raidRun, List<Encounter> rooms)
 	{
 		final Raid raid = new Raid(raidName, raidRun, rooms.get(0).getStartMillis());
 		for (Encounter room : rooms)
@@ -1371,7 +1375,7 @@ public class PvmPerformancePlugin extends Plugin
 		return csvScope("phase", raidName, raidRun, fight.encounterName()) + csvRow(fight);
 	}
 
-	private static String csvRow(Fight fight)
+	static String csvRow(Fight fight)
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
