@@ -823,42 +823,10 @@ class GearBonusCalc
 		return name != null && name.startsWith(prefix);
 	}
 
+	/** The worn items, resolved once so each effect does not re-read the container. */
 	private Loadout snapshot()
 	{
 		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		return equipment == null ? null : new Loadout(equipment);
-	}
-
-	/** The worn items, resolved once so each effect doesn't re-read the container. */
-	private final class Loadout
-	{
-		private final ItemContainer equipment;
-		private final String[] names = new String[EquipmentInventorySlot.AMMO.getSlotIdx() + 1];
-
-		private Loadout(ItemContainer equipment)
-		{
-			this.equipment = equipment;
-		}
-
-		private int id(EquipmentInventorySlot slot)
-		{
-			final Item item = equipment.getItem(slot.getSlotIdx());
-			return item == null ? -1 : item.getId();
-		}
-
-		private String name(EquipmentInventorySlot slot)
-		{
-			final int idx = slot.getSlotIdx();
-			if (idx < 0 || idx >= names.length)
-			{
-				return null;
-			}
-			if (names[idx] == null)
-			{
-				final int id = id(slot);
-				names[idx] = id < 0 ? "" : itemManager.getItemComposition(id).getName();
-			}
-			return names[idx].isEmpty() ? null : names[idx];
-		}
+		return equipment == null ? null : Loadout.worn(itemManager, equipment);
 	}
 }
