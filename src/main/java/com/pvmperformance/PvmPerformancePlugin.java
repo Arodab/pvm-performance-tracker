@@ -147,6 +147,16 @@ public class PvmPerformancePlugin extends Plugin
 	// measurement stands if that route is ever needed again, but the hitsplat
 	// cannot see a cast that misses and the animation can.
 	private static final int CAST_BOOKING_LAG = 0;
+	// And three when the cast is booked from its hitsplat instead, which is
+	// what happens when the animation is not one this knows. Measured: the
+	// barrage animation fired on 21, 26 and 31 and the damage landed on 24, 29
+	// and 34.
+	private static final int CAST_HITSPLAT_BOOKING_LAG = 3;
+	// The animations a projectile-less cast is thrown with. Only these spells
+	// reach the animation path, so this is a short list and not a table of every
+	// weapon. Extend it from the "cast UNKNOWN ANIM" trace rather than by guess.
+	private static final Set<Integer> CAST_ANIMATIONS =
+		Collections.unmodifiableSet(new HashSet<>(Collections.singletonList(10092)));
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -241,6 +251,9 @@ public class PvmPerformancePlugin extends Plugin
 	private int lastAttackSeenTick = Integer.MIN_VALUE;
 	// How far behind the attack the observation that proved it was.
 	private int attackObservedLag = MELEE_BOOKING_LAG;
+	// The last tick a cast was booked from its animation, so the hitsplat does
+	// not book the same cast a second time.
+	private int lastCastBookedTick = Integer.MIN_VALUE;
 	// The tick a projectile was last taken as mine, so at most one is taken per
 	// tick. A player cannot throw two attacks in one.
 	private int acceptedProjectileTick = Integer.MIN_VALUE;
@@ -468,10 +481,13 @@ public class PvmPerformancePlugin extends Plugin
 			// spells: a barrage gives no projectile to book from, so its
 			// hitsplat is the only thing that says an attack happened. Both are
 			// booked here; everything else is booked from its projectile.
-			// Melee only. A cast with no projectile is booked from the caster's
-			// animation, which sees its misses too, so booking it here as well
-			// would count every landed cast twice.
-			final boolean melee = combatCalc.isMeleeEquipped();
+			// Melee, plus a projectile-less cast the animation route did not
+			// recognise. That route sees misses and this one cannot, so it is
+			// the better of the two and books first; this is only here so an
+			// unknown cast animation costs the misses rather than everything.
+			final boolean unbookedCast = combatCalc.castLandsWithoutProjectile()
+				&& client.getTickCount() - lastCastBookedTick > CAST_HITSPLAT_BOOKING_LAG;
+			final boolean melee = combatCalc.isMeleeEquipped() || unbookedCast;
 			final boolean firstOfBurst = !burstBooked.contains(npc.getIndex());
 			log.debug("TRACE hitsplat tick={} npc={} amount={} fromFlight={} melee={}"
 					+ " newBurst={} firstOfBurst={} books={} cat={} weapon={}",
@@ -482,7 +498,8 @@ public class PvmPerformancePlugin extends Plugin
 				combatCalc.castLandsWithoutProjectile(), combatCalc.isMeleeEquipped());
 			if (!arrivedFromFlight && melee && burstBooked.add(npc.getIndex()))
 			{
-				recordAttackObserved(false, npc.getId(), MELEE_BOOKING_LAG);
+				recordAttackObserved(false, npc.getId(), combatCalc.isMeleeEquipped()
+					? MELEE_BOOKING_LAG : CAST_HITSPLAT_BOOKING_LAG);
 			}
 		}
 		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
@@ -1114,6 +1131,21 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
+		// Any animation at all was too generous: being hit plays one, and so
+		// does eating, and both booked an attack once the weapon was off
+		// cooldown. Traced over one trip, 1156 fired fifty-eight times and 829
+		// nine, against the cast's own 10092.
+		//
+		// So the cast animation is named. A short list rather than a table of
+		// every weapon and spell, because only the projectile-less spells come
+		// through here — and an id missing from it costs the misses but not the
+		// hits, since the hitsplat still books what lands.
+		if (!CAST_ANIMATIONS.contains(me.getAnimation()))
+		{
+			log.debug("TRACE cast UNKNOWN ANIM tick={} id={} spell={}",
+				client.getTickCount(), me.getAnimation(), combatCalc.activeSpellName());
+			return;
+		}
 		final NPC target = castTarget();
 		if (target == null)
 		{
@@ -1127,6 +1159,7 @@ public class PvmPerformancePlugin extends Plugin
 		log.debug("TRACE cast tick={} anim={} npc={} spell={}",
 			client.getTickCount(), me.getAnimation(), target.getIndex(),
 			combatCalc.activeSpellName());
+		lastCastBookedTick = client.getTickCount();
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
 
