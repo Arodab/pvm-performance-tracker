@@ -8,8 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.EquipmentInventorySlot;
-import net.runelite.api.Item;
-import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Prayer;
@@ -121,6 +119,7 @@ class CombatCalc
 	private final boolean[] memoBaseMaxHitSet = new boolean[3];
 	private int memoGearNpc = Integer.MIN_VALUE;
 	private GearBonus memoGear;
+	private Loadout memoLoadout;
 
 	/** Drops everything held once the tick it was worked out for has passed. */
 	// Dropped when the worn items change as well as when the tick does. A tick
@@ -146,9 +145,23 @@ class CombatCalc
 		memoWeaponNameSet = false;
 		memoGearNpc = Integer.MIN_VALUE;
 		memoGear = null;
+		memoLoadout = null;
 		Arrays.fill(memoAttackBonusSet, false);
 		Arrays.fill(memoEquipmentBonusSet, false);
 		Arrays.fill(memoBaseMaxHitSet, false);
+	}
+
+	// The gear every figure here is worked out for. One object rather than a
+	// container read per question, so that asking what a different loadout
+	// would do is the same calculation with a different argument.
+	private Loadout gear()
+	{
+		expireMemo();
+		if (memoLoadout == null)
+		{
+			memoLoadout = Loadout.worn(itemManager, client.getItemContainer(InventoryID.WORN));
+		}
+		return memoLoadout;
 	}
 
 	private AttackStyle attackStyle()
@@ -799,21 +812,28 @@ class CombatCalc
 		return cachedDartStats;
 	}
 
+	// The equipment stats of one item, or null for an empty slot or an item
+	// carrying none.
+	private ItemEquipmentStats equipmentStats(int itemId)
+	{
+		if (itemId < 0)
+		{
+			return null;
+		}
+		final ItemStats stats = itemManager.getItemStats(itemId);
+		return stats == null ? null : stats.getEquipment();
+	}
+
 	/** Sum of the worn gear's attack bonus for the type being rolled. */
 	private int computeAttackBonus(AttackType type)
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		if (equipment == null)
-		{
-			return 0;
-		}
+		final Loadout gear = gear();
 		int total = 0;
-		for (Item item : equipment.getItems())
+		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
 		{
-			final ItemStats stats = itemManager.getItemStats(item.getId());
-			if (stats != null && stats.getEquipment() != null)
+			final ItemEquipmentStats e = equipmentStats(gear.id(slot));
+			if (e != null)
 			{
-				final ItemEquipmentStats e = stats.getEquipment();
 				switch (type)
 				{
 					case STAB:
@@ -852,18 +872,7 @@ class CombatCalc
 
 	private ItemEquipmentStats weaponStats()
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		if (equipment == null)
-		{
-			return null;
-		}
-		final Item weapon = equipment.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
-		if (weapon == null)
-		{
-			return null;
-		}
-		final ItemStats stats = itemManager.getItemStats(weapon.getId());
-		return stats == null ? null : stats.getEquipment();
+		return equipmentStats(gear().id(EquipmentInventorySlot.WEAPON));
 	}
 
 	/**
@@ -1110,20 +1119,16 @@ class CombatCalc
 	 */
 	private int applyMagicDamage(int baseMaxHit, Spell spell)
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		if (equipment == null)
-		{
-			return baseMaxHit;
-		}
+		final Loadout gear = gear();
 		// Magic damage is a float: several items carry fractions of a percent, so
 		// summing into an int would truncate each one away.
 		double percent = 0;
-		for (Item item : equipment.getItems())
+		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
 		{
-			final ItemStats stats = itemManager.getItemStats(item.getId());
-			if (stats != null && stats.getEquipment() != null)
+			final ItemEquipmentStats e = equipmentStats(gear.id(slot));
+			if (e != null)
 			{
-				percent += stats.getEquipment().getMdmg();
+				percent += e.getMdmg();
 			}
 		}
 		percent += gearBonuses.virtusAncientDamagePercent(spell);
@@ -1297,13 +1302,7 @@ class CombatCalc
 
 	private int equippedItemId(EquipmentInventorySlot slot)
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		if (equipment == null)
-		{
-			return -1;
-		}
-		final Item item = equipment.getItem(slot.getSlotIdx());
-		return item == null ? -1 : item.getId();
+		return gear().id(slot);
 	}
 
 	private double meleePrayer()
@@ -1713,18 +1712,14 @@ class CombatCalc
 	// Sums the strength bonus across worn gear.
 	private int computeEquipmentBonus(boolean melee)
 	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		if (equipment == null)
-		{
-			return 0;
-		}
+		final Loadout gear = gear();
 		int total = 0;
-		for (Item item : equipment.getItems())
+		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
 		{
-			final ItemStats stats = itemManager.getItemStats(item.getId());
-			if (stats != null && stats.getEquipment() != null)
+			final ItemEquipmentStats e = equipmentStats(gear.id(slot));
+			if (e != null)
 			{
-				total += melee ? stats.getEquipment().getStr() : stats.getEquipment().getRstr();
+				total += melee ? e.getStr() : e.getRstr();
 			}
 		}
 		if (!melee)
