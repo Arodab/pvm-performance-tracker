@@ -919,6 +919,14 @@ public class PvmPerformancePlugin extends Plugin
 				- (attackObservedFromProjectile ? PROJECTILE_BOOKING_LAG : MELEE_BOOKING_LAG);
 			final boolean prayed = Boolean.TRUE.equals(prayerUpByTick.get(attackTick));
 			final boolean potted = attackObservedPotted;
+			log.debug("TRACE prayed booked={} attackTick={} projectile={} prayed={}"
+					+ " hist[-0]={} hist[-1]={} hist[-2]={} hist[-3]={} now: {}",
+				client.getTickCount(), attackTick, attackObservedFromProjectile, prayed,
+				prayerUpByTick.get(client.getTickCount()),
+				prayerUpByTick.get(client.getTickCount() - 1),
+				prayerUpByTick.get(client.getTickCount() - 2),
+				prayerUpByTick.get(client.getTickCount() - 3),
+				combatCalc.prayerTrace());
 			// Worked out both ways now, while the loadout and boost are the ones
 			// that threw the attack. Which of the two applies is decided by the
 			// prayer, and for a projectile that is not known until it lands.
@@ -1132,6 +1140,11 @@ public class PvmPerformancePlugin extends Plugin
 		// boundary, which let a prayer flicked one tick early cover the attack
 		// tick as well.
 		final boolean upThisTick = combatCalc.hasOffensivePrayerNow();
+		if (current != null && !current.isEnded())
+		{
+			log.debug("TRACE prayerHist tick={} stored={} {}",
+				client.getTickCount(), upThisTick, combatCalc.prayerTrace());
+		}
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
 		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
 		if (upThisTick)

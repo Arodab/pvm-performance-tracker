@@ -1484,6 +1484,41 @@ class CombatCalc
 		return attack >= goal.getAttackMultiplier() && strength >= goal.getStrengthMultiplier();
 	}
 
+	// TRACE only. The style the prayer question is being asked about, the goal
+	// that style implies, and what each view of the varbits actually reaches.
+	// Strip with the rest of the TRACE lines.
+	String prayerTrace()
+	{
+		final AttackType type = attackStyle().getAttackType();
+		final PrayerChoice goal = prayerGoal();
+		final String reached;
+		clientPrayerView = true;
+		try
+		{
+			reached = prayerReachedTrace(type);
+		}
+		finally
+		{
+			clientPrayerView = false;
+		}
+		return String.format("style=%s goal=%s(a%.2f s%.2f) client[%s] server[%s]",
+			type, goal, goal.getAttackMultiplier(), goal.getStrengthMultiplier(),
+			reached, prayerReachedTrace(type));
+	}
+
+	private String prayerReachedTrace(AttackType type)
+	{
+		switch (type)
+		{
+			case MAGIC:
+				return String.format("a%.2f s%.2f", magicAccuracyPrayer(), 1.0);
+			case RANGED:
+				return String.format("a%.2f s%.2f", rangedAccuracyPrayer(), rangedPrayer());
+			default:
+				return String.format("a%.2f s%.2f", meleeAccuracyPrayer(), meleePrayer());
+		}
+	}
+
 	/**
 	 * As {@link #hasOffensivePrayer()}, but from the client's own copy of the
 	 * prayer varbits: what the player has just clicked, whether or not the server
