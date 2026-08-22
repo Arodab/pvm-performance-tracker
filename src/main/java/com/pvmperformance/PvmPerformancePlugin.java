@@ -123,6 +123,9 @@ public class PvmPerformancePlugin extends Plugin
 	// in game rather than reasoned about, and kept here so there is one place to
 	// correct if it is ever wrong again.
 	private static final int PRAYER_HISTORY_TICKS = 10;
+	// The switch history needs the same reach as the prayer one, and for the
+	// same reason: the gap between an attack and its booking differs by style.
+	private static final int SWITCH_HISTORY_TICKS = 10;
 	// How many ticks after an attack goes out it is booked. Measured from the
 	// trace, not reasoned about: with a flick on the attack tick the mark lands
 	// two ticks below the booking tick for a projectile and one below for a
@@ -263,6 +266,10 @@ public class PvmPerformancePlugin extends Plugin
 	// as a history rather than a slot or two because the tick an attack went out
 	// on is not the tick it is booked on, and the gap differs by style.
 	private final Map<Integer, Boolean> prayerUpByTick = new HashMap<>();
+	// Whether the gear worn on each recent tick was the best available. Kept as
+	// a history for the same reason the prayer is: the tick an attack is booked
+	// on is not the tick it went out on, and a switch can land in between.
+	private final Map<Integer, Boolean> switchedByTick = new HashMap<>();
 	// TRACE. The tick a prayer pulse was last logged on, so one flick logs once.
 	private int prayerPulseTick = Integer.MIN_VALUE;
 	// The tick an eat was last seen on, so the pause it causes is credited to it
@@ -694,6 +701,22 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		final Fight shown = getDisplayFight();
 		specialAttack = combatCalc.specialAttack();
+		// Sampled every tick and read back at the tick the attack went out on,
+		// for the same reason the prayer is. Booking happens a tick or two
+		// later, and a trident attack judged at its booking was being judged
+		// against the whip the player had switched to by then — the whole point
+		// of the question is what was worn when the attack was thrown.
+		//
+		// Asking it here rather than reconstructing it later also keeps the
+		// weapon and the combat style honest: both are read live off the combat
+		// tab, so they only describe this attack while this tick is current.
+		//
+		// Cheap despite appearances. The search behind it is held until the
+		// worn items, the carried items or the target change, so an ordinary
+		// tick costs a cache hit and a slot comparison.
+		switchedByTick.put(client.getTickCount(),
+			!combatCalc.missedGearSwitch(shown != null ? shown.getTargetId() : -1));
+		switchedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
 		if (shown != null)
 		{
 			// Pass the target so salve, dragon hunter and the rest can apply.
@@ -932,10 +955,18 @@ public class PvmPerformancePlugin extends Plugin
 			final double ifPrayed = combatCalc.actualAverageHit(targetId, true);
 			final double ifNot = combatCalc.actualAverageHit(targetId, false);
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
-			// Asked here, on the attack tick, for the same reason the prayer is:
-			// what was carried and what was worn at that instant is what the
-			// player could have done, and both change between attacks.
-			final boolean switched = !combatCalc.missedGearSwitch(targetId);
+			// Read from the tick the attack went out on, never asked live here:
+			// by now the weapon and the gear may both be someone else's. Absent
+			// means the tick was never sampled, which is not evidence of a
+			// missed switch, so it reads as clean.
+			final boolean switched = !Boolean.FALSE.equals(switchedByTick.get(attackTick));
+			log.debug("TRACE switch booked={} attackTick={} switched={}"
+					+ " hist[-0]={} hist[-1]={} hist[-2]={} weapon={} cat={}",
+				client.getTickCount(), attackTick, switched,
+				switchedByTick.get(client.getTickCount()),
+				switchedByTick.get(client.getTickCount() - 1),
+				switchedByTick.get(client.getTickCount() - 2),
+				combatCalc.equippedWeaponId(), combatCalc.categoryName());
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
