@@ -226,6 +226,9 @@ public class PvmPerformancePlugin extends Plugin
 	// attackDueTick, which is only set once the attack is booked: this one has
 	// to be right immediately, because it is what says the weapon is busy.
 	private int lastAttackSeenTick = Integer.MIN_VALUE;
+	// The tick a projectile was last taken as mine, so at most one is taken per
+	// tick. A player cannot throw two attacks in one.
+	private int acceptedProjectileTick = Integer.MIN_VALUE;
 	// The tick an attack was last seen going out on, set from the events that
 	// prove one happened rather than from what the player looks like, and which
 	// event proved it. A projectile is a cast or a shot; a hitsplat is a melee
@@ -534,6 +537,24 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
+		// One attack a tick, because a player cannot throw two. Two people
+		// stacked on a tile casting on the same tick get one projectile each,
+		// and where they cast the same spell the key above already collapses
+		// them — but different spells key differently and both would land here.
+		//
+		// The booking was already capped, since it turns on a single tick stamp.
+		// What was not capped is everything this sets up: the figures the attack
+		// is scored against and the pending hit that decides where its hitsplat
+		// came from, both of which a neighbour's projectile could overwrite.
+		//
+		// First one wins. There is nothing to choose between them — that is the
+		// whole problem — and taking the first at least means the same one is
+		// used for the figures and for the hit.
+		if (acceptedProjectileTick == client.getTickCount())
+		{
+			return;
+		}
+		acceptedProjectileTick = client.getTickCount();
 
 		final NPC npc = (NPC) target;
 		if (EncounterGroup.isIgnored(npc.getId()))
