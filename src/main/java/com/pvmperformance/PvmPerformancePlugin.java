@@ -222,6 +222,10 @@ public class PvmPerformancePlugin extends Plugin
 	// ticks after it went out rather than one. Kept because a switch can leave
 	// one weapon's attack in flight while another is already in hand.
 	private boolean lastAttackFromProjectile;
+	// The tick my last attack of any style went out on. Kept apart from
+	// attackDueTick, which is only set once the attack is booked: this one has
+	// to be right immediately, because it is what says the weapon is busy.
+	private int lastAttackSeenTick = Integer.MIN_VALUE;
 	// The tick an attack was last seen going out on, set from the events that
 	// prove one happened rather than from what the player looks like, and which
 	// event proved it. A projectile is a cast or a shot; a hitsplat is a melee
@@ -605,6 +609,19 @@ public class PvmPerformancePlugin extends Plugin
 		// once, on first sight, which is the tick it was created — so this is
 		// asked while the firing tile still means something.
 		if (!firedFromWhereIWas(projectile, me))
+		{
+			return false;
+		}
+		// And I have to have been able to fire it. Two players stand on one
+		// tile as a matter of course, and their spells leave from the same
+		// point as mine, so position alone cannot separate them — but a weapon
+		// on cooldown cannot have thrown anything, whoever was standing there.
+		//
+		// The live speed rather than the one that threw the last attack, which
+		// errs towards accepting: swapping to something faster shortens the
+		// wait, and letting one of my own attacks through wrongly is better
+		// than dropping it.
+		if (client.getTickCount() < lastAttackSeenTick + combatCalc.attackSpeedTicks())
 		{
 			return false;
 		}
@@ -1158,6 +1175,10 @@ public class PvmPerformancePlugin extends Plugin
 	 */
 	private void recordAttackObserved(boolean fromProjectile, int npcId)
 	{
+		// Recorded here rather than at the booking, which is a tick or two
+		// later: this is what says a weapon is on cooldown, and it has to be
+		// true from the moment the attack goes out.
+		lastAttackSeenTick = client.getTickCount();
 		attackObservedTick = client.getTickCount();
 		attackObservedFromProjectile = fromProjectile;
 		attackOriginTick = client.getTickCount();
