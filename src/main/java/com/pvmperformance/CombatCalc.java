@@ -1420,12 +1420,15 @@ class CombatCalc
 	}
 
 	/**
-	 * Whether a switch was available and not made. Identity, not arithmetic:
-	 * the search hands back the worn loadout itself when nothing beats it.
+	 * Whether a switch was available and not made. Compared by what is in the
+	 * two loadouts, never by identity: the search's answer is held across
+	 * ticks while the worn loadout is rebuilt on each one, so the same gear is
+	 * two different objects a tick later. Comparing references marked every
+	 * attack after the first as a miss.
 	 */
 	boolean missedGearSwitch(int npcId)
 	{
-		return bestGear(npcId) != gear();
+		return !bestGear(npcId).sameItems(gear());
 	}
 
 	// The best gear available against this target, held until the worn or

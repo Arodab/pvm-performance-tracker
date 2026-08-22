@@ -44,8 +44,9 @@ public class GearSearchTest
 	public void wornIsReturnedByIdentityWhenNothingBeatsIt()
 	{
 		final Loadout worn = empty().with(EquipmentInventorySlot.HEAD, 500);
-		// Identity is the contract: it is how a caller tells "nothing was
-		// missed" from "something was, and it happened to score the same".
+		// The search does not copy when it has nothing to say. Callers must
+		// still compare by sameItems, not by reference — the worn loadout is
+		// rebuilt every tick, so this identity does not survive one.
 		assertSame(worn, GearSearch.best(worn, carrying(EquipmentInventorySlot.HEAD, 100),
 			false, higherIdIsBetter()));
 	}

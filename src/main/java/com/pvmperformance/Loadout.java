@@ -54,6 +54,17 @@ final class Loadout
 		return new Loadout(itemManager, swapped);
 	}
 
+	/**
+	 * Whether two loadouts hold the same item in every slot. Compared by what
+	 * is in them and not by identity, because the worn loadout is rebuilt every
+	 * tick: two objects describing the same gear are the normal case, not the
+	 * exception.
+	 */
+	boolean sameItems(Loadout other)
+	{
+		return other != null && Arrays.equals(ids, other.ids);
+	}
+
 	int id(EquipmentInventorySlot slot)
 	{
 		final int idx = slot.getSlotIdx();
