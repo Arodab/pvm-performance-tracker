@@ -49,6 +49,7 @@ import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
+import net.runelite.client.events.NpcLootReceived;
 import net.runelite.api.events.NpcChanged;
 import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.ProjectileMoved;
@@ -760,9 +761,15 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
-		// A magic splash produces no hitsplat, only a graphic on the target -
-		// so we count it here as a missed attempt. It only counts if it resolves
-		// one of my own casts, which excludes other players' splashes.
+		// Kept for the case it was written for, but it no longer carries the
+		// weight it was given: a splash DOES produce a hitsplat now, a zero one,
+		// and the trace shows this handler firing not once across a whole kill
+		// while four zero hitsplats arrived and booked normally. So splashes are
+		// counted on the hitsplat path like everything else, and this is a
+		// belt-and-braces second route rather than the only one.
+		//
+		// It only counts if it resolves one of my own casts, which excludes
+		// other players' splashes.
 		if (current == null || current.isEnded())
 		{
 			return;
@@ -1066,6 +1073,37 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			log.debug("TRACE anim tick={} id={}",
 				client.getTickCount(), event.getActor().getAnimation());
+		}
+	}
+
+	/**
+	 * A boss that never despawns still drops loot, and that is what says it
+	 * died.
+	 *
+	 * <p>The Hueycoatl's combat NPCs are never removed — a whole kill produced
+	 * despawns for lobby and victory workers and nothing else, all reading
+	 * dead=false — so the despawn path could not see the kill however the
+	 * grouping was arranged, and kills stayed at zero while damage counted.
+	 *
+	 * <p>Fired by the client's own loot manager rather than by a plugin, and it
+	 * names the NPC, so a death inside the group ends the fight as a kill on the
+	 * same terms as a despawn would. Anything that dies without dropping is
+	 * still covered by the despawn.
+	 */
+	@Subscribe
+	public void onNpcLootReceived(NpcLootReceived event)
+	{
+		if (current == null || current.isEnded())
+		{
+			return;
+		}
+		final NPC npc = event.getNpc();
+		if (current.getTargetIndex() == npc.getIndex()
+			|| EncounterGroup.sameGroup(npc.getId(), current.getTargetId()))
+		{
+			log.debug("TRACE loot kill tick={} id={} targetId={}",
+				client.getTickCount(), npc.getId(), current.getTargetId());
+			finalizeFight(true, System.currentTimeMillis());
 		}
 	}
 
