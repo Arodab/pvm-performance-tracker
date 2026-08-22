@@ -170,6 +170,19 @@ class Encounter
 		return total;
 	}
 
+	int getAttacksGeared()
+	{
+		int total = 0;
+		for (Fight fight : fights)
+		{
+			if (fight.isScored())
+			{
+				total += fight.getAttacksGeared();
+			}
+		}
+		return total;
+	}
+
 	int getAttacksPotted()
 	{
 		int total = 0;

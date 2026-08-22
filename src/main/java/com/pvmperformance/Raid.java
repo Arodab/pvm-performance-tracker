@@ -114,6 +114,16 @@ class Raid
 		return total;
 	}
 
+	int getAttacksGeared()
+	{
+		int total = 0;
+		for (Encounter encounter : encounters)
+		{
+			total += encounter.getAttacksGeared();
+		}
+		return total;
+	}
+
 	int getAttacksPotted()
 	{
 		int total = 0;

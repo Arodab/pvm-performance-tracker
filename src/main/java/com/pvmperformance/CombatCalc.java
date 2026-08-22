@@ -2,12 +2,17 @@ package com.pvmperformance;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.EquipmentInventorySlot;
+import net.runelite.api.Item;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Prayer;
@@ -55,6 +60,18 @@ class CombatCalc
 	// Clicks that may be outstanding at once. Two covers a click made while the
 	// previous cast is still in the air; the third is slack.
 	private static final int MAX_PENDING_CASTS = 3;
+	// Slot index back to the slot, for reading the slot an inventory item goes
+	// in off its equipment stats. Not every index is a real slot.
+	private static final Map<Integer, EquipmentInventorySlot> SLOT_BY_INDEX = new HashMap<>();
+
+	static
+	{
+		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
+		{
+			SLOT_BY_INDEX.put(slot.getSlotIdx(), slot);
+		}
+	}
+
 	// The weapon the combat tab heading was last seen describing, so a heading
 	// that has not caught up with a swap can be told from one that has.
 	private int headingWeapon = Integer.MIN_VALUE;
@@ -121,6 +138,11 @@ class CombatCalc
 	private int memoGearNpc = Integer.MIN_VALUE;
 	private GearBonus memoGear;
 	private Loadout memoLoadout;
+	// The gear search's answer. Outlives the tick memo on purpose — the search
+	// is the one expensive thing in this class, and what it depends on is the
+	// worn and carried items and the target, none of which is a tick.
+	private int memoBestGearNpc = Integer.MIN_VALUE;
+	private Loadout memoBestGear;
 
 	/** Drops everything held once the tick it was worked out for has passed. */
 	// Dropped when the worn items change as well as when the tick does. A tick
@@ -132,6 +154,13 @@ class CombatCalc
 	void invalidateGear()
 	{
 		memoTick = Integer.MIN_VALUE;
+		memoBestGear = null;
+	}
+
+	/** The carried items changed, so what could have been switched to has too. */
+	void invalidateInventory()
+	{
+		memoBestGear = null;
 	}
 
 	private void expireMemo()
@@ -163,6 +192,41 @@ class CombatCalc
 			memoLoadout = Loadout.worn(itemManager, client.getItemContainer(InventoryID.WORN));
 		}
 		return memoLoadout;
+	}
+
+	// Points every figure at a different loadout. Everything derived from the
+	// gear has to go with it, or the swap is half applied: the bonuses and the
+	// max hit are memoised per tick and would otherwise still describe the
+	// loadout that was in place when they were first asked for.
+	private void useLoadout(Loadout gear)
+	{
+		memoLoadout = gear;
+		memoStyle = null;
+		memoWeaponNameSet = false;
+		memoGearNpc = Integer.MIN_VALUE;
+		memoGear = null;
+		Arrays.fill(memoAttackBonusSet, false);
+		Arrays.fill(memoEquipmentBonusSet, false);
+		Arrays.fill(memoBaseMaxHitSet, false);
+	}
+
+	// Expected damage for a loadout that is not being worn. Restores what was
+	// there afterwards, memo included, so a search leaves no trace.
+	private double averageHitWith(Loadout gear, int npcId, int as)
+	{
+		final Loadout worn = memoLoadout;
+		final int was = mode;
+		try
+		{
+			useLoadout(gear);
+			mode = as;
+			return averageHit(npcId);
+		}
+		finally
+		{
+			mode = was;
+			useLoadout(worn);
+		}
 	}
 
 	private AttackStyle attackStyle()
@@ -1352,7 +1416,60 @@ class CombatCalc
 	// gear, target, style, exactly as it is.
 	double idealAverageHit(int npcId)
 	{
-		return averageHitAs(npcId, IDEAL);
+		return averageHitWith(bestGear(npcId), npcId, IDEAL);
+	}
+
+	/**
+	 * Whether a switch was available and not made. Identity, not arithmetic:
+	 * the search hands back the worn loadout itself when nothing beats it.
+	 */
+	boolean missedGearSwitch(int npcId)
+	{
+		return bestGear(npcId) != gear();
+	}
+
+	// The best gear available against this target, held until the worn or
+	// carried items change or the target does. Never worked out per tick: it
+	// is asked for once an attack, and the search is the expensive thing here.
+	private Loadout bestGear(int npcId)
+	{
+		if (memoBestGear != null && memoBestGearNpc == npcId)
+		{
+			return memoBestGear;
+		}
+		final Loadout worn = gear();
+		final ItemEquipmentStats weapon = weaponStats();
+		memoBestGearNpc = npcId;
+		memoBestGear = GearSearch.best(worn, carriedCandidates(), weapon != null && weapon.isTwoHanded(),
+			candidate -> averageHitWith(candidate, npcId, IDEAL));
+		return memoBestGear;
+	}
+
+	// Everything in the inventory that could be equipped, paired with the slot
+	// it goes in. The bank is deliberately not available: the question is what
+	// the player could have switched to without leaving.
+	private List<GearSearch.Candidate> carriedCandidates()
+	{
+		final ItemContainer inventory = client.getItemContainer(InventoryID.INV);
+		if (inventory == null)
+		{
+			return Collections.emptyList();
+		}
+		final List<GearSearch.Candidate> candidates = new ArrayList<>();
+		for (Item item : inventory.getItems())
+		{
+			final ItemEquipmentStats stats = equipmentStats(item.getId());
+			if (stats == null)
+			{
+				continue;
+			}
+			final EquipmentInventorySlot slot = SLOT_BY_INDEX.get(stats.getSlot());
+			if (slot != null)
+			{
+				candidates.add(new GearSearch.Candidate(slot, item.getId()));
+			}
+		}
+		return candidates;
 	}
 
 	/**

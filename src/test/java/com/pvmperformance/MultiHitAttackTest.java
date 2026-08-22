@@ -17,7 +17,7 @@ public class MultiHitAttackTest
 	{
 		final Fight f = fight();
 		f.recordAttackMade(true);
-		f.recordAttackResolved(true, 10, 10);
+		f.recordAttackResolved(true, true, 10, 10);
 		f.recordDamageDealt(20, 0L, true);
 		f.recordDamageDealt(10, 0L, false);
 		f.recordDamageDealt(5, 0L, false);
@@ -41,7 +41,7 @@ public class MultiHitAttackTest
 	{
 		final Fight f = fight();
 		f.recordAttackMade(true);
-		f.recordAttackResolved(true, 10, 10);
+		f.recordAttackResolved(true, true, 10, 10);
 		f.recordDamageDealt(0, 0L, false);
 		f.recordDamageDealt(12, 0L, true);
 		f.recordDamageDealt(6, 0L, false);
@@ -57,7 +57,7 @@ public class MultiHitAttackTest
 	{
 		final Fight f = fight();
 		f.recordAttackMade(true);
-		f.recordAttackResolved(true, 10, 10);
+		f.recordAttackResolved(true, true, 10, 10);
 		f.recordDamageDealt(0, 0L, false);
 		f.recordDamageDealt(0, 0L, false);
 
@@ -72,7 +72,7 @@ public class MultiHitAttackTest
 	{
 		final Fight f = fight();
 		f.recordAttackMade(true);
-		f.recordAttackResolved(true, 10, 10);
+		f.recordAttackResolved(true, true, 10, 10);
 		f.recordSplash(0L);
 
 		assertEquals(1, f.getAttempts());
@@ -90,7 +90,7 @@ public class MultiHitAttackTest
 		for (int attack = 0; attack < 5; attack++)
 		{
 			f.recordAttackMade(true);
-		f.recordAttackResolved(true, 10, 10);
+		f.recordAttackResolved(true, true, 10, 10);
 			f.recordDamageDealt(7, 0L, true);
 			f.recordDamageDealt(3, 0L, false); // a second hitsplat every time
 		}

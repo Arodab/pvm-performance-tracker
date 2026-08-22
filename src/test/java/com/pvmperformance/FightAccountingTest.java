@@ -20,7 +20,7 @@ public class FightAccountingTest
 	{
 		final Fight f = fight(npcId);
 		f.recordAttackMade(true);
-		f.recordAttackResolved(true, 10, 10);
+		f.recordAttackResolved(true, true, 10, 10);
 		f.recordDamageDealt(damage, 0L, damage > 0);
 		return f;
 	}

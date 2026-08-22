@@ -13,7 +13,7 @@ public class CsvRowTest
 	{
 		final Fight f = new Fight("Some \"quoted\" npc", NpcIds.GOBLIN, 1, 100, 0L, RaidType.TOMBS_OF_AMASCUT, 2);
 		f.recordAttackMade(true);
-		f.recordAttackResolved(true, 10, 12);
+		f.recordAttackResolved(true, true, 10, 12);
 		f.recordDamageDealt(7, 600L, true);
 		f.recordExpected(20, 0.75, 6.5);
 		f.recordTickLost(false);
@@ -30,7 +30,7 @@ public class CsvRowTest
 	@Test
 	public void theHeaderNamesEveryColumnOnce()
 	{
-		assertEquals(28, COLUMNS);
+		assertEquals(29, COLUMNS);
 	}
 
 	@Test

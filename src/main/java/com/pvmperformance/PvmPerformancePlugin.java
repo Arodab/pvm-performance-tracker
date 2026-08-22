@@ -145,7 +145,7 @@ public class PvmPerformancePlugin extends Plugin
 		+ "started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
 		+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
 		+ "ticksLost,ticksLostPct,ticksLostEating,ticksToEngage,"
-		+ "attacksMade,attacksPrayed,attacksPotted,efficiencyPct\n";
+		+ "attacksMade,attacksPrayed,attacksPotted,attacksGeared,efficiencyPct\n";
 
 	private static final DateTimeFormatter ROW_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -717,13 +717,13 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	private void record(boolean prayed, double actual, double ideal)
+	private void record(boolean prayed, boolean geared, double actual, double ideal)
 	{
 		if (current != null && !current.isEnded())
 		{
-			current.recordAttackResolved(prayed, actual, ideal);
+			current.recordAttackResolved(prayed, geared, actual, ideal);
 		}
-		session.recordAttackResolved(prayed, actual, ideal);
+		session.recordAttackResolved(prayed, geared, actual, ideal);
 	}
 
 	private void sampleExpected(Fight fight)
@@ -932,6 +932,10 @@ public class PvmPerformancePlugin extends Plugin
 			final double ifPrayed = combatCalc.actualAverageHit(targetId, true);
 			final double ifNot = combatCalc.actualAverageHit(targetId, false);
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
+			// Asked here, on the attack tick, for the same reason the prayer is:
+			// what was carried and what was worn at that instant is what the
+			// player could have done, and both change between attacks.
+			final boolean geared = !combatCalc.missedGearSwitch(targetId);
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
@@ -945,7 +949,7 @@ public class PvmPerformancePlugin extends Plugin
 				// went with it. Reading it when the hitsplat arrives instead
 				// measured the prayer at the LANDING, ticks after the server had
 				// already scored the attack.
-				record(prayed, prayed ? ifPrayed : ifNot, idealSetup);
+				record(prayed, geared, prayed ? ifPrayed : ifNot, idealSetup);
 				// Sampled on the tick the attack went out, not the tick it
 				// resolved, so the figures describe the loadout that threw it,
 				// every style updates on the same beat, and one attack takes one
@@ -1091,6 +1095,13 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			combatCalc.invalidateGear();
 			gearChangedTick = client.getTickCount();
+		}
+		else if (event.getContainerId() == InventoryID.INV)
+		{
+			// What could have been switched into changed. Eating and drinking
+			// fire this too, which is why the search behind it is worked out
+			// lazily on the next attack rather than here.
+			combatCalc.invalidateInventory();
 		}
 	}
 
@@ -1745,7 +1756,7 @@ public class PvmPerformancePlugin extends Plugin
 		final double seconds = Math.max(0.6, room.durationMillis() / 1000.0);
 		final int attempts = room.getAttempts();
 		return csvScope("room", raidName, raidRun, room.getName())
-			+ String.format("%s,,,,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,,%d,%d,%d,%s%n",
+			+ String.format("%s,,,,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,,%d,%d,%d,%d,%s%n",
 				started,
 				room.isKilled(),
 				room.getDamageDealt(),
@@ -1764,6 +1775,7 @@ public class PvmPerformancePlugin extends Plugin
 				room.getAttacksMade(),
 				room.getAttacksPrayed(),
 				room.getAttacksPotted(),
+				room.getAttacksGeared(),
 				csvExpected(room.efficiency() * 100, 1));
 	}
 
@@ -1779,7 +1791,7 @@ public class PvmPerformancePlugin extends Plugin
 		final double seconds = Math.max(0.6, raid.durationMillis() / 1000.0);
 		final int attempts = raid.getAttempts();
 		return csvScope("raid", raidName, raidRun, null)
-			+ String.format("%s,,,,,%d,,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,,%d,%d,%d,%s%n",
+			+ String.format("%s,,,,,%d,,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,,%d,%d,%d,%d,%s%n",
 				started,
 				raid.getDamageDealt(),
 				attempts,
@@ -1796,6 +1808,7 @@ public class PvmPerformancePlugin extends Plugin
 				raid.getAttacksMade(),
 				raid.getAttacksPrayed(),
 				raid.getAttacksPotted(),
+				raid.getAttacksGeared(),
 				csvExpected(raid.efficiency() * 100, 1));
 	}
 
@@ -1810,7 +1823,7 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
-		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d,%s,%d,%d,%d,%s%n",
+		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d,%s,%d,%d,%d,%d,%s%n",
 			started,
 			fight.getTargetName().replace('"', '\''),
 			fight.getTargetId(),
@@ -1834,6 +1847,7 @@ public class PvmPerformancePlugin extends Plugin
 			fight.getAttacksMade(),
 			fight.getAttacksPrayed(),
 			fight.getAttacksPotted(),
+			fight.getAttacksGeared(),
 			csvExpected(fight.efficiency() * 100, 1));
 	}
 
