@@ -219,6 +219,17 @@ final class EncounterGroup
 			NpcID.TOA_BABA, NpcID.TOA_BABA_DIGGING, NpcID.TOA_BABA_BABOON, NpcID.TOA_BABA_BOULDER,
 			NpcID.TOA_BABA_BOULDER_WEAK);
 
+		// The Hueycoatl is one snake in many pieces: a head that changes id as
+		// it is broken, enraged and defeated, a tail that breaks, and the body
+		// segments between them. All of it is attacked as one fight, so without
+		// this the overlay resets every time the player hits a different part —
+		// eighteen fights in one trip, and never a kill, because each one ends
+		// by being replaced rather than by anything dying.
+		put(groups, "The Hueycoatl",
+			NpcID.HUEY_HEAD, NpcID.HUEY_HEAD_INVULNERABLE, NpcID.HUEY_HEAD_DEFEATED,
+			NpcID.HUEY_HEAD_ENRAGED, NpcID.HUEY_TAIL, NpcID.HUEY_TAIL_BROKEN,
+			NpcID.HUEY_BODY_PART, NpcID.HUEY_BODY_PART_BROKEN);
+
 		// The meat tree is the healing mechanic, as Vasa's crystals are.
 		put(groups, "Muttadiles",
 			NpcID.RAIDS_DOGODILE, NpcID.RAIDS_DOGODILE_SUBMERGED, NpcID.RAIDS_DOGODILE_JUNIOR,
@@ -242,7 +253,12 @@ final class EncounterGroup
 	private static Set<Integer> buildIgnored()
 	{
 		return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-			NpcID.TOA_ZEBAK_JUG, NpcID.TOA_ZEBAK_JUG_ROLLING)));
+			NpcID.TOA_ZEBAK_JUG, NpcID.TOA_ZEBAK_JUG_ROLLING,
+			// Hueycoatl scenery rather than the snake: the placeholder its head
+			// respawns from, the tail's projectile, and the invisible pillar
+			// that carries the phase two health bar.
+			NpcID.HUEY_HEAD_RESPAWN_PLACEHOLDER, NpcID.HUEY_TAIL_PROJECTILE,
+			NpcID.HUEY_P2_PILLAR_HEADBAR_INVIS)));
 	}
 
 	/**
@@ -310,6 +326,10 @@ final class EncounterGroup
 			NpcID.TOA_WARDEN_ELIDINIS_PHASE3_INACTIVE, NpcID.TOA_WARDEN_TUMEKEN_PHASE3_INACTIVE,
 			NpcID.TOA_WARDEN_ELIDINIS_PHASE3_CHARGING, NpcID.TOA_WARDEN_TUMEKEN_PHASE3_CHARGING,
 			NpcID.TOA_WARDENS_P1_OBELISK_NPC_INACTIVE,
+			// The Hueycoatl's head while it cannot be hurt, and once it is
+			// beaten. Named outright by the gameval, which is the signal the
+			// suffixes are there to give.
+			NpcID.HUEY_HEAD_INVULNERABLE, NpcID.HUEY_HEAD_DEFEATED,
 			// Dead or dying, but still standing in the scene.
 			NpcID.TOA_KEPHRI_BOSS_DEAD, NpcID.TOA_ZEBAK_DEAD,
 			NpcID.OLM_HAND_LEFT_DYING, NpcID.OLM_HAND_RIGHT_DYING,
