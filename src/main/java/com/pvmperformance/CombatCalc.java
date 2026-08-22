@@ -768,6 +768,13 @@ class CombatCalc
 	 * ancient area spells. Their attacks cannot be booked from a projectile
 	 * because the client never shows one, so the hitsplat has to serve.
 	 */
+	// TRACE only.
+	String activeSpellName()
+	{
+		final Spell spell = activeSpell();
+		return spell == null ? "none" : spell.getDisplayName();
+	}
+
 	boolean castLandsWithoutProjectile()
 	{
 		final Spell spell = activeSpell();

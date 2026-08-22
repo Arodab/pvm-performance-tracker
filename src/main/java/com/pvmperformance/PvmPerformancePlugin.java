@@ -38,6 +38,7 @@ import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
@@ -764,6 +765,9 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final int index = ((NPC) actor).getIndex();
+		log.debug("TRACE splash tick={} npc={} index={} target={} noProjectileCast={} spell={}",
+			client.getTickCount(), ((NPC) actor).getId(), index, current.getTargetIndex(),
+			combatCalc.castLandsWithoutProjectile(), combatCalc.activeSpellName());
 		if (current.getTargetIndex() != index)
 		{
 			return;
@@ -1043,6 +1047,19 @@ public class PvmPerformancePlugin extends Plugin
 		partyHitpoints.forget(event.getMemberId());
 	}
 
+	// TRACE. The tick the player's animation changed, which is the closest
+	// thing to the tick a cast went out — enough to measure how far behind a
+	// barrage's hitsplat arrives, which is what its booking lag has to be.
+	@Subscribe
+	public void onAnimationChanged(AnimationChanged event)
+	{
+		if (event.getActor() == client.getLocalPlayer())
+		{
+			log.debug("TRACE anim tick={} id={}",
+				client.getTickCount(), event.getActor().getAnimation());
+		}
+	}
+
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned event)
 	{
@@ -1053,6 +1070,10 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
+		log.debug("TRACE despawn tick={} id={} index={} dead={} target={} targetId={} sameGroup={}",
+			client.getTickCount(), npc.getId(), npc.getIndex(), npc.isDead(),
+			current.getTargetIndex(), current.getTargetId(),
+			EncounterGroup.sameGroup(npc.getId(), current.getTargetId()));
 		if (current.getTargetIndex() == npc.getIndex())
 		{
 			finalizeFight(npc.isDead(), System.currentTimeMillis());
