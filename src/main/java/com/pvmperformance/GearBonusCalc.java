@@ -40,6 +40,9 @@ class GearBonusCalc
 	}
 
 	private final Client client;
+	// Mark of Darkness, from the chat messages that announce it. See
+	// setMarkOfDarkness for why it is not read from a varbit.
+	private boolean markOfDarkness;
 
 	@Inject
 	GearBonusCalc(Client client)
@@ -288,6 +291,11 @@ class GearBonusCalc
 		return GearBonus.NONE;
 	}
 
+	private static boolean isPurgingStaff(int weapon)
+	{
+		return weapon == ItemID.PURGING_STAFF || weapon == ItemID.BR_PURGING_STAFF;
+	}
+
 	private static boolean isDragonHunterCrossbow(int weapon)
 	{
 		return weapon == ItemID.DRAGONHUNTER_XBOW
@@ -384,17 +392,26 @@ class GearBonusCalc
 		}
 		else if (type == AttackType.MAGIC && isDemonbaneSpell(spell))
 		{
-			// Accuracy only. The 25% damage belongs to Mark of Darkness, which
-			// also doubles the accuracy to 40%, and a purging staff doubles both
-			// again to 80% and 50%. This had the base accuracy paired with the
-			// Mark's damage, which is neither state.
+			// Three states, not one. Bare, the spell is 20% accuracy and no
+			// damage. Mark of Darkness doubles the accuracy to 40% and brings
+			// the 25% damage with it, and a purging staff doubles both again,
+			// but only while the Mark is up — the staff does nothing on its own.
 			//
-			// Not modelled: the Mark, and so not the purging staff either. There
-			// is a BUFF_MARK_OF_DARKNESS_DISABLED varbit, but its name says
-			// disabled and this project has been caught by a varbit's name
-			// before, so it needs confirming in game before it is trusted.
-			// Understating the spell is the safe side of that.
-			raw = GearBonus.of(1.2, 1.0);
+			// Scaled by demonbane effectiveness afterwards like everything else
+			// here, which is what lets a Void Flare double the lot again: 80 and
+			// 50 become 160 and 100.
+			if (!markOfDarkness)
+			{
+				raw = GearBonus.of(1.2, 1.0);
+			}
+			else if (isPurgingStaff(gear.id(EquipmentInventorySlot.WEAPON)))
+			{
+				raw = GearBonus.of(1.8, 1.5);
+			}
+			else
+			{
+				raw = GearBonus.of(1.4, 1.25);
+			}
 		}
 		return scaleByDemonbaneEffectiveness(raw, npc);
 	}
@@ -757,6 +774,31 @@ class GearBonusCalc
 	void updateRaidState()
 	{
 		// Nothing to latch: the party status answers directly.
+	}
+
+	/**
+	 * Whether Mark of Darkness is up, which no varbit says.
+	 *
+	 * <p>The only thing carrying the name is
+	 * {@code BUFF_MARK_OF_DARKNESS_DISABLED}, and that is one of a contiguous
+	 * block of buff bar display toggles sitting beside {@code BUFF_BAR_HIDDEN} —
+	 * it says whether the buff is shown, not whether it is held. The Arceuus
+	 * spells that do have a state varbit (death charge, resurrection, shadow
+	 * veil) have an {@code _ACTIVE} one; Mark of Darkness has none.
+	 *
+	 * <p>So it is tracked from the game's own messages, which are exact, rather
+	 * than from a duration computed off the magic level and the staff. The one
+	 * gap is starting the plugin while the Mark is already up: it reads as down
+	 * until the next cast, which understates rather than overstates.
+	 */
+	void setMarkOfDarkness(boolean up)
+	{
+		markOfDarkness = up;
+	}
+
+	boolean hasMarkOfDarkness()
+	{
+		return markOfDarkness;
 	}
 
 	boolean inTombsOfAmascut()

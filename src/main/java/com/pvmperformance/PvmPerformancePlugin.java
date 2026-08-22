@@ -38,6 +38,7 @@ import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -1199,6 +1200,30 @@ public class PvmPerformancePlugin extends Plugin
 			// fire this too, which is why the search behind it is worked out
 			// lazily on the next attack rather than here.
 			combatCalc.invalidateInventory();
+		}
+	}
+
+	/**
+	 * Mark of Darkness, tracked from the game's own messages because no varbit
+	 * carries it — the one named for it is a buff bar display toggle. The
+	 * messages are exact, which beats computing a duration from the magic level
+	 * and the staff and hoping the formula holds.
+	 */
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (event.getType() != ChatMessageType.GAMEMESSAGE)
+		{
+			return;
+		}
+		final String message = Text.removeTags(event.getMessage());
+		if (message.startsWith("You have placed a Mark of Darkness upon yourself"))
+		{
+			gearBonuses.setMarkOfDarkness(true);
+		}
+		else if (message.startsWith("Your Mark of Darkness has faded away"))
+		{
+			gearBonuses.setMarkOfDarkness(false);
 		}
 	}
 

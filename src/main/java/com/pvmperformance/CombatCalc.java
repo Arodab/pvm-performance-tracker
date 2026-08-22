@@ -1331,8 +1331,9 @@ class CombatCalc
 				own ? gearBonuses.shadowMultiplier(gear) : 1,
 				own ? "own attack" : "cast, passive does not apply"));
 			final GearBonus bonus = gearBonus(npcId);
-			lines.add(String.format("Gear multipliers: accuracy x%.3f, damage x%.3f",
-				bonus.getAccuracy(), bonus.getDamage()));
+			lines.add(String.format("Gear multipliers: accuracy x%.3f, damage x%.3f, mark of darkness %s",
+				bonus.getAccuracy(), bonus.getDamage(),
+				gearBonuses.hasMarkOfDarkness() ? "UP" : "down"));
 		}
 
 		final int spec = specialAttackMaxHit(npcId);
