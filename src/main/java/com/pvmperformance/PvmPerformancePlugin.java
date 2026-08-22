@@ -141,7 +141,12 @@ public class PvmPerformancePlugin extends Plugin
 	// on 24, 29 and 34. Borrowing melee's one left the prayer being read two
 	// ticks after the cast, which counted a prayer raised well after the spell
 	// had gone out.
-	private static final int NO_PROJECTILE_BOOKING_LAG = 3;
+	// None at all for a cast with no projectile, which is booked from the
+	// caster's animation and so is seen on the tick it goes out. It was briefly
+	// booked from its hitsplat at three ticks, measured — kept here because the
+	// measurement stands if that route is ever needed again, but the hitsplat
+	// cannot see a cast that misses and the animation can.
+	private static final int CAST_BOOKING_LAG = 0;
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -463,8 +468,10 @@ public class PvmPerformancePlugin extends Plugin
 			// spells: a barrage gives no projectile to book from, so its
 			// hitsplat is the only thing that says an attack happened. Both are
 			// booked here; everything else is booked from its projectile.
-			final boolean melee = combatCalc.isMeleeEquipped()
-				|| combatCalc.castLandsWithoutProjectile();
+			// Melee only. A cast with no projectile is booked from the caster's
+			// animation, which sees its misses too, so booking it here as well
+			// would count every landed cast twice.
+			final boolean melee = combatCalc.isMeleeEquipped();
 			final boolean firstOfBurst = !burstBooked.contains(npc.getIndex());
 			log.debug("TRACE hitsplat tick={} npc={} amount={} fromFlight={} melee={}"
 					+ " newBurst={} firstOfBurst={} books={} cat={} weapon={}",
@@ -475,8 +482,7 @@ public class PvmPerformancePlugin extends Plugin
 				combatCalc.castLandsWithoutProjectile(), combatCalc.isMeleeEquipped());
 			if (!arrivedFromFlight && melee && burstBooked.add(npc.getIndex()))
 			{
-				recordAttackObserved(false, npc.getId(), combatCalc.isMeleeEquipped()
-					? MELEE_BOOKING_LAG : NO_PROJECTILE_BOOKING_LAG);
+				recordAttackObserved(false, npc.getId(), MELEE_BOOKING_LAG);
 			}
 		}
 		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
@@ -802,13 +808,10 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
+		// The attack itself is not booked here. A cast with no projectile is
+		// booked from the caster's animation, which is the only thing that sees
+		// one that misses, so booking it again here would double it.
 		final long now = System.currentTimeMillis();
-		if (noProjectile)
-		{
-			// Harmless if the same cast also landed on something else: an attack
-			// is booked once a tick however many times it is observed.
-			recordAttackObserved(false, ((NPC) actor).getId(), NO_PROJECTILE_BOOKING_LAG);
-		}
 		current.recordSplash(now);
 		// Gated exactly as a landed hit is: an unscored NPC spends the tick but
 		// contributes no damage, accuracy or efficiency, and a splash on one is
@@ -1078,17 +1081,67 @@ public class PvmPerformancePlugin extends Plugin
 		partyHitpoints.forget(event.getMemberId());
 	}
 
-	// TRACE. The tick the player's animation changed, which is the closest
-	// thing to the tick a cast went out — enough to measure how far behind a
-	// barrage's hitsplat arrives, which is what its booking lag has to be.
+	/**
+	 * A cast with no projectile is only visible as the caster's own animation.
+	 *
+	 * <p>A barrage that misses produces nothing else at all: no projectile, no
+	 * hitsplat, and no splash graphic — traced across a whole kill. Booking such
+	 * a cast from its hitsplat therefore counts only the ones that hit, which
+	 * quietly drove accuracy towards a hundred per cent, because every miss
+	 * vanished from both halves of the sum rather than from one.
+	 *
+	 * <p>So these are booked here instead, and not from the hitsplat. The
+	 * animation fires on the tick the cast goes out, which makes this the most
+	 * exact of the four routes rather than the least: no booking lag at all,
+	 * where the hitsplat needed three.
+	 *
+	 * <p>What the animation *is* does not matter and is deliberately not
+	 * checked — that would be the per-spell table that sank two earlier designs.
+	 * What carries the weight is that a no-projectile spell is the attack in
+	 * hand and the weapon is off cooldown, so an eat between casts cannot book
+	 * one.
+	 */
 	@Subscribe
 	public void onAnimationChanged(AnimationChanged event)
 	{
-		if (event.getActor() == client.getLocalPlayer())
+		final Player me = client.getLocalPlayer();
+		if (event.getActor() != me || me.getAnimation() == IDLE_ANIMATION)
 		{
-			log.debug("TRACE anim tick={} id={}",
-				client.getTickCount(), event.getActor().getAnimation());
+			return;
 		}
+		if (!combatCalc.castLandsWithoutProjectile()
+			|| client.getTickCount() < lastAttackSeenTick + combatCalc.attackSpeedTicks())
+		{
+			return;
+		}
+		final NPC target = castTarget();
+		if (target == null)
+		{
+			return;
+		}
+		final long now = System.currentTimeMillis();
+		if (current == null || current.isEnded() || current.getTargetIndex() != target.getIndex())
+		{
+			startFight(target, now);
+		}
+		log.debug("TRACE cast tick={} anim={} npc={} spell={}",
+			client.getTickCount(), me.getAnimation(), target.getIndex(),
+			combatCalc.activeSpellName());
+		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
+	}
+
+	// What the cast is aimed at: what I am interacting with, or failing that
+	// the fight already open, which covers the tick an autocast rolls onto a
+	// new target before getInteracting has caught up.
+	private NPC castTarget()
+	{
+		final Player me = client.getLocalPlayer();
+		final Actor interacting = me == null ? null : me.getInteracting();
+		if (interacting instanceof NPC)
+		{
+			return (NPC) interacting;
+		}
+		return current != null && !current.isEnded() ? targetNpc : null;
 	}
 
 	/**
