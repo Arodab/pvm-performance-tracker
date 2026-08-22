@@ -764,14 +764,31 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final int index = ((NPC) actor).getIndex();
-		// A splash names no caster, so it only counts as mine when it resolves a
-		// projectile I fired. Attribution is exact now that the projectile names
-		// its source, so this no longer drops casts the way it did.
-		if (current.getTargetIndex() != index || !consumePending(index))
+		if (current.getTargetIndex() != index)
+		{
+			return;
+		}
+		// A splash names no caster, so ordinarily it only counts as mine when it
+		// resolves a projectile I fired.
+		//
+		// The ancient area spells have no projectile to resolve, and a splash
+		// has no hitsplat either, so for those this graphic is the only evidence
+		// the cast happened at all — requiring a pending projectile left a
+		// splashed barrage counting nothing anywhere. It is booked here instead,
+		// which is also why the attack itself is recorded: with no projectile
+		// and no hitsplat, nothing else will.
+		final boolean noProjectile = combatCalc.castLandsWithoutProjectile();
+		if (!noProjectile && !consumePending(index))
 		{
 			return;
 		}
 		final long now = System.currentTimeMillis();
+		if (noProjectile)
+		{
+			// Harmless if the same cast also landed on something else: an attack
+			// is booked once a tick however many times it is observed.
+			recordAttackObserved(false, ((NPC) actor).getId());
+		}
 		current.recordSplash(now);
 		// Gated exactly as a landed hit is: an unscored NPC spends the tick but
 		// contributes no damage, accuracy or efficiency, and a splash on one is
@@ -1032,9 +1049,26 @@ public class PvmPerformancePlugin extends Plugin
 		final NPC npc = event.getNpc();
 		// The drain dies with the NPC, as its stats do.
 		drain.forget(npc.getIndex());
-		if (current != null && !current.isEnded() && current.getTargetIndex() == npc.getIndex())
+		if (current == null || current.isEnded())
+		{
+			return;
+		}
+		if (current.getTargetIndex() == npc.getIndex())
 		{
 			finalizeFight(npc.isDead(), System.currentTimeMillis());
+			return;
+		}
+		// A boss made of several NPCs does not die on the one being hit. The
+		// Hueycoatl is killed at its head while the fight is usually open on a
+		// body segment, so the death despawns an index the fight has never
+		// heard of and the kill went unrecorded — damage counted, kills stayed
+		// at zero.
+		//
+		// Only a death, and only within the group, so an add dying beside a
+		// boss cannot claim the kill.
+		if (npc.isDead() && EncounterGroup.sameGroup(npc.getId(), current.getTargetId()))
+		{
+			finalizeFight(true, System.currentTimeMillis());
 		}
 	}
 
