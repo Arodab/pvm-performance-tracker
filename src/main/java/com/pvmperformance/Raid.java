@@ -4,14 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
 
-/**
- * One run of a raid: its rooms, in the order they were fought.
- *
- * <p>Summed from the encounters exactly as an encounter is summed from its
- * fights, so the three readings — phase, room, run — are the same numbers
- * gathered at three widths rather than three sets of counters that can
- * disagree.
- */
+// One run of a raid: its rooms, in the order they were fought.
 @Getter
 class Raid
 {

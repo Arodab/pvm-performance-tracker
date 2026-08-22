@@ -2,16 +2,10 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-/**
- * Aggregated performance across every fight against one target, where a target
- * is a room when the NPCs of that room are grouped and a single NPC otherwise.
- * So the nylocas add up per colour and Kephri's whole room reads as Kephri,
- * while a Vorkath is still a Vorkath.
- *
- * <p>Damage and accuracy count only the fights worth scoring; ticks count all
- * of them, so Kephri's healing scarabs cost time without lending their
- * guaranteed max hits to the room's accuracy.
- */
+// Aggregated performance across every fight against one target, where a
+// target is a room when the NPCs of that room are grouped and a single NPC
+// otherwise. So the nylocas add up per colour and Kephri's whole room reads
+// as Kephri, while a Vorkath is still a Vorkath.
 @Getter
 class NpcStats
 {

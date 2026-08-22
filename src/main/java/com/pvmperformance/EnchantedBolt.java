@@ -1,19 +1,8 @@
 package com.pvmperformance;
 
-/**
- * The enchanted crossbow bolts whose effects change expected damage, with their
- * PvM activation rates. The hard Kandarin diary raises every rate by a tenth of
- * itself.
- *
- * <p>Only the three that matter for boss damage are listed. Opal, pearl and
- * dragonstone add a small flat hit whose formula depends on the ranged level and
- * the target, and the rest of the enchantments are utility rather than damage.
- *
- * <p>The effects differ in shape, which is why the damage maths lives in
- * {@code CombatCalc} rather than here: ruby replaces the hit outright with a
- * share of the target's health, diamond raises the max and skips the accuracy
- * roll, and onyx only adds damage to a hit that already landed.
- */
+// The enchanted crossbow bolts whose effects change expected damage, with
+// their PvM activation rates. The hard Kandarin diary raises every rate by
+// a tenth of itself.
 enum EnchantedBolt
 {
 	/** Blood forfeit: 20% of the target's current health, capped, ignoring accuracy. */

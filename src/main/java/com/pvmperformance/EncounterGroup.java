@@ -8,23 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import net.runelite.api.gameval.NpcID;
 
-/**
- * Which NPCs are worth reading together.
- *
- * <p>A fight stays one NPC — the phases of a boss are kept apart, since which
- * phase a kill goes wrong on is exactly what a breakdown is for, and anyone who
- * wants them added up can add them up. This only names the handful of cases
- * where the parts are not separately meaningful: a room of adds, a boss whose
- * hands come back every phase, an NPC that swaps id for the same fight. A
- * group is an extra label rather than a replacement, so both readings can be
- * exported.
- *
- * <p>Every id here was matched by number against the monster data rather than
- * by the look of its name, which is the only way this stays honest — the
- * baboons of the monkey room are {@code TOA_PATH_APMEKEN_BABOON_*} while
- * {@code TOA_BABA_BABOON} is Ba-Ba's, and grouping by the word "baboon" would
- * have quietly swept one room into another.
- */
+// Which NPCs are worth reading together.
 final class EncounterGroup
 {
 	private static final Map<Integer, String> GROUPS = buildGroups();
@@ -59,47 +43,16 @@ final class EncounterGroup
 		return IGNORED.contains(npcId);
 	}
 
-	/**
-	 * NPCs that are part of the room but must not be scored: the time spent on
-	 * them counts, the damage does not.
-	 *
-	 * <p>Kephri's healing scarabs are the case. They have to be killed and the
-	 * ticks are real, but at 10 hitpoints every hit on one is a max hit that
-	 * lands, so counting them would drag the room's accuracy towards 100% and
-	 * its average hit towards the weapon's ceiling — flattering exactly the
-	 * player who spent the longest on them.
-	 */
+	// NPCs that are part of the room but must not be scored: the time spent on
+	// them counts, the damage does not.
 	static boolean isUnscored(int npcId)
 	{
 		return UNSCORED.contains(npcId);
 	}
 
-	/**
-	 * Forms an NPC wears while it cannot be fought — a transition, a charge, a
-	 * death that has not despawned yet. No tick is lost while the target is one
-	 * of these, because no attack was possible.
-	 *
-	 * <p>This only catches bosses that change id to say so, and only where the
-	 * id has been checked to mean it. Two are known to be missing. Bloat keeps
-	 * one id whether he is walking or down, so his walking phase can only be
-	 * told from his animation.
-	 *
-	 * <p>Sotetseg is here on an unconfirmed reading, by request, so the maze
-	 * stops costing ticks. {@code TOB_SOTETSEG_NONCOMBAT} is the id the monster
-	 * data gives his full stats to, level 995 and 4000 hitpoints, while
-	 * {@code _COMBAT} has none, which argues it is the form he is fought in.
-	 * Against that, these ids lean towards spawn forms: the wiki's Verzik phase
-	 * 1 is {@code VERZIK_INITIAL} and not {@code VERZIK_PHASE1}. If the first
-	 * reading is right his room will report no tick loss at all, which is the
-	 * tell, and {@code ::loadout} while hitting him settles it.
-	 *
-	 * <p>Akkha's memory blast is covered, though on an unconfirmed guess at
-	 * which id he wears while away; {@code ::loadout} prints the target's live
-	 * id, which is what would settle it. His other immunity, channelled from
-	 * his shadows until he is lured to a dispelled corner, needs nothing: the
-	 * shadows are grouped with him and are what the player is attacking while
-	 * luring, so those ticks are attacks rather than idle time.
-	 */
+	// Forms an NPC wears while it cannot be fought, a transition, a charge, a
+	// death that has not despawned yet. No tick is lost while the target is
+	// one of these, because no attack was possible.
 	static boolean isUnattackable(int npcId)
 	{
 		return UNATTACKABLE.contains(npcId);
@@ -109,12 +62,10 @@ final class EncounterGroup
 	{
 		final Map<Integer, String> groups = new HashMap<>();
 
-		// Chambers of Xeric. The three vanguards are one fight in practice,
-		// since they must be brought down together. Vasa's crystals are his
-		// healing mechanic. Olm's hands are grouped with each other but not
-		// with the head, which is fought on its own terms — and note they
-		// respawn each phase rather than transforming, so each phase's hands
-		// are a fresh NPC.
+		// Chambers of Xeric. The vanguards are one fight, since they must be
+		// brought down together. Vasa's crystals are his healing mechanic. Olm's
+		// hands are grouped with each other but not with the head, and they
+		// respawn each phase rather than transforming.
 		put(groups, "Vanguards",
 			NpcID.RAIDS_VANGUARD_DORMANT, NpcID.RAIDS_VANGUARD_WALKING,
 			NpcID.RAIDS_VANGUARD_MELEE, NpcID.RAIDS_VANGUARD_RANGED, NpcID.RAIDS_VANGUARD_MAGIC);
@@ -144,18 +95,11 @@ final class EncounterGroup
 			NpcID.OLM_HAND_LEFT_SPAWNING, NpcID.OLM_HAND_LEFT, NpcID.OLM_HAND_LEFT_DYING,
 			NpcID.OLM_HAND_RIGHT_SPAWNING, NpcID.OLM_HAND_RIGHT, NpcID.OLM_HAND_RIGHT_DYING);
 
-		// Tombs of Amascut. Zebak and Kephri change id mid-fight for the same
-		// fight; the monkey room's baboons are a room rather than a set of
-		// kills.
 		// Phosani's Nightmare takes her totems, which are the other half of the
-		// fight. Her adds are grouped too but scored out below: they are killed
-		// in one hit, and their guaranteed max hits would drag the room towards
-		// perfect accuracy the longer one was spent on them.
-		//
-		// The totem ids are shared with The Nightmare. Nothing in a totem says
-		// whose it is, so the boss standing in the room decides — see the
-		// plugin's labelNightmareTotem. Listing them here is the default for
-		// when no boss has been seen at all.
+		// fight. Her adds are grouped too but scored out below. The totem ids
+		// are shared with The Nightmare, so the boss in the room decides which
+		// it is: see labelNightmareTotem. Listing them here is the default for
+		// when no boss has been seen.
 		put(groups, "Phosani's Nightmare",
 			NpcID.NIGHTMARE_CHALLENGE_INITIAL, NpcID.NIGHTMARE_CHALLENGE_BLAST,
 			NpcID.NIGHTMARE_CHALLENGE_PHASE_01, NpcID.NIGHTMARE_CHALLENGE_PHASE_02,
@@ -181,6 +125,8 @@ final class EncounterGroup
 
 		put(groups, "Yama", NpcID.YAMA, NpcID.YAMA_JUDGE_OF_YAMA, NpcID.LEAGUE6_JUDGE_OF_YAMA);
 
+		// Tombs of Amascut. Zebak and Kephri change id mid-fight for the same
+		// fight; the monkey room's baboons are a room rather than a set of kills.
 		put(groups, "Zebak", NpcID.TOA_ZEBAK, NpcID.TOA_ZEBAK_ENRAGED);
 		// Akkha takes his shadows and his enrage with him: the shadows are the
 		// same fight interrupted, not four separate kills.
@@ -190,7 +136,7 @@ final class EncounterGroup
 			NpcID.AKKHA_SHADOW, NpcID.AKKHA_SHADOW_ENRAGE,
 			NpcID.AKKHA_ENRAGE_DUMMY, NpcID.AKKHA_SHADOW_ENRAGE_DUMMY);
 		// Kephri takes her whole room: her own forms, the scarabs that come with
-		// them, and the eggs — which are grouped rather than ignored because
+		// them, and the eggs, which are grouped rather than ignored because
 		// killing them is a real job for anyone whose gear cannot outpace them.
 		put(groups, "Kephri",
 			NpcID.TOA_KEPHRI_BOSS_SHIELDED, NpcID.TOA_KEPHRI_BOSS_WEAK, NpcID.TOA_KEPHRI_BOSS_ENRAGE,
@@ -208,7 +154,7 @@ final class EncounterGroup
 		// Theatre of Blood.
 		// The nylocas group by style, big with small: one colour is one job.
 		// Both the incoming form and the fighting form it becomes on
-		// reaching a pillar are listed — only the incoming ones were, which
+		// reaching a pillar are listed, only the incoming ones were, which
 		// left every nylocas killed after it settled in reporting itself.
 		put(groups, "Nylocas (melee)",
 			NpcID.TOB_NYLOCAS_INCOMING_MELEE, NpcID.TOB_NYLOCAS_BIG_INCOMING_MELEE,
@@ -379,13 +325,9 @@ final class EncounterGroup
 			// A totem is only open once the shield behind it is broken.
 			NpcID.NIGHTMARE_TOTEM_1_DORMANT, NpcID.NIGHTMARE_TOTEM_2_DORMANT,
 			NpcID.NIGHTMARE_TOTEM_3_DORMANT, NpcID.NIGHTMARE_TOTEM_4_DORMANT,
-			// Akkha vanishes for his memory blast and cannot be attacked until
-			// he returns. That much is certain; that these two ids are what he
-			// wears while gone is a guess from their name, and the reason it is
-			// worth making is that it is free either way. If he transforms into
-			// one, this stops the blast being counted against the player. If he
-			// despawns instead, the fight ends on its own and nothing is
-			// counted regardless, so a wrong guess costs nothing.
+			// Akkha vanishes for his memory blast. That these two ids are what he
+			// wears while gone is a guess from the name, and free either way: if
+			// he despawns instead, the fight ends on its own and counts nothing.
 			NpcID.AKKHA_ENRAGE_DUMMY, NpcID.AKKHA_SHADOW_ENRAGE_DUMMY,
 			NpcID.TOB_MAIDEN_DYING_A, NpcID.TOB_MAIDEN_DYING_B,
 			NpcID.TOB_MAIDEN_DYING_A_STORY, NpcID.TOB_MAIDEN_DYING_B_STORY,

@@ -4,20 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
 
-/**
- * One boss or room: the fights that belong together, kept as a list rather
- * than as a second set of counters.
- *
- * <p>Everything here is summed from the fights on demand. A boss's phases stay
- * separately readable underneath, which is the point — knowing a kill went
- * badly is worth much less than knowing which phase it went badly on — and
- * there is no second copy of the numbers to drift out of step with the first.
- *
- * <p>Damage, hits and efficiency count only the fights worth scoring; ticks
- * count all of them. Kephri's healing scarabs are why: the time spent on them
- * is real and belongs to the room, but every hit on ten hitpoints is a max hit
- * that lands, so scoring them would pull the room towards perfect accuracy.
- */
+// One boss or room: the fights that belong together, kept as a list rather
+// than as a second set of counters.
 @Getter
 class Encounter
 {

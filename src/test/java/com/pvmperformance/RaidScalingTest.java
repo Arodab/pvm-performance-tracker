@@ -55,7 +55,7 @@ public class RaidScalingTest
 		assertTrue(RaidScaling.chambers(205, 1, 50, NONE) < RaidScaling.chambers(205, 1, 99, NONE));
 		assertTrue(RaidScaling.chambers(205, 1, 1, NONE) < RaidScaling.chambers(205, 1, 50, NONE));
 		// The lowest the term reaches is 55/99, and it is already there at 1
-		// hitpoint — the clamp guarding it never binds. Written down because it
+		// hitpoint, the clamp guarding it never binds. Written down because it
 		// is easy to read the clamp as doing more than it does.
 		assertEquals(205 * 55 / 99, RaidScaling.chambers(205, 1, 1, NONE));
 		assertEquals(RaidScaling.chambers(205, 1, 1, NONE), RaidScaling.chambers(205, 1, 2, NONE));

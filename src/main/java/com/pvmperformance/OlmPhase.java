@@ -3,19 +3,7 @@ package com.pvmperformance;
 import net.runelite.api.gameval.NpcID;
 import net.runelite.api.gameval.ObjectID;
 
-/**
- * Which special the Great Olm is running this phase.
- *
- * <p>Olm's phases differ by which of three specials he uses, and a player who
- * handles two of them well and the third badly learns nothing from a single
- * "Great Olm" figure averaging all of them. Naming the phase by its special
- * lets the three be compared against each other across a trip.
- *
- * <p>Each announces itself with something of its own in the scene, and the
- * gameval names say which is which outright. The CoX Additions plugin, which is
- * where this was expected to come from, counts phases by watching Olm's head
- * object spawn and despawn and does not identify the specials at all.
- */
+// Which special the Great Olm is running this phase.
 enum OlmPhase
 {
 	ACID("acid"),

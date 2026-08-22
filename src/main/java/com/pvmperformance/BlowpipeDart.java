@@ -4,21 +4,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import net.runelite.api.gameval.ItemID;
 
-/**
- * The dart loaded in a blowpipe.
- *
- * <p>A blowpipe carries its ammunition inside itself rather than in the ammo
- * slot, and the game exposes only how many charges are left, not what they are.
- * Since the dart supplies most of a blowpipe's ranged strength, leaving it out
- * understates the max hit badly, so it is asked for in the config instead.
- *
- * <p>Only the item is named here; its bonuses are read from the game's own item
- * stats, so they cannot drift from a hardcoded copy.
- *
- * <p>Public because the config interface returns it. That interface is served by
- * a dynamic proxy, which sits in its own runtime package and cannot reach a
- * package-private type — it throws IllegalAccessError on every call instead.
- */
+// The dart loaded in a blowpipe.
 @Getter
 @RequiredArgsConstructor
 public enum BlowpipeDart

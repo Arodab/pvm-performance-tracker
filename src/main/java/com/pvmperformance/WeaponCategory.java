@@ -8,26 +8,12 @@ import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/**
- * The combat options each weapon category offers, keyed by the value of
- * {@code VarbitID.COMBAT_WEAPON_CATEGORY}. Together with the COM_MODE
- * varplayer this identifies exactly which combat option the player has
- * selected, rather than guessing it from the weapon's bonuses.
- *
- * <p>The name is the reliable key, not the id. Reading the live game showed the
- * ids have been renumbered since this table's source: powered staff reported 24
- * where the table said 23, and Dinh's bulwark 28 where it said 27, while
- * everything below them still matched. Both observed shifts were by one, so the
- * ids from powered staff upward are set accordingly — an inference from two
- * points, where the names are read from the game itself.
- *
- * <p>Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, which
- * in turn follows the wiki's Module:CombatStyles, with entries corrected against
- * the table in RuneLite's own attack styles plugin (BSD-2): {@link #POLESTAFF}
- * is 13 rather than 18, which collided with {@link #STAFF}; {@link #BANNER}'s
- * third option is controlled; and {@link #PARTISAN}'s options had placeholder
- * values.
- */
+// The combat options each weapon category offers, keyed by the value of
+// VarbitID.COMBAT_WEAPON_CATEGORY. Together with the COM_MODE varplayer
+// this identifies exactly which combat option the player has selected,
+// rather than guessing it from the weapon's bonuses.
+// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, with
+// entries corrected against RuneLite's own attack styles plugin (BSD-2).
 @RequiredArgsConstructor
 enum WeaponCategory
 {
@@ -207,7 +193,7 @@ enum WeaponCategory
 	 * The category the combat tab names, or null if it isn't one of these. This
 	 * is the preferred way in: the name comes from the game and so cannot drift,
 	 * whereas the varbit ids have already been renumbered once underneath this
-	 * table — powered staff moved from 23 to 24, which made every trident
+	 * table, powered staff moved from 23 to 24, which made every trident
 	 * resolve as a banner and be calculated as a melee weapon.
 	 */
 	static WeaponCategory forName(String gameName)

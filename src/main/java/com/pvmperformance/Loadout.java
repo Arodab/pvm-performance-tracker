@@ -6,18 +6,7 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.client.game.ItemManager;
 
-/**
- * A set of worn items, by slot.
- *
- * <p>Its reason for existing apart from the equipment container is that a
- * loadout need not be the one being worn. Asking what some other gear would hit
- * for is then the same calculation with a different argument, rather than a
- * second calculation that has to be kept in step with the first — which is the
- * whole of what gear switching needs from the combat model.
- *
- * <p>Names are looked up once and kept, since most of the gear table matches on
- * them and a search asks the same questions of many loadouts.
- */
+// A set of worn items, by slot.
 final class Loadout
 {
 	private static final int SLOTS = EquipmentInventorySlot.AMMO.getSlotIdx() + 1;

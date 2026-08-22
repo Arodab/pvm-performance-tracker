@@ -1,12 +1,9 @@
 package com.pvmperformance;
 
-/**
- * The combat option the player has selected on the combat tab. Determines the
- * invisible level boosts applied to the attack and strength rolls, and (for
- * rapid) the weapon's attack speed.
- *
- * <p>Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton.
- */
+// The combat option the player has selected on the combat tab. Determines
+// the invisible level boosts applied to the attack and strength rolls, and
+// (for rapid) the weapon's attack speed.
+// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton.
 enum CombatStyle
 {
 	ACCURATE,

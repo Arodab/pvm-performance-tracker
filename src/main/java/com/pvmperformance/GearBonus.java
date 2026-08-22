@@ -2,22 +2,10 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-/**
- * The multipliers contributed by a gear effect. Effects stack multiplicatively.
- *
- * <p>{@link #damage} is what the max hit can reach and {@link #expectedDamage}
- * is what an average hit deals. They differ for effects where the best case
- * isn't the typical case: procs that only fire some of the time (the keris crit,
- * the ahrim's set), and weapons that roll damage over a narrowed band rather
- * than from zero (Osmumten's fang). For every other effect the two are equal.
- *
- * <p>An ordinary hit rolls uniformly from 0 to the max, so its average is half
- * the max; {@code expectedDamage} is where anything that shifts that average —
- * including a raised minimum hit — belongs.
- *
- * <p>Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, which
- * carries one damage figure; the split is this plugin's.
- */
+// The multipliers contributed by a gear effect. Effects stack
+// multiplicatively.
+// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton,
+// which carries one damage figure; the split into two is new here.
 @Getter
 class GearBonus
 {

@@ -229,7 +229,7 @@ class PvmPerformancePanel extends PluginPanel
 
 	/**
 	 * The efficiency and tick loss line, left off entirely when neither was
-	 * measured — an empty pair of dashes reads as a bad score rather than as no
+	 * measured, an empty pair of dashes reads as a bad score rather than as no
 	 * score, which is what a history recorded before these existed would show.
 	 */
 	private static String quality(NpcStats s)
