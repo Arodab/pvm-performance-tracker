@@ -10,6 +10,7 @@ class SessionTotals
 {
 	private long startMillis;
 	private long lastActivityMillis;
+	private long firstActivityMillis;
 	private int fights;
 	private int kills;
 	private int damageDealt;
@@ -48,6 +49,7 @@ class SessionTotals
 	{
 		startMillis = now;
 		lastActivityMillis = now;
+		firstActivityMillis = 0;
 		fights = 0;
 		kills = 0;
 		damageDealt = 0;
@@ -76,7 +78,7 @@ class SessionTotals
 		{
 			kills++;
 		}
-		lastActivityMillis = now;
+		noteActivity(now);
 	}
 
 	// Books a tick that passed with the weapon off cooldown and no attack
@@ -125,7 +127,7 @@ class SessionTotals
 		{
 			hits++;
 		}
-		lastActivityMillis = now;
+		noteActivity(now);
 	}
 
 	/**
@@ -176,9 +178,30 @@ class SessionTotals
 		}
 	}
 
+	/**
+	 * How long the trip has been running, from its first attack rather than
+	 * from when the plugin started.
+	 *
+	 * <p>It used to run from construction, which is login, so everything before
+	 * the first fight — the walk out, the bank trip, the stand-around — was in
+	 * the total and the figure read higher than the time actually spent.
+	 */
 	long durationMillis()
 	{
-		return Math.max(0, lastActivityMillis - startMillis);
+		return firstActivityMillis == 0 ? 0
+			: Math.max(0, lastActivityMillis - firstActivityMillis);
+	}
+
+	// Stamped by the first thing that happens rather than at construction. Zero
+	// means nothing has happened yet, which is why the trip reads no time at all
+	// until the first attack rather than counting up from login.
+	private void noteActivity(long now)
+	{
+		if (firstActivityMillis == 0)
+		{
+			firstActivityMillis = now;
+		}
+		lastActivityMillis = now;
 	}
 
 	int getTicksLost()
