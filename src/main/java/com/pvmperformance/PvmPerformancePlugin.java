@@ -560,6 +560,8 @@ public class PvmPerformancePlugin extends Plugin
 		// used for the figures and for the hit.
 		if (acceptedProjectileTick == client.getTickCount())
 		{
+			log.debug("TRACE proj REJECT second-this-tick tick={} id={}",
+				client.getTickCount(), projectile.getId());
 			return;
 		}
 		acceptedProjectileTick = client.getTickCount();
@@ -639,6 +641,9 @@ public class PvmPerformancePlugin extends Plugin
 		// asked while the firing tile still means something.
 		if (!firedFromWhereIWas(projectile, me))
 		{
+			log.debug("TRACE proj REJECT tile tick={} id={} x1={} y1={} me={} anim={}",
+				client.getTickCount(), projectile.getId(), projectile.getX1(),
+				projectile.getY1(), me.getLocalLocation(), me.getAnimation());
 			return false;
 		}
 		// And I have to have been able to fire it. Two players stand on one
@@ -652,6 +657,9 @@ public class PvmPerformancePlugin extends Plugin
 		// than dropping it.
 		if (client.getTickCount() < lastAttackSeenTick + combatCalc.attackSpeedTicks())
 		{
+			log.debug("TRACE proj REJECT cooldown tick={} id={} lastSeen={} speed={} cat={}",
+				client.getTickCount(), projectile.getId(), lastAttackSeenTick,
+				combatCalc.attackSpeedTicks(), combatCalc.categoryName());
 			return false;
 		}
 		// And I have to have been doing something. An attack animates, so a
@@ -668,6 +676,8 @@ public class PvmPerformancePlugin extends Plugin
 		// accepts and moves on, whatever the eat does to the attack animation.
 		if (me.getAnimation() == IDLE_ANIMATION)
 		{
+			log.debug("TRACE proj REJECT idle tick={} id={} pose={}",
+				client.getTickCount(), projectile.getId(), me.getPoseAnimation());
 			return false;
 		}
 		// And aimed at something I am engaged with. Held loosely on purpose:
@@ -675,11 +685,15 @@ public class PvmPerformancePlugin extends Plugin
 		// between a cast leaving and its projectile appearing, and requiring it
 		// dropped every splash. It is the check above that does the work.
 		final NPC aimedAt = (NPC) target;
-		return (clickedNpcIndex == aimedAt.getIndex()
+		final boolean engaged = (clickedNpcIndex == aimedAt.getIndex()
 				&& client.getTickCount() - clickedNpcTick <= CLICK_ATTRIBUTION_TICKS)
 			|| me.getInteracting() == target
 			|| (current != null && !current.isEnded()
 				&& current.getTargetIndex() == aimedAt.getIndex());
+		log.debug("TRACE proj {} tick={} id={} npc={} anim={} engaged={}",
+			engaged ? "ACCEPT" : "REJECT target", client.getTickCount(), projectile.getId(),
+			aimedAt.getIndex(), me.getAnimation(), engaged);
+		return engaged;
 	}
 
 	// Whether the projectile set off from where I was standing when it did. The
