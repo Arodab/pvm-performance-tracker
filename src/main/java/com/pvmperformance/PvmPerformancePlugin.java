@@ -594,25 +594,30 @@ public class PvmPerformancePlugin extends Plugin
 		// an instance it is worse than useless: the source point and the
 		// player's location are not in the same coordinate space at all, and the
 		// two were seen forty tiles apart with everything else matching.
+		// Where it set off from is the only thing here that identifies a caster,
+		// so it is required rather than consulted last. What it is aimed at
+		// cannot stand in for it: in company, every other player casting at the
+		// boss is casting at what I am fighting too, and each of their spells
+		// was being counted as mine and added to my expected damage.
+		//
+		// Compared in scene coordinates, which an instance does not translate,
+		// against where I stood on the tick it set off. A projectile is counted
+		// once, on first sight, which is the tick it was created — so this is
+		// asked while the firing tile still means something.
+		if (!firedFromWhereIWas(projectile, me))
+		{
+			return false;
+		}
+		// And aimed at something I am engaged with. Held loosely on purpose:
+		// any one of the three will do, because getInteracting alone lapses
+		// between a cast leaving and its projectile appearing, and requiring it
+		// dropped every splash. It is the check above that does the work.
 		final NPC aimedAt = (NPC) target;
-		if (clickedNpcIndex == aimedAt.getIndex()
-			&& client.getTickCount() - clickedNpcTick <= CLICK_ATTRIBUTION_TICKS)
-		{
-			return true;
-		}
-		if (me.getInteracting() == target)
-		{
-			return true;
-		}
-		if (current != null && !current.isEnded()
-			&& current.getTargetIndex() == aimedAt.getIndex())
-		{
-			return true;
-		}
-		// Nothing says it is aimed at what I am doing, so fall back to where it
-		// began. Compared in scene coordinates, which an instance does not
-		// translate, against where I stood on the tick it actually set off.
-		return firedFromWhereIWas(projectile, me);
+		return (clickedNpcIndex == aimedAt.getIndex()
+				&& client.getTickCount() - clickedNpcTick <= CLICK_ATTRIBUTION_TICKS)
+			|| me.getInteracting() == target
+			|| (current != null && !current.isEnded()
+				&& current.getTargetIndex() == aimedAt.getIndex());
 	}
 
 	// Whether the projectile set off from where I was standing when it did. The
