@@ -129,6 +129,10 @@ public class PvmPerformancePlugin extends Plugin
 	// The switch history needs the same reach as the prayer one, and for the
 	// same reason: the gap between an attack and its booking differs by style.
 	private static final int SWITCH_HISTORY_TICKS = 10;
+	// How long an attack may stay in the air before its expected figures are
+	// given up on. Comfortably past any real flight, so only an attack that
+	// truly never landed is dropped by this rather than by the fight ending.
+	private static final int PENDING_SAMPLE_TICKS = 10;
 	// How many ticks after an attack goes out it is booked. Measured from the
 	// trace, not reasoned about: with a flick on the attack tick the mark lands
 	// two ticks below the booking tick for a projectile and one below for a
@@ -254,6 +258,8 @@ public class PvmPerformancePlugin extends Plugin
 	// The last tick a cast was booked from its animation, so the hitsplat does
 	// not book the same cast a second time.
 	private int lastCastBookedTick = Integer.MIN_VALUE;
+	// Expected figures for attacks that have gone out but not yet landed.
+	private final List<PendingSample> pendingSamples = new ArrayList<>();
 	// The tick a projectile was last taken as mine, so at most one is taken per
 	// tick. A player cannot throw two attacks in one.
 	private int acceptedProjectileTick = Integer.MIN_VALUE;
@@ -460,6 +466,9 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				burstLanded.add(npc.getIndex());
 			}
+			// This is the attack landing, so whatever was waiting on this NPC
+			// gets its expectation counted now, beside the damage it did.
+			resolvePendingSample(npc.getIndex());
 			current.recordDamageDealt(hitsplat.getAmount(), now, landedAttack);
 			if (current.isScored())
 			{
@@ -829,6 +838,7 @@ public class PvmPerformancePlugin extends Plugin
 		// booked from the caster's animation, which is the only thing that sees
 		// one that misses, so booking it again here would double it.
 		final long now = System.currentTimeMillis();
+		resolvePendingSample(index);
 		current.recordSplash(now);
 		// Gated exactly as a landed hit is: an unscored NPC spends the tick but
 		// contributes no damage, accuracy or efficiency, and a splash on one is
@@ -872,6 +882,10 @@ public class PvmPerformancePlugin extends Plugin
 		switchedByTick.put(client.getTickCount(),
 			!combatCalc.missedGearSwitch(shown != null ? shown.getTargetId() : -1));
 		switchedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
+		// A sample whose attack should long since have landed is dropped, so a
+		// resolve that never comes cannot leave it waiting for the next fight's
+		// hitsplat to claim it.
+		pendingSamples.removeIf(sample -> client.getTickCount() - sample.tick > PENDING_SAMPLE_TICKS);
 		// The speed of the weapon that will throw an attack on this tick, kept
 		// per tick for the same reason as everything else here. Asked at the
 		// booking instead it answers for whatever is held by then, which after a
@@ -991,12 +1005,83 @@ public class PvmPerformancePlugin extends Plugin
 			accuracy = combatCalc.hitChance(targetId);
 			averageHit = combatCalc.averageHit(targetId);
 		}
-		fight.recordExpected(maxHit, accuracy, averageHit);
-		session.recordExpected(accuracy, averageHit);
+		// Held rather than added, unless the attack has already resolved. What
+		// an attack was expected to deal only belongs beside what it did deal
+		// if it got the chance to deal it: a cast still in the air when someone
+		// else lands the kill deals nothing, and counting its expectation
+		// against a measured nought reads as the player having underperformed.
+		// In a group that is most of the last cast on every kill.
+		//
+		// A melee blow is booked by its own hitsplat, so it has already
+		// resolved and goes straight in.
+		if (attackObservedLag == MELEE_BOOKING_LAG)
+		{
+			fight.recordExpected(maxHit, accuracy, averageHit);
+			session.recordExpected(accuracy, averageHit);
+		}
+		else
+		{
+			pendingSamples.add(new PendingSample(
+				fight.getTargetIndex(), client.getTickCount(), maxHit, accuracy, averageHit));
+		}
 		// Spent: they describe one attack, not the next.
 		attackObservedNpcId = -1;
 		attackObservedAccuracy = -1;
 		attackObservedAverageHit = -1;
+	}
+
+	/**
+	 * What an attack was expected to do, held until it is known to have
+	 * resolved. Only the expected damage and hits wait: the attempt, the tick
+	 * and the prayer, boost and switch counters are all recorded when the
+	 * attack goes out, because those describe how it was set up and that
+	 * happened whatever became of it.
+	 */
+	private static final class PendingSample
+	{
+		private final int npcIndex;
+		private final int tick;
+		private final int maxHit;
+		private final double accuracy;
+		private final double averageHit;
+
+		private PendingSample(int npcIndex, int tick, int maxHit, double accuracy, double averageHit)
+		{
+			this.npcIndex = npcIndex;
+			this.tick = tick;
+			this.maxHit = maxHit;
+			this.accuracy = accuracy;
+			this.averageHit = averageHit;
+		}
+	}
+
+	// An attack landed on this NPC, so the oldest thing waiting on it is what
+	// resolved. A splash counts: it landed for nought, which is a real miss and
+	// belongs in the accuracy.
+	private void resolvePendingSample(int npcIndex)
+	{
+		for (int i = 0; i < pendingSamples.size(); i++)
+		{
+			final PendingSample sample = pendingSamples.get(i);
+			if (sample.npcIndex != npcIndex)
+			{
+				continue;
+			}
+			pendingSamples.remove(i);
+			if (current != null && !current.isEnded())
+			{
+				current.recordExpected(sample.maxHit, sample.accuracy, sample.averageHit);
+			}
+			session.recordExpected(sample.accuracy, sample.averageHit);
+			return;
+		}
+	}
+
+	// Anything still waiting once its target is gone never landed, and is
+	// dropped rather than counted against a measured nought.
+	private void dropPendingSamples()
+	{
+		pendingSamples.clear();
 	}
 
 	/** The trip totals shown when the overlay is set to whole-trip mode. */
@@ -1793,6 +1878,10 @@ public class PvmPerformancePlugin extends Plugin
 	private void finalizeFight(boolean died, long now)
 	{
 		current.end(died, now);
+		// Anything still in the air never landed. Counting what it was expected
+		// to deal against the nought it actually dealt is what made a group kill
+		// read as underperformance.
+		dropPendingSamples();
 		pendingMineHits.clear();
 		// Nothing is being fought, so no drain should be read against anything.
 		combatCalc.setTargetIndex(-1);
