@@ -20,7 +20,7 @@ class SessionTotals
 	private int attacksPotted;
 	// Attacks thrown with nothing better available to switch into. The gap to
 	// attacksMade is the number that missed at least one switch.
-	private int attacksGeared;
+	private int attacksSwitched;
 	private double sumActualSetup;
 	private double sumIdealSetup;
 	private int ticksLostEating;
@@ -56,7 +56,7 @@ class SessionTotals
 		attacksMade = 0;
 		attacksPrayed = 0;
 		attacksPotted = 0;
-		attacksGeared = 0;
+		attacksSwitched = 0;
 		sumActualSetup = 0;
 		sumIdealSetup = 0;
 		ticksLostEating = 0;
@@ -145,15 +145,15 @@ class SessionTotals
 		}
 	}
 
-	void recordAttackResolved(boolean prayed, boolean geared, double actualSetup, double idealSetup)
+	void recordAttackResolved(boolean prayed, boolean switched, double actualSetup, double idealSetup)
 	{
 		if (prayed)
 		{
 			attacksPrayed++;
 		}
-		if (geared)
+		if (switched)
 		{
-			attacksGeared++;
+			attacksSwitched++;
 		}
 		if (actualSetup >= 0 && idealSetup > 0)
 		{

@@ -170,14 +170,14 @@ class Encounter
 		return total;
 	}
 
-	int getAttacksGeared()
+	int getAttacksSwitched()
 	{
 		int total = 0;
 		for (Fight fight : fights)
 		{
 			if (fight.isScored())
 			{
-				total += fight.getAttacksGeared();
+				total += fight.getAttacksSwitched();
 			}
 		}
 		return total;

@@ -145,7 +145,7 @@ public class PvmPerformancePlugin extends Plugin
 		+ "started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
 		+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
 		+ "ticksLost,ticksLostPct,ticksLostEating,ticksToEngage,"
-		+ "attacksMade,attacksPrayed,attacksPotted,attacksGeared,efficiencyPct\n";
+		+ "attacksMade,attacksPrayed,attacksPotted,attacksSwitched,efficiencyPct\n";
 
 	private static final DateTimeFormatter ROW_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -717,13 +717,13 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	private void record(boolean prayed, boolean geared, double actual, double ideal)
+	private void record(boolean prayed, boolean switched, double actual, double ideal)
 	{
 		if (current != null && !current.isEnded())
 		{
-			current.recordAttackResolved(prayed, geared, actual, ideal);
+			current.recordAttackResolved(prayed, switched, actual, ideal);
 		}
-		session.recordAttackResolved(prayed, geared, actual, ideal);
+		session.recordAttackResolved(prayed, switched, actual, ideal);
 	}
 
 	private void sampleExpected(Fight fight)
@@ -935,7 +935,7 @@ public class PvmPerformancePlugin extends Plugin
 			// Asked here, on the attack tick, for the same reason the prayer is:
 			// what was carried and what was worn at that instant is what the
 			// player could have done, and both change between attacks.
-			final boolean geared = !combatCalc.missedGearSwitch(targetId);
+			final boolean switched = !combatCalc.missedGearSwitch(targetId);
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
@@ -949,7 +949,7 @@ public class PvmPerformancePlugin extends Plugin
 				// went with it. Reading it when the hitsplat arrives instead
 				// measured the prayer at the LANDING, ticks after the server had
 				// already scored the attack.
-				record(prayed, geared, prayed ? ifPrayed : ifNot, idealSetup);
+				record(prayed, switched, prayed ? ifPrayed : ifNot, idealSetup);
 				// Sampled on the tick the attack went out, not the tick it
 				// resolved, so the figures describe the loadout that threw it,
 				// every style updates on the same beat, and one attack takes one
@@ -1775,7 +1775,7 @@ public class PvmPerformancePlugin extends Plugin
 				room.getAttacksMade(),
 				room.getAttacksPrayed(),
 				room.getAttacksPotted(),
-				room.getAttacksGeared(),
+				room.getAttacksSwitched(),
 				csvExpected(room.efficiency() * 100, 1));
 	}
 
@@ -1808,7 +1808,7 @@ public class PvmPerformancePlugin extends Plugin
 				raid.getAttacksMade(),
 				raid.getAttacksPrayed(),
 				raid.getAttacksPotted(),
-				raid.getAttacksGeared(),
+				raid.getAttacksSwitched(),
 				csvExpected(raid.efficiency() * 100, 1));
 	}
 
@@ -1847,7 +1847,7 @@ public class PvmPerformancePlugin extends Plugin
 			fight.getAttacksMade(),
 			fight.getAttacksPrayed(),
 			fight.getAttacksPotted(),
-			fight.getAttacksGeared(),
+			fight.getAttacksSwitched(),
 			csvExpected(fight.efficiency() * 100, 1));
 	}
 

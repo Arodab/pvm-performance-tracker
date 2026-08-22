@@ -163,13 +163,13 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.left("  potted")
 				.right(potted + "/" + made)
 				.build());
-			final int geared = session != null ? session.getAttacksGeared()
-				: raid != null ? raid.getAttacksGeared() : room.getAttacksGeared();
+			final int switched = session != null ? session.getAttacksSwitched()
+				: raid != null ? raid.getAttacksSwitched() : room.getAttacksSwitched();
 			// The gap to made is the number of attacks that missed at least one
 			// switch, read the same way as the two lines above it.
 			panelComponent.getChildren().add(LineComponent.builder()
-				.left("  geared")
-				.right(geared + "/" + made)
+				.left("  switches")
+				.right(switched + "/" + made)
 				.build());
 		}
 
