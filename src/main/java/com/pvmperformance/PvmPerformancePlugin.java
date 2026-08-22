@@ -267,6 +267,9 @@ public class PvmPerformancePlugin extends Plugin
 	// in progress. Set from the varbit event, which is the only thing that sees
 	// a flick, and cleared once the tick's answer has been stored.
 	private boolean prayerSeenUpThisTick;
+	// TRACE. The tick a prayer pulse was last witnessed on, to tell that tick
+	// apart from the one the answer is stored against.
+	private int prayerPulseTick = Integer.MIN_VALUE;
 	// The tick an eat was last seen on, so the pause it causes is credited to it
 	// rather than only the one tick its animation shows for.
 	private int lastConsumeTick;
@@ -1112,6 +1115,17 @@ public class PvmPerformancePlugin extends Plugin
 		if (combatCalc.hasOffensivePrayerNow())
 		{
 			prayerSeenUpThisTick = true;
+			// TRACE. The tick the pulse was actually witnessed on, which is not
+			// necessarily the tick it ends up stored against: getTickCount does
+			// not advance until the next GameTick. One flick appearing in two
+			// adjacent ticks shows up here as two pulses.
+			if (prayerPulseTick != client.getTickCount())
+			{
+				log.debug("TRACE prayerPulse seenAtTick={} cycle={} server={}",
+					client.getTickCount(), client.getGameCycle(),
+					combatCalc.hasOffensivePrayer());
+			}
+			prayerPulseTick = client.getTickCount();
 		}
 	}
 
@@ -1140,11 +1154,17 @@ public class PvmPerformancePlugin extends Plugin
 		// Placed after trackAttackCooldown on purpose. An attack booked this
 		// tick went out on an earlier one and reads that tick's stored answer,
 		// so this write must not land before the read.
-		final boolean upThisTick = prayerSeenUpThisTick || combatCalc.hasOffensivePrayerNow();
+		final boolean live = combatCalc.hasOffensivePrayerNow();
+		final boolean upThisTick = prayerSeenUpThisTick || live;
 		if (current != null && !current.isEnded())
 		{
-			log.debug("TRACE prayerHist tick={} stored={} flicked={} {}",
-				client.getTickCount(), upThisTick, prayerSeenUpThisTick, combatCalc.prayerTrace());
+			// TRACE. altSameTick is the candidate rule: credit the pulse only to
+			// the tick it was witnessed on, rather than to whichever tick is
+			// current when the answer is stored. If the early flick reads
+			// stored=true altSameTick=false, that is the whole of the bug.
+			log.debug("TRACE prayerHist tick={} stored={} flicked={} pulseTick={} live={} altSameTick={} {}",
+				client.getTickCount(), upThisTick, prayerSeenUpThisTick, prayerPulseTick, live,
+				prayerPulseTick == client.getTickCount() || live, combatCalc.prayerTrace());
 		}
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
 		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
