@@ -94,6 +94,10 @@ class CombatCalc
 	// The index of the NPC the figures are being computed against, so the
 	// defence read can account for what has been drained off it.
 	private int targetIndex = -1;
+	// The enemy a miss has armed the confliction gauntlets against, or -1. Held
+	// per enemy because the effect is spent on the next attack against that
+	// same one, and dropped by switching target.
+	private int conflictionArmedIndex = -1;
 	private BlowpipeDart cachedDart;
 	private ItemEquipmentStats cachedDartStats;
 
@@ -491,20 +495,38 @@ class CombatCalc
 		{
 			return hitChanceFrom(attRoll, defRoll);
 		}
-		return conflictionHitChance(attRoll, defRoll);
+		// The real chance for the attack about to be thrown, not the long-run
+		// average of them. The gauntlets roll accuracy twice after a miss, so
+		// every attack is at one of exactly two chances, and which one is known:
+		// the previous attack either missed this enemy or it did not.
+		//
+		// This used to return the steady state, the share of attacks that would
+		// carry the bonus over a long fight, which is right in aggregate and
+		// wrong for every individual attack — and it is individual attacks that
+		// the expected damage and expected hits are summed from.
+		//
+		// "Against the same enemy" is the wiki's wording and is why this is
+		// armed against an index rather than a flag: switching target drops it.
+		return conflictionArmedIndex == targetIndex
+			? 1.0 - sharedDefenceMissChance(attRoll, defRoll)
+			: hitChanceFrom(attRoll, defRoll);
 	}
 
-	// Confliction gauntlets double the roll only on the attack after a splash,
-	// so the rate depends on how often you splash, which depends on the rate.
-	// Over a fight it settles: missing at 1-p enters the doubled state and
-	// missing again at 1-q keeps you there, so the share getting the bonus is
-	// (1-p)/(1-p+q). Reduces to p when q == p.
-	private static double conflictionHitChance(int attRoll, int defRoll)
+	/**
+	 * Notes how a magic attack of mine ended, which is what says whether the
+	 * next one against that enemy rolls twice. A miss arms the gauntlets and a
+	 * hit spends them; the effect does not stack across consecutive misses,
+	 * so arming twice is the same as arming once.
+	 */
+	void noteMagicResolved(int npcIndex, boolean missed)
 	{
-		final double p = hitChanceFrom(attRoll, defRoll);
-		final double q = 1.0 - sharedDefenceMissChance(attRoll, defRoll);
-		final double doubledShare = (1.0 - p) / (1.0 - p + q);
-		return (1.0 - doubledShare) * p + doubledShare * q;
+		conflictionArmedIndex = missed ? npcIndex : -1;
+	}
+
+	/** Whether the gauntlets are in play at all, so the caller can skip the rest. */
+	boolean usesConflictionGauntlets()
+	{
+		return hasConflictionGauntlets() && attackStyle().getAttackType() == AttackType.MAGIC;
 	}
 
 	/**

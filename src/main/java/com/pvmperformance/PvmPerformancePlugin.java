@@ -469,6 +469,12 @@ public class PvmPerformancePlugin extends Plugin
 			// This is the attack landing, so whatever was waiting on this NPC
 			// gets its expectation counted now, beside the damage it did.
 			resolvePendingSample(npc.getIndex());
+			// A zero is a miss, which is what arms the confliction gauntlets
+			// for the next cast against this same enemy.
+			if (combatCalc.usesConflictionGauntlets())
+			{
+				combatCalc.noteMagicResolved(npc.getIndex(), hitsplat.getAmount() == 0);
+			}
 			current.recordDamageDealt(hitsplat.getAmount(), now, landedAttack);
 			if (current.isScored())
 			{
@@ -839,6 +845,10 @@ public class PvmPerformancePlugin extends Plugin
 		// one that misses, so booking it again here would double it.
 		final long now = System.currentTimeMillis();
 		resolvePendingSample(index);
+		if (combatCalc.usesConflictionGauntlets())
+		{
+			combatCalc.noteMagicResolved(index, true);
+		}
 		current.recordSplash(now);
 		// Gated exactly as a landed hit is: an unscored NPC spends the tick but
 		// contributes no damage, accuracy or efficiency, and a splash on one is
@@ -1745,7 +1755,10 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		// getHealth is nullable, and the fight takes an int.
 		final Integer maxHp = npcManager.getHealth(npc.getId());
-		current = new Fight(npc.getName(), npc.getId(), npc.getIndex(), maxHp == null ? -1 : maxHp, now,
+		// Tags stripped: some names carry colour markup and it was reaching the
+		// CSV verbatim, "<col=00ffff>Rubble</col>" and all.
+		current = new Fight(Text.removeTags(npc.getName()), npc.getId(), npc.getIndex(),
+			maxHp == null ? -1 : maxHp, now,
 			raidType, raidCounter);
 		targetLiveId = npc.getId();
 		targetNpc = npc;

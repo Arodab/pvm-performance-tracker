@@ -67,7 +67,7 @@ class PvmPerformanceOverlay extends OverlayPanel
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
 				.left("Max hit")
-				.right("~" + maxHit)
+				.right(String.valueOf(maxHit))
 				.build());
 		}
 
@@ -78,8 +78,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 			panelComponent.getChildren().add(LineComponent.builder()
 				.left("Spec max")
 				.right(spec.hits() > 1
-					? "~" + specMaxHit + " (" + spec.hits() + ")"
-					: "~" + specMaxHit)
+					? specMaxHit + " (" + spec.hits() + ")"
+					: String.valueOf(specMaxHit))
 				.build());
 		}
 
