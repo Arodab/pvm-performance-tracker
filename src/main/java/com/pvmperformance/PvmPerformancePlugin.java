@@ -263,12 +263,7 @@ public class PvmPerformancePlugin extends Plugin
 	// as a history rather than a slot or two because the tick an attack went out
 	// on is not the tick it is booked on, and the gap differs by style.
 	private final Map<Integer, Boolean> prayerUpByTick = new HashMap<>();
-	// Whether the goal prayer has been seen up at any point during the tick now
-	// in progress. Set from the varbit event, which is the only thing that sees
-	// a flick, and cleared once the tick's answer has been stored.
-	private boolean prayerSeenUpThisTick;
-	// TRACE. The tick a prayer pulse was last witnessed on, to tell that tick
-	// apart from the one the answer is stored against.
+	// TRACE. The tick a prayer pulse was last logged on, so one flick logs once.
 	private int prayerPulseTick = Integer.MIN_VALUE;
 	// The tick an eat was last seen on, so the pause it causes is credited to it
 	// rather than only the one tick its animation shows for.
@@ -363,7 +358,6 @@ public class PvmPerformancePlugin extends Plugin
 		history.clear();
 		countedProjectiles.clear();
 		recentTiles.clear();
-		prayerSeenUpThisTick = false;
 		expectedByTick.clear();
 		lastHitsplatTick.clear();
 		burstLanded.clear();
@@ -1107,24 +1101,12 @@ public class PvmPerformancePlugin extends Plugin
 		// says a special went out and the player's own specials are not carried
 		// by the party message.
 		drain.onEnergyChanged();
-		// The only place a flick is visible. A one-tick flick is a pulse: the
-		// prayer goes up and is down again before the tick ends, so the reading
-		// taken at the end of the tick can miss it entirely, while the server
-		// resolved the attack with it up. Caught here and remembered for the
-		// tick, rather than asked for once when the tick is already over.
-		if (combatCalc.hasOffensivePrayerNow())
+		// TRACE. The pulse is no longer acted on — see the history write — but
+		// seeing when it lands is what tells a mistimed flick from a missed one.
+		if (combatCalc.hasOffensivePrayerNow() && prayerPulseTick != client.getTickCount())
 		{
-			prayerSeenUpThisTick = true;
-			// TRACE. The tick the pulse was actually witnessed on, which is not
-			// necessarily the tick it ends up stored against: getTickCount does
-			// not advance until the next GameTick. One flick appearing in two
-			// adjacent ticks shows up here as two pulses.
-			if (prayerPulseTick != client.getTickCount())
-			{
-				log.debug("TRACE prayerPulse seenAtTick={} cycle={} server={}",
-					client.getTickCount(), client.getGameCycle(),
-					combatCalc.hasOffensivePrayer());
-			}
+			log.debug("TRACE prayerPulse seenAtTick={} cycle={} client=true server={}",
+				client.getTickCount(), client.getGameCycle(), combatCalc.hasOffensivePrayer());
 			prayerPulseTick = client.getTickCount();
 		}
 	}
@@ -1142,33 +1124,30 @@ public class PvmPerformancePlugin extends Plugin
 		// tick would date every sample by one tick and misattribute any switch.
 		refreshExpected();
 		trackAttackCooldown();
-		// Up at any point during the tick, not up at the instant it ended. A
-		// prayer held is caught by the live reading; a prayer flicked is caught
-		// only by the flag, since the pulse is over before this runs.
+		// The server's copy, which is the only one that answers the question
+		// being asked: did the server resolve this tick with the prayer up.
+		// Clicking a prayer off flips the client's copy at once so the orb
+		// responds without waiting for a reply, which is exactly what a flick
+		// does at the end of a tick — the client reads off while the server
+		// still resolved the attack with it up. That is the undercount.
 		//
-		// Cleared immediately after, and never seeded from the live reading.
-		// That distinction is the whole of an earlier bug: seeding it let a
-		// prayer up at the end of one tick satisfy the next tick as well, so one
-		// flick covered two bookings. Clearing keeps each tick's answer its own.
+		// A flag fed from the varbit event was tried here and removed. It could
+		// only add trues, and it added them a tick late as well as on time, so
+		// one flick satisfied two bookings. It also earned nothing: on every
+		// pulse traced, the reading below was already true on its own.
 		//
 		// Placed after trackAttackCooldown on purpose. An attack booked this
 		// tick went out on an earlier one and reads that tick's stored answer,
 		// so this write must not land before the read.
-		final boolean live = combatCalc.hasOffensivePrayerNow();
-		final boolean upThisTick = prayerSeenUpThisTick || live;
+		final boolean upThisTick = combatCalc.hasOffensivePrayer();
 		if (current != null && !current.isEnded())
 		{
-			// TRACE. altSameTick is the candidate rule: credit the pulse only to
-			// the tick it was witnessed on, rather than to whichever tick is
-			// current when the answer is stored. If the early flick reads
-			// stored=true altSameTick=false, that is the whole of the bug.
-			log.debug("TRACE prayerHist tick={} stored={} flicked={} pulseTick={} live={} altSameTick={} {}",
-				client.getTickCount(), upThisTick, prayerSeenUpThisTick, prayerPulseTick, live,
-				prayerPulseTick == client.getTickCount() || live, combatCalc.prayerTrace());
+			log.debug("TRACE prayerHist tick={} stored={} clientSays={} {}",
+				client.getTickCount(), upThisTick, combatCalc.hasOffensivePrayerNow(),
+				combatCalc.prayerTrace());
 		}
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
 		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
-		prayerSeenUpThisTick = false;
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
@@ -1232,7 +1211,6 @@ public class PvmPerformancePlugin extends Plugin
 			}
 			countedProjectiles.clear();
 			recentTiles.clear();
-			prayerSeenUpThisTick = false;
 			lastHitsplatTick.clear();
 			burstLanded.clear();
 			pendingMineHits.clear();
