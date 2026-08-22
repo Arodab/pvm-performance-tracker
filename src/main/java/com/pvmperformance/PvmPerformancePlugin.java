@@ -212,7 +212,11 @@ public class PvmPerformancePlugin extends Plugin
 	private int clickedNpcIndex = -1;
 	private int clickedNpcTick = -1;
 	// Ticks left before the weapon can attack again; 0 means it is ready.
-	private int attackCooldown;
+	// The tick the next attack is due on, counted from the tick the last one
+	// went out rather than the tick it was booked. A countdown started at the
+	// booking measures the gap between bookings instead, and that gap is a tick
+	// longer whenever the style changes from melee to a projectile one.
+	private int attackDueTick = Integer.MIN_VALUE;
 	// The tick an attack was last seen going out on, set from the events that
 	// prove one happened rather than from what the player looks like, and which
 	// event proved it. A projectile is a cast or a shot; a hitsplat is a melee
@@ -740,6 +744,17 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Whether an attack that has not been booked by now is late. Static and
+	 * separate because the whole of a bug lived in it: dueTick counts in attack
+	 * ticks and {@code now} is a booking tick, and the two are a tick or two
+	 * apart depending on what will prove the next attack.
+	 */
+	static boolean attackOverdue(int now, int dueTick, int bookingLag)
+	{
+		return now >= dueTick + bookingLag;
+	}
+
 	private void record(boolean prayed, boolean switched, double actual, double ideal)
 	{
 		if (current != null && !current.isEnded())
@@ -894,7 +909,7 @@ public class PvmPerformancePlugin extends Plugin
 
 		if (current == null || current.isEnded())
 		{
-			attackCooldown = 0;
+			attackDueTick = Integer.MIN_VALUE;
 			return;
 		}
 		if (attacked)
@@ -995,7 +1010,10 @@ public class PvmPerformancePlugin extends Plugin
 			// out, the cooldown included, a cast holds the weapon for five ticks
 			// and a whip for four, so spending the cast any earlier would put the
 			// spell on the whip's clock.
-			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
+			// From the tick the attack went out on, not from this one. This is
+			// the booking tick, which trails the attack by one for melee and
+			// two for a projectile.
+			attackDueTick = attackTick + combatCalc.attackSpeedTicks();
 			if (attackObservedFromProjectile)
 			{
 				// Only a cast can spend a cast. A melee blow landing on the tick
@@ -1017,14 +1035,23 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			// Between phases, charging, or dead but still standing. The tick is
 			// booked neither lost nor spent: no attack was possible, so counting
-			// it either way would move a figure that measures choices.
-			attackCooldown = Math.max(0, attackCooldown - 1);
+			// it either way would move a figure that measures choices. The due
+			// tick simply passes while this runs, which is what leaves the first
+			// attackable tick due immediately.
 			return;
 		}
 		final boolean counts = current.isAttacking();
-		if (attackCooldown > 0)
+		// The due tick is in attack ticks; a booking arrives a tick or two after
+		// the attack it describes, so the wait is measured against the tick that
+		// booking would land on. Which lag applies is decided by the weapon in
+		// hand now rather than the one that threw the last attack, because it is
+		// the next attack whose booking is being waited for: a whip attack
+		// followed by a switch to a trident is booked two ticks after the trident
+		// goes out, and holding that to the whip's one-tick lag booked a lost
+		// tick on every switch from melee into a projectile weapon.
+		final int lag = combatCalc.isMeleeEquipped() ? MELEE_BOOKING_LAG : PROJECTILE_BOOKING_LAG;
+		if (!attackOverdue(client.getTickCount(), attackDueTick, lag))
 		{
-			attackCooldown--;
 			current.recordTickSpent();
 			if (counts)
 			{
