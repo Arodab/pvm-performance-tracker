@@ -229,6 +229,8 @@ public class PvmPerformancePlugin extends Plugin
 	// The tick a projectile was last taken as mine, so at most one is taken per
 	// tick. A player cannot throw two attacks in one.
 	private int acceptedProjectileTick = Integer.MIN_VALUE;
+	// What getAnimation returns when nothing is playing.
+	private static final int IDLE_ANIMATION = -1;
 	// The tick an attack was last seen going out on, set from the events that
 	// prove one happened rather than from what the player looks like, and which
 	// event proved it. A projectile is a cast or a shot; a hitsplat is a melee
@@ -643,6 +645,22 @@ public class PvmPerformancePlugin extends Plugin
 		// wait, and letting one of my own attacks through wrongly is better
 		// than dropping it.
 		if (client.getTickCount() < lastAttackSeenTick + combatCalc.attackSpeedTicks())
+		{
+			return false;
+		}
+		// And I have to have been doing something. An attack animates, so a
+		// player with nothing playing did not throw this — which closes the
+		// last gap, a neighbour casting while I stand still with nothing on
+		// cooldown.
+		//
+		// The only thing asked of the animation, and only ever a rejection.
+		// Naming the animation of every spell and staff would be a table to
+		// maintain where a missing entry silently drops attacks, and that is
+		// what sank two earlier designs. This needs no table: it does not care
+		// what the animation is, only that there is one. It is also why eating
+		// cannot cost an attack either way — an eat is an animation, so this
+		// accepts and moves on, whatever the eat does to the attack animation.
+		if (me.getAnimation() == IDLE_ANIMATION)
 		{
 			return false;
 		}
