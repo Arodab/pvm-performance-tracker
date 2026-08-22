@@ -916,9 +916,11 @@ class CombatCalc
 				}
 			}
 		}
-		if (type == AttackType.MAGIC)
+		if (type == AttackType.MAGIC && usingWeaponsOwnAttack())
 		{
-			// The shadow multiplies the magic accuracy of everything else worn.
+			// The shadow multiplies the magic accuracy of everything else worn,
+			// on the same terms as the damage: its built-in spell only. A cast
+			// made while holding it is an ordinary cast.
 			total *= gearBonuses.shadowMultiplier(gear);
 		}
 		if (type == AttackType.RANGED)
@@ -1194,17 +1196,35 @@ class CombatCalc
 			}
 		}
 		percent += gearBonuses.virtusAncientDamagePercent(gear, spell);
-		// The shadow's multiplied magic damage is capped at 100%.
-		final int multiplier = gearBonuses.shadowMultiplier(gear);
+		// The shadow's passive belongs to its built-in spell and to nothing
+		// else. Casting blood barrage while holding it is an ordinary cast: the
+		// wiki calls the effect "exclusive to its built-in spell", and applying
+		// it to every cast read a manual barrage at the 100% cap when the gear
+		// alone was nowhere near it. A null spell is the weapon's own attack,
+		// which is the only thing the multiplier may touch.
+		final int multiplier = spell == null ? gearBonuses.shadowMultiplier(gear) : 1;
 		percent *= multiplier;
 		if (multiplier > 1)
 		{
+			// Tripled equipment damage is capped at 100%; the prayer share below
+			// is added after, and is not equipment.
 			percent = Math.min(100.0, percent);
 		}
 		// Prayer magic damage is not worn equipment, so the shadow doesn't
 		// multiply it and the equipment cap doesn't apply to it.
 		percent += magicDamagePrayerPercent();
 		return (int) Math.floor(baseMaxHit * (1.0 + percent / 100.0));
+	}
+
+	/**
+	 * Whether the magic attack in hand is the weapon's own rather than a spell.
+	 * A manual cast is a cast whatever is held, and a powered staff cannot
+	 * autocast, so anything else with a staff recognised by name is its own
+	 * attack. This is what the shadow's passive is gated on.
+	 */
+	private boolean usingWeaponsOwnAttack()
+	{
+		return activeManualCast() == null && poweredStaffMaxHit() > 0;
 	}
 
 	// The staff's own attack, for powered staves, or 0 if this isn't one.
@@ -1287,6 +1307,33 @@ class CombatCalc
 			? String.format("Max hit %d, no accuracy without target stats", maxHit(npcId))
 			: String.format("Max hit %d, accuracy %.1f%%, avg hit %.2f",
 				maxHit(npcId), accuracy * 100, averageHit(npcId)));
+
+		// Where a magic max hit came from. Every part of it is a separate rule
+		// and a wrong figure is otherwise one number with nothing behind it —
+		// the wand's stale multiplier and the shadow's misapplied passive both
+		// showed up only as "the max hit is wrong".
+		if (style.getAttackType() == AttackType.MAGIC)
+		{
+			final Loadout gear = gear();
+			double worn = 0;
+			for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
+			{
+				final ItemEquipmentStats e = equipmentStats(gear.id(slot));
+				if (e != null)
+				{
+					worn += e.getMdmg();
+				}
+			}
+			final Spell cast = activeSpell();
+			final boolean own = usingWeaponsOwnAttack();
+			lines.add(String.format("Magic dmg: worn %.1f%%, ancient %.1f%%, prayer %.1f%%, shadow x%d (%s)",
+				worn, gearBonuses.virtusAncientDamagePercent(gear, cast), magicDamagePrayerPercent(),
+				own ? gearBonuses.shadowMultiplier(gear) : 1,
+				own ? "own attack" : "cast, passive does not apply"));
+			final GearBonus bonus = gearBonus(npcId);
+			lines.add(String.format("Gear multipliers: accuracy x%.3f, damage x%.3f",
+				bonus.getAccuracy(), bonus.getDamage()));
+		}
 
 		final int spec = specialAttackMaxHit(npcId);
 		if (spec > 0)

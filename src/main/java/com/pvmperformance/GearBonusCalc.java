@@ -279,7 +279,11 @@ class GearBonusCalc
 		}
 		if (type == AttackType.MAGIC && weapon == ItemID.DRAGONHUNTER_WAND)
 		{
-			return GearBonus.of(1.50, 1.20);
+			// 75% and 40%, which is the buffed wand. The reference carries the
+			// figures it launched with, 50% and 20%, and they are wrong: a max
+			// hit read 51 in game where the wiki gives 58. Checked against the
+			// lance and the crossbow at the same time, and both of those match.
+			return GearBonus.of(1.75, 1.40);
 		}
 		return GearBonus.NONE;
 	}
