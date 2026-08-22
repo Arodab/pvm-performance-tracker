@@ -384,7 +384,17 @@ class GearBonusCalc
 		}
 		else if (type == AttackType.MAGIC && isDemonbaneSpell(spell))
 		{
-			raw = GearBonus.of(1.2, 1.25);
+			// Accuracy only. The 25% damage belongs to Mark of Darkness, which
+			// also doubles the accuracy to 40%, and a purging staff doubles both
+			// again to 80% and 50%. This had the base accuracy paired with the
+			// Mark's damage, which is neither state.
+			//
+			// Not modelled: the Mark, and so not the purging staff either. There
+			// is a BUFF_MARK_OF_DARKNESS_DISABLED varbit, but its name says
+			// disabled and this project has been caught by a varbit's name
+			// before, so it needs confirming in game before it is trusted.
+			// Understating the spell is the safe side of that.
+			raw = GearBonus.of(1.2, 1.0);
 		}
 		return scaleByDemonbaneEffectiveness(raw, npc);
 	}
@@ -568,7 +578,10 @@ class GearBonusCalc
 				{
 					return GearBonus.symmetric(0.0);
 				}
-				return weapon.equals("Leaf-bladed battleaxe") ? GearBonus.symmetric(1.175) : GearBonus.NONE;
+				// Damage only. The wiki gives 17.5% damage and names no accuracy
+				// bonus, where this had it on both.
+				return weapon.equals("Leaf-bladed battleaxe")
+					? GearBonus.of(1.0, 1.175) : GearBonus.NONE;
 		}
 	}
 
