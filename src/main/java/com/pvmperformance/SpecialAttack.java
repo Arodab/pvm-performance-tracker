@@ -5,21 +5,7 @@ import java.util.Map;
 import lombok.Getter;
 import net.runelite.api.gameval.ItemID;
 
-/**
- * Weapons whose special attack changes the max hit, and by how much.
- *
- * <p>Each entry lists one multiplier per hit the spec lands, applied to the
- * weapon's normal max hit. Most multi-hit specs repeat the same figure, but
- * dragon claws deal a decaying sequence, which is why this is a list rather
- * than a multiplier and a count.
- *
- * <p>Entries with no multipliers at all are the ones whose spec damage is not a
- * multiple of the normal max hit; {@code CombatCalc} computes those directly.
- *
- * <p>Deliberately excluded: the granite maul, whose spec is an extra attack that
- * does not change the hit, and the accuracy-only specs such as the Zaryte
- * crossbow's, which double the hit chance rather than the damage.
- */
+// Weapons whose special attack changes the max hit, and by how much.
 enum SpecialAttack
 {
 	// Melee
@@ -44,6 +30,11 @@ enum SpecialAttack
 	KERIS_CORRUPTION(ItemID.KERIS_PARTISAN_CORRUPTION, "Wrath of Amascut", 1.25),
 	BLESSED_SWORD(ItemID.BLESSED_SARADOMIN_SWORD, "Saradomin's Lightning", 1.25),
 	BLESSED_SWORD_DEGRADED(ItemID.BLESSED_SARADOMIN_SWORD_DEGRADED, "Saradomin's Lightning", 1.25),
+	// Eviscerate carries no multiplier: it lifts the fang's own narrowed roll
+	// back to the true max rather than raising the max, so it is a multiple of
+	// the figure before the passive rather than after it, and CombatCalc has it.
+	OSMUMTENS_FANG(ItemID.OSMUMTENS_FANG, "Eviscerate"),
+	OSMUMTENS_FANG_ORNAMENT(ItemID.OSMUMTENS_FANG_ORNAMENT, "Eviscerate"),
 
 	// Ranged
 	// Dark bow figures are for dragon arrows; other arrows spec for 1.3x.

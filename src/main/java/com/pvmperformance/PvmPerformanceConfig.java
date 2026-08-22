@@ -80,8 +80,43 @@ public interface PvmPerformanceConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "meleeBoostGoal",
+		name = "Melee boost",
+		description = "The melee boost you mean to be holding. Efficiency compares what your "
+			+ "attacks were set up for against what this would have given. Overloads and "
+			+ "smelling salts are detected on their own and raise it while they run",
+		position = 6
+	)
+	default MeleeBoost meleeBoostGoal()
+	{
+		return MeleeBoost.SUPER_COMBAT;
+	}
+
+	@ConfigItem(
+		keyName = "rangedBoostGoal",
+		name = "Ranged boost",
+		description = "The ranged boost you mean to be holding",
+		position = 6
+	)
+	default RangedBoost rangedBoostGoal()
+	{
+		return RangedBoost.RANGING;
+	}
+
+	@ConfigItem(
+		keyName = "magicBoostGoal",
+		name = "Magic boost",
+		description = "The magic boost you mean to be holding",
+		position = 6
+	)
+	default MagicBoost magicBoostGoal()
+	{
+		return MagicBoost.SATURATED_HEART;
+	}
+
+	@ConfigItem(
 		keyName = "meleePrayerGoal",
-		name = "Efficiency: melee prayer",
+		name = "Melee prayer",
 		description = "The melee prayer you mean to hold up. Efficiency compares the damage "
 			+ "your attacks were set up for against what this prayer would have given",
 		position = 7
@@ -93,7 +128,7 @@ public interface PvmPerformanceConfig extends Config
 
 	@ConfigItem(
 		keyName = "rangedPrayerGoal",
-		name = "Efficiency: ranged prayer",
+		name = "Ranged prayer",
 		description = "The ranged prayer you mean to hold up",
 		position = 8
 	)
@@ -104,7 +139,7 @@ public interface PvmPerformanceConfig extends Config
 
 	@ConfigItem(
 		keyName = "magicPrayerGoal",
-		name = "Efficiency: magic prayer",
+		name = "Magic prayer",
 		description = "The magic prayer you mean to hold up",
 		position = 9
 	)

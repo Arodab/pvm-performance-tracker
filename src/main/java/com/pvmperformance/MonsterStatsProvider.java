@@ -20,7 +20,10 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Client;
+import net.runelite.api.NPCComposition;
 import net.runelite.client.RuneLite;
+import net.runelite.client.util.Text;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.OkHttpClient;
@@ -43,16 +46,26 @@ class MonsterStatsProvider
 	private final OkHttpClient httpClient;
 	private final Gson gson;
 	private final ScheduledExecutorService executor;
+	private final Client client;
 
 	// npcId -> stats; replaced wholesale after a load, so reads need no lock.
 	private volatile Map<Integer, MonsterStats> byId = Collections.emptyMap();
+	// name -> stats, for the ids the data does not carry. A monster wears
+	// several ids as it idles, walks and fights, and the source lists one of
+	// them: Tekton is 7540 and 7543 there but appears in game as 7542 too, and
+	// a Muttadile as 7563 against the 7561 and 7562 that are listed. Every miss
+	// meant no accuracy, no expected damage and no defence drain, which read as
+	// the plugin ignoring whole stretches of a raid.
+	private volatile Map<String, MonsterStats> byName = Collections.emptyMap();
 
 	@Inject
-	MonsterStatsProvider(OkHttpClient httpClient, Gson gson, ScheduledExecutorService executor)
+	MonsterStatsProvider(OkHttpClient httpClient, Gson gson, ScheduledExecutorService executor,
+		Client client)
 	{
 		this.httpClient = httpClient;
 		this.gson = gson;
 		this.executor = executor;
+		this.client = client;
 	}
 
 	void startUp()
@@ -62,7 +75,26 @@ class MonsterStatsProvider
 
 	MonsterStats get(int npcId)
 	{
-		return byId.get(npcId);
+		final MonsterStats exact = byId.get(npcId);
+		if (exact != null)
+		{
+			return exact;
+		}
+		if (npcId < 0 || byName.isEmpty())
+		{
+			return null;
+		}
+		// The id is unknown, so ask the game what it is called and look the name
+		// up instead. Where a name covers several versions the first listed wins,
+		// which is the ordinary form rather than an enraged or larger one, so a
+		// figure may be a little low but is no longer absent.
+		final NPCComposition composition = client.getNpcDefinition(npcId);
+		return composition == null ? null : byName.get(normalise(composition.getName()));
+	}
+
+	private static String normalise(String name)
+	{
+		return name == null ? "" : Text.removeTags(name).toLowerCase().trim();
 	}
 
 	private Path cacheFile()
@@ -158,6 +190,12 @@ class MonsterStatsProvider
 						: new HashSet<>(Arrays.asList(m.attributes))));
 			}
 			byId = map;
+			final Map<String, MonsterStats> names = new HashMap<>(map.size() * 2);
+			for (MonsterStats stats : map.values())
+			{
+				names.putIfAbsent(normalise(stats.getName()), stats);
+			}
+			byName = names;
 			log.debug("PvM Performance: loaded {} monster stat entries", map.size());
 		}
 	}

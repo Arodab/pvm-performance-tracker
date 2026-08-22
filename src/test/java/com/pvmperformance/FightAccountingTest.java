@@ -19,8 +19,9 @@ public class FightAccountingTest
 	private static Fight fought(int npcId, int damage)
 	{
 		final Fight f = fight(npcId);
-		f.recordAttackMade(true, true, 10, 10);
-		f.recordDamageDealt(damage, 0L);
+		f.recordAttackMade(true);
+		f.recordAttackResolved(true, 10, 10);
+		f.recordDamageDealt(damage, 0L, damage > 0);
 		return f;
 	}
 

@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,13 +37,14 @@ import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
-import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
+import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.NpcChanged;
@@ -52,6 +52,7 @@ import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.ProjectileMoved;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.AnimationID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.SpotanimID;
 import net.runelite.api.widgets.Widget;
@@ -99,6 +100,44 @@ public class PvmPerformancePlugin extends Plugin
 	private static final int EAT_TICKS = 3;
 	// A combo food adds its own delay on top of the food it chases.
 	private static final int KARAMBWAN_TICKS = 2;
+	// How long a click on an NPC vouches for a projectile aimed at it. A cast is
+	// five ticks, so this covers the one attack the click ordered and lapses
+	// before the next would be thrown without a further click.
+	private static final int CLICK_ATTRIBUTION_TICKS = 5;
+	// How long a counted projectile is remembered. Long enough that no projectile
+	// is still in flight when its key is dropped, short enough that the map stays
+	// a handful of entries.
+	private static final int PROJECTILE_KEY_TICKS = 20;
+	// How many of the player's recent tiles a projectile may have been fired
+	// from. Long enough to cover a projectile's flight while the player runs.
+	private static final int RECENT_TILES = 6;
+	// How far a projectile may have left from a tile I am known to have occupied.
+	// Two, because that is how far running moves in the tick the shot went out.
+	private static final int TILE_SLACK = 2;
+	private static final int LOCAL_TILE_SIZE = 128;
+	// How far back to look for the loadout that threw a projectile, when a
+	// switch has already replaced it. A switch lands within a tick or two.
+	private static final int SWITCH_LOOKBACK_TICKS = 4;
+	// How many ticks after an attack goes out it is booked. A hitsplat is one
+	// tick behind the blow; a projectile surfaces a tick later still. Measured
+	// in game rather than reasoned about, and kept here so there is one place to
+	// correct if it is ever wrong again.
+	private static final int PRAYER_HISTORY_TICKS = 10;
+	// How many ticks after an attack goes out it is booked. Measured from the
+	// trace, not reasoned about: with a flick on the attack tick the mark lands
+	// two ticks below the booking tick for a projectile and one below for a
+	// melee blow. The projectile's own start cycle cannot answer this - it
+	// equals the game cycle at the event, so it carries no history.
+	private static final int MELEE_BOOKING_LAG = 1;
+	private static final int PROJECTILE_BOOKING_LAG = 2;
+	// The tick the worn items last changed on.
+	private static final int CYCLES_PER_TICK = 30;
+	// How far either side of its due tick a projectile may land and still be
+	// recognised. One tick each way; nothing swings faster than two.
+	private static final int FLIGHT_SLACK_TICKS = 1;
+	// How long the player must be looking away before a fight they opened by
+	// targeting, and have not yet attacked, is closed.
+	private static final int LOOK_AWAY_TICKS = 5;
 	private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 	/** The column names, kept beside the row builders so the two cannot drift. */
 	static final String CSV_HEADER =
@@ -149,6 +188,9 @@ public class PvmPerformancePlugin extends Plugin
 	@Inject
 	private PartyHitpoints partyHitpoints;
 
+	@Inject
+	private GearBonusCalc gearBonuses;
+
 	private PvmPerformancePanel panel;
 	private NavigationButton navButton;
 
@@ -161,15 +203,69 @@ public class PvmPerformancePlugin extends Plugin
 	// Which target the figures above were computed against, so an attack is only
 	// sampled with figures that were actually meant for it.
 	private int expectedForNpcId = -1;
+	// The NPC last clicked on, and when. A click is unambiguously mine and
+	// always precedes the attack it orders, which is what the interaction is not
+	// yet on the opening attack of a fight.
+	private int clickedNpcIndex = -1;
+	private int clickedNpcTick = -1;
 	// Ticks left before the weapon can attack again; 0 means it is ready.
 	private int attackCooldown;
 	// The tick an attack was last seen going out on, set from the events that
-	// prove one happened rather than from what the player looks like.
+	// prove one happened rather than from what the player looks like, and which
+	// event proved it. A projectile is a cast or a shot; a hitsplat is a melee
+	// blow. Which one it was decides whether a pending manual cast has gone out.
 	private int attackObservedTick = -1;
-	// Whether the intended prayer was up at any point during this tick. Reading
-	// it once at the end of the tick misses a flick, which is off again by then
-	// but was up while the server resolved the attack.
-	private boolean prayedThisTick;
+	private boolean attackObservedFromProjectile;
+	// Prayer and boost as they stood the instant the attack was proven. Read
+	// there rather than at the end of the tick, because the server resolved the
+	// attack with what was up when it went out: a potion drunk after the attack
+	// but still inside the same tick has already raised the boosted level by the
+	// time GameTick runs, and was counting as though the attack had used it.
+	private boolean attackObservedPotted;
+	// The tick the attack actually left on, which is not always the tick its
+	// event surfaces. A projectile's start cycle says when it was fired, and
+	// that can be a tick before the plugin hears about it, by which time the
+	// player may have switched weapons. Melee has no such gap.
+	private int attackOriginTick = -1;
+	// The figures as they stood the instant the attack was seen. The per-tick
+	// snapshot is written at GameTick, which is the end of the tick and so
+	// after any switch made during it; the projectile event fires before that,
+	// while the weapon that threw the attack is still in hand.
+	private int gearChangedTick = Integer.MIN_VALUE;
+	private int attackObservedNpcId = -1;
+	private int attackObservedMaxHit;
+	private double attackObservedAccuracy = -1;
+	private double attackObservedAverageHit = -1;
+	// The expected figures as they stood on each of the last few ticks, so an
+	// attack can be scored with the loadout that actually threw it.
+	private final Map<Integer, double[]> expectedByTick = new HashMap<>();
+	// Where the player stood on each of the last few ticks. A projectile names
+	// the tile it left, which is where the player was when it was fired, not
+	// necessarily where they are by the time the event arrives.
+	// Where I stood on each of the last few ticks, in scene coordinates, so a
+	// projectile can be judged against the tick it actually set off on.
+	private final Map<Integer, LocalPoint> recentTiles = new HashMap<>();
+	// Consecutive ticks the player has not been interacting with the open fight.
+	private int notTargetingTicks;
+	// Per NPC: the tick my last hitsplat on it landed on, and whether the burst
+	// it belongs to has already been counted as a landed attack. Keyed by index
+	// rather than held once, because one attack can land on several NPCs at the
+	// same instant, a chinchomp, a barrage, a scythe reaching three, and those
+	// are separate targets whose bursts must not swallow each other.
+	private final Map<Integer, Integer> lastHitsplatTick = new HashMap<>();
+	private final Set<Integer> burstLanded = new HashSet<>();
+	// NPCs whose current burst has already booked an attack. Dragon and burning
+	// claws split one special across two ticks, and each hitsplat was booking an
+	// attack of its own, so one spec counted as two: two attempts, two expected
+	// samples, and an expected hit count above one for a single attack.
+	private final Set<Integer> burstBooked = new HashSet<>();
+	// Whether the goal prayer was up at any point during each recent tick. Kept
+	// as a history rather than a slot or two because the tick an attack went out
+	// on is not the tick it is booked on, and the gap differs by style.
+	private final Map<Integer, Boolean> prayerUpByTick = new HashMap<>();
+	// The tick the goal prayer was last seen up on, so a prayer that only came
+	// up after the attack can be told from one that was up for it.
+	private int prayerUpTick = Integer.MIN_VALUE;
 	// The tick an eat was last seen on, so the pause it causes is credited to it
 	// rather than only the one tick its animation shows for.
 	private int lastConsumeTick;
@@ -217,12 +313,14 @@ public class PvmPerformancePlugin extends Plugin
 	// iterate it safely while combat events (client thread) append to it.
 	private final List<Fight> history = new CopyOnWriteArrayList<>();
 
-	// My in-flight projectiles, so each is credited only once (identity set).
-	private final Set<Projectile> countedProjectiles = Collections.newSetFromMap(new IdentityHashMap<>());
+	// My in-flight projectiles, each credited once. Keyed by start cycle, id and
+	// target rather than by the Projectile object, whose identity the client
+	// recycles. Values are the tick seen, so the map can be aged out.
+	private final Map<Long, Integer> countedProjectiles = new HashMap<>();
 	// npcIndex -> my launched attacks not yet resolved to a hit or a splash.
 	// A magic splash carries no caster info, so it only counts as mine when it
 	// resolves one of these; that also excludes other players' splashes.
-	private final Map<Integer, Integer> pendingMineHits = new HashMap<>();
+	private final Map<Integer, List<Integer>> pendingMineHits = new HashMap<>();
 
 	@Provides
 	PvmPerformanceConfig provideConfig(ConfigManager configManager)
@@ -260,6 +358,10 @@ public class PvmPerformancePlugin extends Plugin
 		lastFinished = null;
 		history.clear();
 		countedProjectiles.clear();
+		recentTiles.clear();
+		expectedByTick.clear();
+		lastHitsplatTick.clear();
+		burstLanded.clear();
 		pendingMineHits.clear();
 		drain.clear();
 		partyHitpoints.clear();
@@ -283,23 +385,49 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				startFight(npc, now);
 			}
-			current.recordDamageDealt(hitsplat.getAmount(), now);
+			// Hitsplats arriving together are one attack. A dragon claw special
+			// lands four across two ticks and a dark bow two on one tick, so the
+			// burst is grouped by adjacency: a gap of more than a tick starts a
+			// new one. Nothing swings faster than two ticks, so no two real
+			// attacks can be merged by this.
+			final int tick = client.getTickCount();
+			final Integer seen = lastHitsplatTick.put(npc.getIndex(), tick);
+			final boolean newBurst = seen == null || tick - seen > 1;
+			if (newBurst)
+			{
+				burstLanded.remove(npc.getIndex());
+				burstBooked.remove(npc.getIndex());
+			}
+			// The first hitsplat of the burst to actually deal damage is what
+			// makes its attack a landed one. A claw special that opens with a
+			// zero and then connects still landed once.
+			final boolean landedAttack = hitsplat.getAmount() > 0
+				&& !burstLanded.contains(npc.getIndex());
+			if (landedAttack)
+			{
+				burstLanded.add(npc.getIndex());
+			}
+			current.recordDamageDealt(hitsplat.getAmount(), now, landedAttack);
 			if (current.isScored())
 			{
-				session.recordAttempt(hitsplat.getAmount(), now);
-				sampleExpected(current);
+				session.recordAttempt(hitsplat.getAmount(), landedAttack, now);
 			}
 			// A special's drain is worked out from the hit it landed, so it can
 			// only be applied here.
 			drain.onMyHitsplat(npc, hitsplat.getAmount());
 			// A landed hit resolves one of my pending attacks so it can't later
-			// be mistaken for another player's splash.
-			consumePending(npc.getIndex());
-			// Only melee lands on the tick it was thrown. A ranged or magic hit
-			// arrives late, so its tick comes from the projectile instead.
-			if (combatCalc.isMeleeEquipped())
+			// be mistaken for another player's splash. Whether it did is also
+			// what says where this hitsplat came from.
+			final boolean arrivedFromFlight = consumePending(npc.getIndex());
+			// Only melee lands on the tick it was thrown; a ranged or magic hit
+			// arrives late, so its tick comes from the projectile. Which weapon
+			// is held cannot decide this alone: a spell cast from a melee weapon
+			// lands a hitsplat like any other, and one that resolves something
+			// already in flight was booked when it was fired.
+			if (!arrivedFromFlight && combatCalc.isMeleeEquipped()
+				&& burstBooked.add(npc.getIndex()))
 			{
-				recordAttackObserved();
+				recordAttackObserved(false, npc.getId());
 			}
 		}
 		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
@@ -334,18 +462,21 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Catches a spell cast by hand onto an NPC. The autocast varbit only knows
-	 * about autocasting, so without this a spell clicked while holding a powered
-	 * staff would be reported as the staff's own attack.
-	 *
-	 * <p>The clicked widget carries the spell's name but no id this could be
-	 * keyed by, so the name is what identifies it.
-	 */
+	// Catches a spell cast by hand onto an NPC. The autocast varbit only knows
+	// about autocasting, so without this a spell clicked while holding a
+	// powered staff would be reported as the staff's own attack.
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
 		noteConsumed(event);
+		// Any click on an NPC, whatever it ordered: attacking it, casting on it,
+		// or firing at it. What matters is that I aimed something at that NPC.
+		final NPC clicked = event.getMenuEntry().getNpc();
+		if (clicked != null)
+		{
+			clickedNpcIndex = clicked.getIndex();
+			clickedNpcTick = client.getTickCount();
+		}
 		if (event.getMenuAction() != MenuAction.WIDGET_TARGET_ON_NPC || !client.isWidgetSelected())
 		{
 			return;
@@ -375,7 +506,7 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
-		if (!countedProjectiles.add(projectile))
+		if (countedProjectiles.put(projectileKey(projectile, (NPC) target), client.getTickCount()) != null)
 		{
 			return; // this projectile was already counted on an earlier frame
 		}
@@ -394,19 +525,40 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			startFight(npc, now);
 		}
-		pendingMineHits.merge(npc.getIndex(), 1, Integer::sum);
-		// The projectile is created on the tick the attack was fired.
-		recordAttackObserved();
+		pendingMineHits.computeIfAbsent(npc.getIndex(), k -> new ArrayList<>())
+			.add(landingTick(projectile));
+		recordAttackObserved(true, npc.getId());
+		// Not always the tick the event surfaces on: the start cycle says when
+		// the projectile was actually fired, which for a slow one can be a tick
+		// earlier, and the loadout may have changed since.
+		attackOriginTick = startTick(projectile);
 	}
 
+	// Whether a projectile left a tile the player was standing on recently.
+
+
+	// Close enough to have been fired by me. Not an exact match, because running
+	// covers two tiles a tick while the history records one tile a tick, so the
+	// tile an attack was actually thrown from is often never in it: a projectile
+	// two tiles east of where the player ended up was refused outright, and with
+	// it the whole attack.
+
+
 	/**
-	 * Whether this projectile came from me. The projectile names its own source
-	 * actor, which settles it outright and, unlike anything positional, cannot
-	 * confuse me with another player standing on my tile.
-	 *
-	 * <p>Falls back to the tile and target test only when the projectile names
-	 * no source at all, which is the weaker rule this replaced.
+	 * Identifies one cast. Two projectiles sharing a start cycle, an id and a
+	 * target are the same cast seen on a later frame; anything else differs in
+	 * at least one of the three.
 	 */
+	private static long projectileKey(Projectile projectile, NPC target)
+	{
+		return ((long) projectile.getStartCycle() << 32)
+			^ ((long) projectile.getId() << 16)
+			^ target.getIndex();
+	}
+
+	// Whether this projectile came from me. The projectile names its own
+	// source actor, which settles it outright and, unlike anything positional,
+	// cannot confuse me with another player standing on my tile.
 	private boolean isProjectileMine(Projectile projectile, Player me, Actor target)
 	{
 		final Actor source = projectile.getSourceActor();
@@ -419,24 +571,58 @@ public class PvmPerformancePlugin extends Plugin
 		// interacting with as well is what dropped casts: that lapses between
 		// the cast going out and the projectile appearing, and every cast it
 		// dropped took its splash with it.
-		final WorldPoint from = projectile.getSourcePoint();
-		if (from == null || !from.equals(me.getWorldLocation()))
+		// What the projectile is aimed at decides this, not where it set off
+		// from. A slow projectile is in the air for several ticks and players
+		// move while it flies, deliberately so at Olm, so the firing tile is
+		// often nowhere near the player by the time the event is handled. Inside
+		// an instance it is worse than useless: the source point and the
+		// player's location are not in the same coordinate space at all, and the
+		// two were seen forty tiles apart with everything else matching.
+		final NPC aimedAt = (NPC) target;
+		if (clickedNpcIndex == aimedAt.getIndex()
+			&& client.getTickCount() - clickedNpcTick <= CLICK_ATTRIBUTION_TICKS)
 		{
-			return false;
+			return true;
 		}
-		// Still not anyone standing on me: it has to be aimed at what I am
-		// fighting, by the interaction or by the fight already under way.
 		if (me.getInteracting() == target)
 		{
 			return true;
 		}
-		return current != null && !current.isEnded()
-			&& current.getTargetIndex() == ((NPC) target).getIndex();
+		if (current != null && !current.isEnded()
+			&& current.getTargetIndex() == aimedAt.getIndex())
+		{
+			return true;
+		}
+		// Nothing says it is aimed at what I am doing, so fall back to where it
+		// began. Compared in scene coordinates, which an instance does not
+		// translate, against where I stood on the tick it actually set off.
+		return firedFromWhereIWas(projectile, me);
+	}
+
+	// Whether the projectile set off from where I was standing when it did. The
+	// start cycle says which tick that was, so a projectile still in the air
+	// after several ticks of running is judged against the right position.
+	private boolean firedFromWhereIWas(Projectile projectile, Player me)
+	{
+		final int ticksAgo = Math.max(0,
+			(client.getGameCycle() - projectile.getStartCycle()) / CYCLES_PER_TICK);
+		final LocalPoint then = recentTiles.get(client.getTickCount() - ticksAgo);
+		final LocalPoint here = me.getLocalLocation();
+		for (LocalPoint p : new LocalPoint[]{then, here})
+		{
+			if (p != null
+				&& Math.abs(projectile.getX1() - p.getX()) <= TILE_SLACK * LOCAL_TILE_SIZE
+				&& Math.abs(projectile.getY1() - p.getY()) <= TILE_SLACK * LOCAL_TILE_SIZE)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
 	 * Watches for what Olm's phase is made of. Each special leaves something of
-	 * its own in the scene, and his head spawning is what starts a phase — the
+	 * its own in the scene, and his head spawning is what starts a phase, the
 	 * same signal the CoX Additions plugin counts phases by, which is all that
 	 * plugin does here: it does not identify the specials.
 	 */
@@ -460,7 +646,7 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
-		// A magic splash produces no hitsplat — only a graphic on the target —
+		// A magic splash produces no hitsplat, only a graphic on the target -
 		// so we count it here as a missed attempt. It only counts if it resolves
 		// one of my own casts, which excludes other players' splashes.
 		if (current == null || current.isEnded())
@@ -483,8 +669,13 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		final long now = System.currentTimeMillis();
 		current.recordSplash(now);
-		session.recordAttempt(0, now);
-		sampleExpected(current);
+		// Gated exactly as a landed hit is: an unscored NPC spends the tick but
+		// contributes no damage, accuracy or efficiency, and a splash on one is
+		// no more scoreable than a hit on one.
+		if (current.isScored())
+		{
+			session.recordAttempt(0, false, now);
+		}
 	}
 
 	/**
@@ -493,16 +684,87 @@ public class PvmPerformancePlugin extends Plugin
 	 * weapon is swapped in partway: the mean then reflects the blend actually
 	 * wielded instead of whichever weapon happened to be held at one instant.
 	 */
+	/**
+	 * Recomputes the tick's expected figures for the fight on show. Everything
+	 * that reads them, the overlay, the attack-tick sample, {@code ::loadout} -
+	 * takes this one snapshot, so they cannot disagree with each other within a
+	 * tick, and {@code CombatCalc}'s per-tick memo makes the whole set one
+	 * evaluation however many callers ask.
+	 */
+	private void refreshExpected()
+	{
+		final Fight shown = getDisplayFight();
+		specialAttack = combatCalc.specialAttack();
+		if (shown != null)
+		{
+			// Pass the target so salve, dragon hunter and the rest can apply.
+			expectedMaxHit = combatCalc.maxHit(shown.getTargetId());
+			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
+			expectedAverageHit = combatCalc.averageHit(shown.getTargetId());
+			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(shown.getTargetId());
+			expectedForNpcId = shown.getTargetId();
+			expectedByTick.put(client.getTickCount(),
+				new double[]{expectedMaxHit, expectedAccuracy, expectedAverageHit, expectedForNpcId,
+					combatCalc.isMeleeEquipped() ? 0 : 1});
+			expectedByTick.keySet().removeIf(t -> client.getTickCount() - t > RECENT_TILES);
+		}
+		else
+		{
+			expectedMaxHit = combatCalc.maxHit(-1);
+			expectedAccuracy = -1;
+			expectedAverageHit = -1;
+			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(-1);
+			expectedForNpcId = -1;
+		}
+	}
+
+	private void record(boolean prayed, double actual, double ideal)
+	{
+		if (current != null && !current.isEnded())
+		{
+			current.recordAttackResolved(prayed, actual, ideal);
+		}
+		session.recordAttackResolved(prayed, actual, ideal);
+	}
+
 	private void sampleExpected(Fight fight)
 	{
-		if (expectedForNpcId != fight.getTargetId())
+		final int targetId = fight.getTargetId();
+		int maxHit = expectedMaxHit;
+		double accuracy = expectedAccuracy;
+		double averageHit = expectedAverageHit;
+		// Prefer the figures from the tick the attack actually left on. A slow
+		// projectile surfaces a tick after it was fired, and scoring it with the
+		// loadout held by then credited a shadow's attack to the whip switched
+		// to while it was still in the air.
+		final double[] atOrigin = expectedByTick.get(attackOriginTick);
+		if (attackObservedNpcId == targetId && attackObservedAccuracy >= 0)
 		{
-			// The cached figures were computed for something else, most likely
-			// because this is the opening attack of the fight.
-			return;
+			maxHit = attackObservedMaxHit;
+			accuracy = attackObservedAccuracy;
+			averageHit = attackObservedAverageHit;
 		}
-		fight.recordExpected(expectedMaxHit, expectedAccuracy, expectedAverageHit);
-		session.recordExpected(expectedAccuracy, expectedAverageHit);
+		else if (atOrigin != null && (int) atOrigin[3] == targetId)
+		{
+			maxHit = (int) atOrigin[0];
+			accuracy = atOrigin[1];
+			averageHit = atOrigin[2];
+		}
+		else if (expectedForNpcId != targetId)
+		{
+			// The opening attack of a fight, whose figures the tick cache cannot
+			// hold: the fight was created by the very event being sampled. Asking
+			// for them now is a memo lookup on the tick already being served.
+			maxHit = combatCalc.maxHit(targetId);
+			accuracy = combatCalc.hitChance(targetId);
+			averageHit = combatCalc.averageHit(targetId);
+		}
+		fight.recordExpected(maxHit, accuracy, averageHit);
+		session.recordExpected(accuracy, averageHit);
+		// Spent: they describe one attack, not the next.
+		attackObservedNpcId = -1;
+		attackObservedAccuracy = -1;
+		attackObservedAverageHit = -1;
 	}
 
 	/** The trip totals shown when the overlay is set to whole-trip mode. */
@@ -545,7 +807,7 @@ public class PvmPerformancePlugin extends Plugin
 	/**
 	 * Follows the target through a transform. A boss that changes form keeps its
 	 * index and changes its id, and the new id is what says whether it can be
-	 * fought at all — Sotetseg wears a separate one for the maze.
+	 * fought at all, Sotetseg wears a separate one for the maze.
 	 */
 	@Subscribe
 	public void onNpcChanged(NpcChanged event)
@@ -574,7 +836,7 @@ public class PvmPerformancePlugin extends Plugin
 
 	/**
 	 * Takes the party's hitpoints levels from the party plugin's own broadcasts,
-	 * which is where the Chambers scaling term comes from — the game gives only
+	 * which is where the Chambers scaling term comes from, the game gives only
 	 * the player's own level, and raiding beside a higher one made it wrong.
 	 */
 	@Subscribe
@@ -601,21 +863,8 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Advances the attack cooldown by a tick and books the tick as an attack, as
-	 * wasted, or as still on cooldown.
-	 *
-	 * <p>An attack is taken from the events that prove one happened, never from
-	 * what the player looks like. Animations cannot answer this: they can be
-	 * stalled or replaced, so an attack made on the same tick as an eat shows
-	 * the eat, and reading the animation there would both miss the attack and,
-	 * if the animation were being learned, poison the weapon's entry with it.
-	 *
-	 * <p>The tick is exact for both styles. A melee hitsplat lands on the tick it
-	 * was thrown, and a ranged or magic projectile is created on the tick it was
-	 * fired, well before it lands — so the weapon in hand decides which of the
-	 * two events to believe.
-	 */
+	// Advances the attack cooldown by a tick and books the tick as an attack,
+	// as wasted, or as still on cooldown.
 	private void trackAttackCooldown()
 	{
 		final boolean attacked = attackObservedTick == client.getTickCount();
@@ -628,6 +877,9 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		if (attacked)
 		{
+			// Before anything reads the style: which event proved this attack
+			// decides whether a queued cast can be what went out.
+			combatCalc.noteAttackKind(attackObservedFromProjectile);
 			// Read on the attack tick: this is when the prayers and boosts are
 			// the ones the attack actually rolled with.
 			final int targetId = current.getTargetId();
@@ -641,23 +893,78 @@ public class PvmPerformancePlugin extends Plugin
 					session.recordEngaged(engaged);
 				}
 			}
-			final boolean prayed = prayedThisTick || combatCalc.hasOffensivePrayer();
-			final boolean potted = combatCalc.isPotted();
-			final double actualSetup = combatCalc.actualAverageHit(targetId, prayed);
+			// The two are read at different moments on purpose. A prayer counts if
+			// it was up at any point in the tick, which is what makes flicking
+			// work, and one flicked on after the swing is still processed before
+			// the server resolves the tick. A potion is not: drinking after the
+			// attack cannot have boosted it, so the boost is taken as it stood
+			// when the attack went out.
+			// The carried flag alone, and deliberately not the live varbits. An
+			// attack is booked the tick after the one it went out on, so what was
+			// up at the end of the previous tick is what the server resolved it
+			// with. Reading the varbits here instead counts a prayer switched on
+			// after the swing, which is the whole of the bug: a flick showed
+			// upTick one below the booking tick, a late prayer showed it equal.
+			// Which tick the attack went out on depends on what proved it. A
+			// hitsplat lands the tick the blow is thrown, so a melee attack is
+			// booked on time and this tick's answer is the right one. A
+			// projectile surfaces a tick after it is fired, so a magic or ranged
+			// attack is booked late and the previous tick's answer is.
+			// The tick the attack actually went out on. Taken from the event that
+			// proved it rather than from a fixed offset: a projectile carries the
+			// cycle it was fired on, and a hitsplat lands the tick of the blow.
+			// Guessed offsets could not work here, because the gap between an
+			// attack and its booking is not constant.
+			final int attackTick = client.getTickCount()
+				- (attackObservedFromProjectile ? PROJECTILE_BOOKING_LAG : MELEE_BOOKING_LAG);
+			final boolean prayed = Boolean.TRUE.equals(prayerUpByTick.get(attackTick));
+			final boolean potted = attackObservedPotted;
+			// Worked out both ways now, while the loadout and boost are the ones
+			// that threw the attack. Which of the two applies is decided by the
+			// prayer, and for a projectile that is not known until it lands.
+			final double ifPrayed = combatCalc.actualAverageHit(targetId, true);
+			final double ifNot = combatCalc.actualAverageHit(targetId, false);
 			final double idealSetup = combatCalc.idealAverageHit(targetId);
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
-			current.recordAttackMade(prayed, potted, actualSetup, idealSetup);
+			current.recordAttackMade(potted);
 			if (current.isScored())
 			{
-				session.recordAttackMade(prayed, potted, actualSetup, idealSetup);
+				session.recordAttackMade(potted);
+				// Decided here, at the attack, for both styles. The damage this
+				// is measured against was worked out on this tick from this
+				// loadout and this boost, so the prayer has to be the one that
+				// went with it. Reading it when the hitsplat arrives instead
+				// measured the prayer at the LANDING, ticks after the server had
+				// already scored the attack.
+				record(prayed, prayed ? ifPrayed : ifNot, idealSetup);
+				// Sampled on the tick the attack went out, not the tick it
+				// resolved, so the figures describe the loadout that threw it,
+				// every style updates on the same beat, and one attack takes one
+				// sample however it ends.
+				sampleExpected(current);
 			}
 			else
 			{
 				session.recordTickSpent();
 			}
+			// Last of all. Everything above describes the attack that just went
+			// out, the cooldown included, a cast holds the weapon for five ticks
+			// and a whip for four, so spending the cast any earlier would put the
+			// spell on the whip's clock.
 			attackCooldown = Math.max(0, combatCalc.attackSpeedTicks() - 1);
+			if (attackObservedFromProjectile)
+			{
+				// Only a cast can spend a cast. A melee blow landing on the tick
+				// the spell was clicked would otherwise consume it, and the cast
+				// that went out a tick later then read as the weapon, a fire
+				// strike scoring the fang's expected damage.
+				combatCalc.noteAttackThrown();
+			}
+			// Last: back to describing the loadout rather than one past attack,
+			// so the overlay goes on showing a queued cast between attacks.
+			combatCalc.noteAttackKind(true);
 			return;
 		}
 		// The trip totals take the same ticks as they happen, so the share shown
@@ -691,20 +998,8 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Notices food and drink going down, from the click rather than the
-	 * animation.
-	 *
-	 * <p>An animation is the wrong thing to ask. Eating on the same tick as an
-	 * attack shows the attack, so the eat leaves no animation to find — the same
-	 * reason attacks themselves are taken from events here and never from what
-	 * the player looks like. A click is a fact about what was done.
-	 *
-	 * <p>The delays add up within a tick, which is what makes combo eating cost
-	 * what it does: a shark is three and the karambwan chased after it is two,
-	 * for five. Summing the clicks gets that exactly, rather than guessing at a
-	 * window wide enough to cover it.
-	 */
+	// Notices food and drink going down, from the click rather than the
+	// animation.
 	private void noteConsumed(MenuOptionClicked event)
 	{
 		final String option = event.getMenuOption();
@@ -727,29 +1022,13 @@ public class PvmPerformancePlugin extends Plugin
 		return itemId == ItemID.TBWT_COOKED_KARAMBWAN || itemId == ItemID.BR_TBWT_COOKED_KARAMBWAN;
 	}
 
-	/**
-	 * Whether this lost tick was spent eating.
-	 *
-	 * <p>An eat shows its animation for one tick but costs three, so reading the
-	 * animation alone credited the first tick to eating and left the other two
-	 * looking like idling. A karambwan is the case that makes this visible: it
-	 * is eaten with another food on the same tick, one animation for a three
-	 * tick pause, and two thirds of it was landing in the wrong column.
-	 *
-	 * <p>The window is the longest an eat can hold an attack back, and it is
-	 * closed by the next attack rather than run to its end — so it measures the
-	 * pause itself in the ordinary case, where the player attacks as soon as
-	 * they can, which is the thing this whole figure is about. Only a player who
-	 * eats and then idles on purpose has those idle ticks read as eating, and
-	 * even then it can only mislabel a tick that was already lost: an attack is
-	 * never offered here at all.
-	 */
+	// Whether this lost tick was spent eating.
 	private boolean isConsuming()
 	{
 		final Player me = client.getLocalPlayer();
 		if (me != null && CONSUME_ANIMATIONS.contains(me.getAnimation()) && consumeDelay == 0)
 		{
-			// Nothing was clicked that this knows about — a wine, a cake, an
+			// Nothing was clicked that this knows about, a wine, a cake, an
 			// unfamiliar option. The animation is the weaker signal but it is
 			// better than calling the tick idle.
 			lastConsumeTick = client.getTickCount();
@@ -763,24 +1042,51 @@ public class PvmPerformancePlugin extends Plugin
 	 * that prove one did, and whose tick is exact: a melee hitsplat lands on the
 	 * tick it was thrown, and a projectile is created on the tick it was fired.
 	 */
-	private void recordAttackObserved()
+	private void recordAttackObserved(boolean fromProjectile, int npcId)
 	{
 		attackObservedTick = client.getTickCount();
+		attackObservedFromProjectile = fromProjectile;
+		attackOriginTick = client.getTickCount();
+		attackObservedNpcId = npcId;
+		attackObservedMaxHit = combatCalc.maxHit(npcId);
+		attackObservedAccuracy = combatCalc.hitChance(npcId);
+		attackObservedAverageHit = combatCalc.averageHit(npcId);
+		// A weapon swapped on a tick is not wielded until the next one, so an
+		// attack thrown on the tick of a switch used what was held before it.
+		// The client shows the new weapon immediately, which is why the figures
+		// have to come from the tick before the change rather than from now.
+		// This holds for every switch, not only one that lands on a melee
+		// weapon: magic to ranged and staff to staff are the same case.
+		if (gearChangedTick >= client.getTickCount() - 1)
+		{
+			for (int tick = gearChangedTick - 1;
+				tick >= gearChangedTick - SWITCH_LOOKBACK_TICKS; tick--)
+			{
+				final double[] earlier = expectedByTick.get(tick);
+				if (earlier != null && (int) earlier[3] == npcId && earlier[1] >= 0)
+				{
+					attackObservedMaxHit = (int) earlier[0];
+					attackObservedAccuracy = earlier[1];
+					attackObservedAverageHit = earlier[2];
+					break;
+				}
+			}
+		}
+		attackObservedPotted = combatCalc.isPotted();
 	}
 
-	/**
-	 * Notices the intended prayer going up part-way through a tick, so a prayer
-	 * switched on and attacked with on the same tick counts.
-	 *
-	 * <p>Asks the client's own copy of the prayer varbits, which flips the
-	 * instant the player clicks. The server has not confirmed the prayer yet at
-	 * this point, so its copy would still read as off.
-	 *
-	 * <p>The opposite case — already up, and switched off on the tick the attack
-	 * goes out — is not caught here at all, because switching off is the only
-	 * event it raises and by then the varbit reads as off. That one is carried
-	 * across from the end of the previous tick instead; see onGameTick.
-	 */
+	// Notices the intended prayer going up part-way through a tick, so a
+	// prayer switched on and attacked with on the same tick counts.
+	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		if (event.getContainerId() == InventoryID.WORN)
+		{
+			combatCalc.invalidateGear();
+			gearChangedTick = client.getTickCount();
+		}
+	}
+
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
@@ -788,63 +1094,78 @@ public class PvmPerformancePlugin extends Plugin
 		// says a special went out and the player's own specials are not carried
 		// by the party message.
 		drain.onEnergyChanged();
-		if (current == null || current.isEnded() || prayedThisTick)
+		final boolean upNow = combatCalc.hasOffensivePrayerNow();
+		if (upNow)
 		{
-			return;
-		}
-		if (combatCalc.hasOffensivePrayerNow())
-		{
-			prayedThisTick = true;
+			prayerUpTick = client.getTickCount();
 		}
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
+		gearBonuses.updateRaidState();
+		RaidScaling.setTombsRaidLevel(gearBonuses.tombsRaidLevel());
 		trackRaid(System.currentTimeMillis());
 		startFightOnTarget();
+		// Refreshed before the attack is booked, not after. The attack tick is
+		// where the expected figures are sampled, and they have to describe the
+		// loadout that threw it, reading a cache filled at the end of the last
+		// tick would date every sample by one tick and misattribute any switch.
+		refreshExpected();
 		trackAttackCooldown();
-		// Carried, not cleared. The flag has to mean "the prayer was up at some
-		// point this tick", and a prayer already up from the tick before leaves
-		// no event of its own — only its switching off does, by which time
-		// reading the varbit says no. Ending each tick with what is up now makes
-		// the next tick start knowing it, which is what the attack rolled with:
-		// a prayer switched off during a tick still applied to that tick's
-		// attack, which is what makes flicking work and why it drains nothing.
-		prayedThisTick = combatCalc.hasOffensivePrayerNow();
+		// Carried, not cleared. The flag means "up at some point this tick", and a
+		// prayer already up raises no event of its own, only switching it off
+		// does, by which time the varbit reads no. Ending the tick holding what
+		// is up lets the next one start knowing it, which is what flicking needs.
+		// Shifted after the attack has been booked, never before. The flag is
+		// cleared rather than seeded from the live reading: seeding it made a
+		// prayer up at the end of one tick count for the next tick AND the one
+		// after, so a single flick satisfied two booking ticks. A prayer that is
+		// simply held needs no seed, because the live reading is ORed in at the
+		// moment an attack is booked.
+		// Recorded for the tick that has just ended, then the flag is cleared.
+		// The live reading is ORed in so a prayer merely held counts without
+		// needing an event of its own.
+		// The reading at the end of the tick, and only that. "Up at any point
+		// during the tick" marked two ticks for a single flick that spanned a
+		// boundary, which let a prayer flicked one tick early cover the attack
+		// tick as well.
+		final boolean upThisTick = combatCalc.hasOffensivePrayerNow();
+		prayerUpByTick.put(client.getTickCount(), upThisTick);
+		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
+		if (upThisTick)
+		{
+			prayerUpTick = client.getTickCount();
+		}
+
+		final Player me = client.getLocalPlayer();
+		if (me != null && me.getLocalLocation() != null)
+		{
+			recentTiles.put(client.getTickCount(), me.getLocalLocation());
+			recentTiles.keySet().removeIf(t -> client.getTickCount() - t > RECENT_TILES);
+		}
 
 		// Drop projectiles that have landed so the set doesn't retain them.
-		countedProjectiles.removeIf(p -> p.getRemainingCycles() <= 0);
-
-		final Fight shown = getDisplayFight();
-		specialAttack = combatCalc.specialAttack();
-		if (shown != null)
-		{
-			// Pass the target so salve, dragon hunter and the rest can apply.
-			expectedMaxHit = combatCalc.maxHit(shown.getTargetId());
-			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
-			expectedAverageHit = combatCalc.averageHit(shown.getTargetId());
-			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(shown.getTargetId());
-			expectedForNpcId = shown.getTargetId();
-		}
-		else
-		{
-			expectedMaxHit = combatCalc.maxHit(-1);
-			expectedAccuracy = -1;
-			expectedAverageHit = -1;
-			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(-1);
-			expectedForNpcId = -1;
-		}
+		countedProjectiles.values().removeIf(seen -> client.getTickCount() - seen > PROJECTILE_KEY_TICKS);
+		// Bursts are over long before this; the entries are dropped so the two
+		// collections cannot grow with every NPC ever hit.
+		lastHitsplatTick.values().removeIf(seen -> client.getTickCount() - seen > PROJECTILE_KEY_TICKS);
+		burstLanded.retainAll(lastHitsplatTick.keySet());
+		burstBooked.retainAll(lastHitsplatTick.keySet());
 
 		if (current != null && !current.isEnded())
 		{
 			if (current.getAttempts() == 0)
 			{
 				// Opened by targeting and not yet fought. The idle timeout can't
-				// judge it, since it would expire while the player is still
-				// walking into range and then reopen on the next tick. It ends
-				// when they look away instead.
-				if (!isTargeting(current.getTargetIndex()))
+				// judge it: it would expire while the player is still walking
+				// into range. It ends when they look away instead, and not the
+				// instant it blinks, because the interaction lapses on its own
+				// between a cast leaving and its projectile appearing.
+				notTargetingTicks = isTargeting(current.getTargetIndex())
+					? 0 : notTargetingTicks + 1;
+				if (notTargetingTicks > LOOK_AWAY_TICKS)
 				{
 					finalizeFight(false, System.currentTimeMillis());
 				}
@@ -879,6 +1200,9 @@ public class PvmPerformancePlugin extends Plugin
 				finalizeFight(false, current.getLastActivityMillis());
 			}
 			countedProjectiles.clear();
+			recentTiles.clear();
+			lastHitsplatTick.clear();
+			burstLanded.clear();
 			pendingMineHits.clear();
 			drain.clear();
 			nightmareBoss = null;
@@ -913,15 +1237,9 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Opens a fight as soon as the player targets something attackable, so the
-	 * overlay is up while the first attack is still in the air rather than
-	 * appearing when it lands.
-	 *
-	 * <p>A fight opened this way and never fought is thrown away at the end
-	 * rather than recorded, so clicking an NPC and walking off leaves nothing
-	 * behind.
-	 */
+	// Opens a fight as soon as the player targets something attackable, so the
+	// overlay is up while the first attack is still in the air rather than
+	// appearing when it lands.
 	private void startFightOnTarget()
 	{
 		if (current != null && !current.isEnded())
@@ -942,19 +1260,12 @@ public class PvmPerformancePlugin extends Plugin
 		startFight(npc, System.currentTimeMillis());
 	}
 
-	/**
-	 * Files a fight under the room it belongs to, continuing the room already
-	 * open when it is the same one.
-	 *
-	 * <p>This is what keeps the overlay still while a room is being fought. The
-	 * nylocas are the case it was written for: a barrage that splashes the wrong
-	 * colour, or a deliberate hit on it, opens a new fight but not a new room,
-	 * so nothing on screen resets. No hitsplat has to be judged AoE or not.
-	 */
+	// Files a fight under the room it belongs to, continuing the room already
+	// open when it is the same one.
 	private void openEncounterFor(Fight fight, long now)
 	{
 		// Only a grouped NPC continues a room. Without that, a second Vorkath
-		// would join the first — same name, so the same room — and the overlay
+		// would join the first, same name, so the same room, and the overlay
 		// would quietly turn into a running total of the trip.
 		final String name = fight.encounterName();
 		if (currentEncounter == null || fight.getGroupName() == null || !currentEncounter.accepts(name))
@@ -1023,7 +1334,7 @@ public class PvmPerformancePlugin extends Plugin
 	/**
 	 * Files a totem under whichever Nightmare is being fought. The two share
 	 * their totem ids, so the boss in the room is the only thing that tells them
-	 * apart — and it is always met before its totems are.
+	 * apart, and it is always met before its totems are.
 	 */
 	private void labelNightmareTotem(Fight fight, int npcId)
 	{
@@ -1130,16 +1441,50 @@ public class PvmPerformancePlugin extends Plugin
 		});
 	}
 
-	/** Consumes one of my pending attacks on the NPC; false if none were pending. */
+	// The tick a projectile is due to land on. Cycles run at 20ms and ticks at
+	// 600, so thirty of the former make one of the latter.
+	// The tick a projectile was fired on, from the cycle it started.
+	private int startTick(Projectile projectile)
+	{
+		final int cyclesAgo = Math.max(0, client.getGameCycle() - projectile.getStartCycle());
+		return client.getTickCount() - cyclesAgo / CYCLES_PER_TICK;
+	}
+
+	private int landingTick(Projectile projectile)
+	{
+		final int cyclesOut = Math.max(0, projectile.getEndCycle() - client.getGameCycle());
+		return client.getTickCount() + cyclesOut / CYCLES_PER_TICK;
+	}
+
+	// Whether a hitsplat landing now is one of my attacks arriving from flight,
+	// rather than a fresh melee blow. Matched on when the attack was due to land
+	// rather than counted, because a count cannot expire: a projectile that never
+	// produces a hitsplat leaves the count high forever, and then a later melee
+	// hit is mistaken for it and never booked as an attack of its own.
 	private boolean consumePending(int npcIndex)
 	{
-		final Integer pending = pendingMineHits.get(npcIndex);
-		if (pending == null || pending <= 0)
+		final List<Integer> due = pendingMineHits.get(npcIndex);
+		if (due == null)
 		{
 			return false;
 		}
-		pendingMineHits.put(npcIndex, pending - 1);
-		return true;
+		final int now = client.getTickCount();
+		// Anything that should have landed and did not is dropped rather than
+		// left to be matched against something unrelated later.
+		due.removeIf(tick -> now - tick > FLIGHT_SLACK_TICKS);
+		for (int i = 0; i < due.size(); i++)
+		{
+			if (Math.abs(due.get(i) - now) <= FLIGHT_SLACK_TICKS)
+			{
+				due.remove(i);
+				return true;
+			}
+		}
+		if (due.isEmpty())
+		{
+			pendingMineHits.remove(npcIndex);
+		}
+		return false;
 	}
 
 	/** The fight the overlay should display: the active one, else the last finished. */
@@ -1317,17 +1662,11 @@ public class PvmPerformancePlugin extends Plugin
 		});
 	}
 
-	/**
-	* Writes each fight, then the room it belonged to, then the raid the rooms
-	* belonged to: the same numbers at three widths, told apart by the level
-	* column. Phases are written whole rather than summed away, so which phase
-	* a kill went wrong on survives into the file, and anyone who wants only
-	* the rooms can filter on one column.
-	*
-	* <p>The rooms are rebuilt from the fights here rather than stored, so a
-	* history written before rooms existed still exports as rooms and there is
-	* no second structure on disk to fall out of step with the first.
-	*/
+	// Writes each fight, then the room it belonged to, then the raid the rooms
+	// belonged to: the same numbers at three widths, told apart by the level
+	// column. Phases are written whole rather than summed away, so which phase
+	// a kill went wrong on survives into the file, and anyone who wants only
+	// the rooms can filter on one column.
 	private static void writeRows(Writer writer, List<Fight> fights) throws IOException
 	{
 		final List<Fight> ordered = new ArrayList<>(fights);
@@ -1349,10 +1688,7 @@ public class PvmPerformancePlugin extends Plugin
 			if (room == null || newRaid || fight.getGroupName() == null
 				|| !room.accepts(fight.encounterName()))
 			{
-				if (room != null)
-				{
-					writer.write(csvRoomRow(raidName, raidRun, room));
-				}
+				writeRoomRow(writer, raidName, raidRun, room);
 				room = new Encounter(fight.encounterName(), null, fight.getStartMillis());
 				if (fight.getRaidId() > 0)
 				{
@@ -1364,13 +1700,22 @@ public class PvmPerformancePlugin extends Plugin
 			room.add(fight);
 			writer.write(csvFightRow(raidName, raidRun, fight));
 		}
-		if (room != null)
-		{
-			writer.write(csvRoomRow(raidName, raidRun, room));
-		}
+		writeRoomRow(writer, raidName, raidRun, room);
 		if (!raidRooms.isEmpty())
 		{
 			writer.write(csvRaidRow(raidName, raidRun, raidRooms));
+		}
+	}
+
+	// A room row only earns its place when the room holds more than one fight.
+	// Everywhere outside a raid it holds exactly one, so writing it repeated the
+	// fight row verbatim and doubled the length of the file for nothing.
+	private static void writeRoomRow(Writer writer, String raidName, int raidRun, Encounter room)
+		throws IOException
+	{
+		if (room != null && room.getFights().size() > 1)
+		{
+			writer.write(csvRoomRow(raidName, raidRun, room));
 		}
 	}
 
@@ -1446,7 +1791,9 @@ public class PvmPerformancePlugin extends Plugin
 
 	private static String csvFightRow(String raidName, int raidRun, Fight fight)
 	{
-		return csvScope("phase", raidName, raidRun, fight.encounterName()) + csvRow(fight);
+		// "fight" rather than "phase": a phase is what it is inside a raid, but
+		// outside one it is a single kill, and the label read as jargon.
+		return csvScope("fight", raidName, raidRun, fight.encounterName()) + csvRow(fight);
 	}
 
 	static String csvRow(Fight fight)
@@ -1482,8 +1829,8 @@ public class PvmPerformancePlugin extends Plugin
 
 	/**
 	 * Expected figures are left blank rather than written as a number when the
-	 * model had nothing to say — no target stats, or a fight recorded before
-	 * these columns existed — so a reader can tell "unknown" from a real zero.
+	 * model had nothing to say, no target stats, or a fight recorded before
+	 * these columns existed, so a reader can tell "unknown" from a real zero.
 	 */
 	private static String csvExpected(double value, int decimals)
 	{

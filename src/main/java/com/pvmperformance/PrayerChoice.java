@@ -1,23 +1,10 @@
 package com.pvmperformance;
 
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 
-/**
- * The offensive prayer a player intends to hold up, chosen in the config and
- * used as the standard the efficiency figure measures against.
- *
- * <p>It has to be chosen rather than detected. Which prayers a player has
- * unlocked isn't readable, so the plugin cannot tell whether someone praying
- * Eagle Eye is doing the best they can or forgetting Rigour.
- *
- * <p>Multipliers are the attack and strength ones for the style; they are
- * applied to whichever effective level the style rolls on, so one enum serves
- * all three. Public because the config returns it, and a config proxy cannot
- * reach a package-private type.
- */
+// The offensive prayer a player intends to hold up, chosen in the config
+// and used as the standard the efficiency figure measures against.
 @Getter
-@RequiredArgsConstructor
 public enum PrayerChoice
 {
 	NONE("None", 1.0, 1.0),
@@ -41,24 +28,44 @@ public enum PrayerChoice
 
 	// Magic
 	MYSTIC_WILL("Mystic Will", 1.05, 1.0),
-	MYSTIC_LORE("Mystic Lore", 1.10, 1.0),
-	MYSTIC_MIGHT("Mystic Might", 1.15, 1.0),
-	MYSTIC_VIGOUR("Mystic Vigour", 1.18, 1.0),
-	AUGURY("Augury", 1.25, 1.0),
+	MYSTIC_LORE("Mystic Lore", 1.10, 1.0, 1.0),
+	MYSTIC_MIGHT("Mystic Might", 1.15, 1.0, 2.0),
+	MYSTIC_VIGOUR("Mystic Vigour", 1.18, 1.0, 3.0),
+	// Augury gained a 4% magic damage boost in May 2024. Without it the prayer
+	// changes only accuracy, and against a target already near 100% it looked
+	// like Augury did nothing at all.
+	AUGURY("Augury", 1.25, 1.0, 4.0),
 
 	// Ruinous Powers
 	ANCIENT_STRENGTH("Ancient Strength", 1.20, 1.20),
 	ANCIENT_SIGHT("Ancient Sight", 1.20, 1.20),
-	ANCIENT_WILL("Ancient Will", 1.20, 1.0),
-	TRINITAS("Trinitas", 1.15, 1.15),
+	ANCIENT_WILL("Ancient Will", 1.20, 1.0, 3.0),
+	TRINITAS("Trinitas", 1.15, 1.15, 2.0),
 	DECIMATE("Decimate", 1.30, 1.27),
 	ANNIHILATE("Annihilate", 1.30, 1.27),
-	VAPORISE("Vaporise", 1.30, 1.0),
+	VAPORISE("Vaporise", 1.30, 1.0, 4.0),
 	INTENSIFY("Intensify", 1.50, 1.0);
 
 	private final String displayName;
 	private final double attackMultiplier;
 	private final double strengthMultiplier;
+	// Magic damage, as a percentage added to the worn total rather than a
+	// multiplier. Only a few prayers give any; for the rest this is zero.
+	private final double magicDamagePercent;
+
+	PrayerChoice(String displayName, double attackMultiplier, double strengthMultiplier)
+	{
+		this(displayName, attackMultiplier, strengthMultiplier, 0.0);
+	}
+
+	PrayerChoice(String displayName, double attackMultiplier, double strengthMultiplier,
+		double magicDamagePercent)
+	{
+		this.displayName = displayName;
+		this.attackMultiplier = attackMultiplier;
+		this.strengthMultiplier = strengthMultiplier;
+		this.magicDamagePercent = magicDamagePercent;
+	}
 
 	@Override
 	public String toString()

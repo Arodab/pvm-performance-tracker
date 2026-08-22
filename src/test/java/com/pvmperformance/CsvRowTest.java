@@ -4,14 +4,7 @@ import static org.junit.Assert.assertEquals;
 import java.util.Collections;
 import org.junit.Test;
 
-/**
- * Every row must have as many columns as the header names, at every level.
- *
- * <p>This is here because it has already gone wrong once: a column was added to
- * the rows and not to the header, and the file loaded into a spreadsheet with
- * every value one place to the left from that column on. Nothing about it was
- * visible in a green build, and nothing about it looks wrong in the source.
- */
+// Every row must have as many columns as the header names, at every level.
 public class CsvRowTest
 {
 	private static final int COLUMNS = PvmPerformancePlugin.CSV_HEADER.trim().split(",", -1).length;
@@ -19,8 +12,9 @@ public class CsvRowTest
 	private static Fight fight()
 	{
 		final Fight f = new Fight("Some \"quoted\" npc", NpcIds.GOBLIN, 1, 100, 0L, RaidType.TOMBS_OF_AMASCUT, 2);
-		f.recordAttackMade(true, true, 10, 12);
-		f.recordDamageDealt(7, 600L);
+		f.recordAttackMade(true);
+		f.recordAttackResolved(true, 10, 12);
+		f.recordDamageDealt(7, 600L, true);
 		f.recordExpected(20, 0.75, 6.5);
 		f.recordTickLost(false);
 		f.end(true, 1200L);
@@ -42,7 +36,7 @@ public class CsvRowTest
 	@Test
 	public void aPhaseRowMatchesTheHeader()
 	{
-		assertEquals(COLUMNS, columns("phase,x,1,\"room\"," + PvmPerformancePlugin.csvRow(fight())));
+		assertEquals(COLUMNS, columns("fight,x,1,\"room\"," + PvmPerformancePlugin.csvRow(fight())));
 	}
 
 	@Test
@@ -73,6 +67,6 @@ public class CsvRowTest
 	@Test
 	public void quotesInAnNpcNameDoNotSplitTheRow()
 	{
-		assertEquals(COLUMNS, columns("phase,,,\"\"," + PvmPerformancePlugin.csvRow(fight())));
+		assertEquals(COLUMNS, columns("fight,,,\"\"," + PvmPerformancePlugin.csvRow(fight())));
 	}
 }

@@ -29,17 +29,32 @@ enum RaidType
 	/** The raid the player is in, or null outside one. */
 	static RaidType current(Client client)
 	{
+		// None of these varbits is reliably cleared on leaving, so a fight in
+		// Prifddinas was being filed under Theatre of Blood on the strength of a
+		// progress value left over from a raid. Requiring an instance is not the
+		// whole answer - a house is instanced too - but it keeps the open world
+		// clean while a varbit that actually clears is identified.
+		if (!client.isInInstancedRegion())
+		{
+			return null;
+		}
 		if (client.getVarbitValue(VarbitID.RAIDS_CLIENT_INDUNGEON) == 1)
 		{
 			return CHAMBERS_OF_XERIC;
 		}
-		// Party status counts the lobby as well; the wave progress only moves
-		// once the raid itself is under way.
-		if (client.getVarbitValue(VarbitID.TOB_PROGRESS) > 0)
+		// The wave, not TOB_PROGRESS. That one runs 0 to 5 and counts how far
+		// the player has got through the Theatre's stages at some point, not
+		// whether they are in it now: it reads non-zero for anyone who has ever
+		// been near the place, and filed every goblin and guard ever killed
+		// under Theatre of Blood. The wave only moves while a raid is under way.
+		if (client.getVarbitValue(VarbitID.TOB_CLIENT_WAVEPROGRESS_VAL) > 0)
 		{
 			return THEATRE_OF_BLOOD;
 		}
-		if (client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL) > 0)
+		// The party status, not the raid level. The level is never cleared on
+		// leaving, so it reads set for the rest of the session; the status is 1
+		// inside and 0 everywhere else, a house included.
+		if (client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS) > 0)
 		{
 			return TOMBS_OF_AMASCUT;
 		}

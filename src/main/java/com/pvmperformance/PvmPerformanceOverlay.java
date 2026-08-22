@@ -42,13 +42,11 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return null;
 		}
 
-		// Three widths of the same numbers: the whole trip, the raid so far, or
-		// the room being fought. The room is the default and the narrowest — the
-		// single fight is not offered, because a room whose adds are separate
-		// NPCs would blink between them as they died.
-		// Asked for the loadout's figures and nothing else: what this hits for
-		// against this target, with no record of how the fight has gone. None of
-		// the widths below apply, since none of them is being reported.
+		// Expected-only asks for the loadout's figures and nothing else, so none
+		// of the widths below apply. Otherwise it is one of three: the whole
+		// trip, the raid so far, or the room being fought. The room is the
+		// default; a single fight is not offered, because a room whose adds are
+		// separate NPCs would blink between them as they died.
 		final boolean expectedOnly = config.overlayExpectedOnly();
 		final SessionTotals session = expectedOnly || !config.overlaySessionTotals()
 			? null : plugin.getSession();
@@ -139,7 +137,7 @@ class PvmPerformanceOverlay extends OverlayPanel
 			.build());
 
 		// How well the attacks were set up, with the parts shown only when one of
-		// them slipped — a clean fight needs no breakdown.
+		// them slipped, a clean fight needs no breakdown.
 		final double efficiency = session != null ? session.efficiency()
 			: raid != null ? raid.efficiency() : room.efficiency();
 		if (efficiency >= 0)
@@ -155,20 +153,16 @@ class PvmPerformanceOverlay extends OverlayPanel
 				: raid != null ? raid.getAttacksPrayed() : room.getAttacksPrayed();
 			final int potted = session != null ? session.getAttacksPotted()
 				: raid != null ? raid.getAttacksPotted() : room.getAttacksPotted();
-			if (prayed < made)
-			{
-				panelComponent.getChildren().add(LineComponent.builder()
-					.left("  prayed")
-					.right(prayed + "/" + made)
-					.build());
-			}
-			if (potted < made)
-			{
-				panelComponent.getChildren().add(LineComponent.builder()
-					.left("  potted")
-					.right(potted + "/" + made)
-					.build());
-			}
+			// Always shown, both of them. Hiding a counter that reads full makes
+			// it impossible to tell a perfect run from one that is not counting.
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("  prayed")
+				.right(prayed + "/" + made)
+				.build());
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("  potted")
+				.right(potted + "/" + made)
+				.build());
 		}
 
 		final double lostShare = session != null ? session.ticksLostShare()

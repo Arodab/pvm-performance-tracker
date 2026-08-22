@@ -16,27 +16,10 @@ import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.game.ItemManager;
 
-/**
- * Resolves the gear effects that multiply the attack roll and the max hit.
- *
- * <p>Multipliers and stacking rules follow the LlemonDuck dps-calculator
- * (BSD-2), (c) Paul Norton, with the newer weapons and the two raid-specific
- * rules taken from the wiki. Target-dependent effects read the wiki attribute
- * tags carried by {@link MonsterStatsProvider.MonsterStats}.
- *
- * <p>Items are matched by name rather than by id. Nearly every family here has
- * many ids for one item — cosmetic recolours (crystal, bow of faerdhinen),
- * degradation steps (ahrim's, blessed sword), charge states (revenant weapons)
- * and the ~70 slayer helmets — while the name is both stable and the thing that
- * actually distinguishes the tiers that change the multiplier: "(i)", "(e)",
- * "(ei)", "(inactive)", "(u)".
- *
- * <p>Not modelled: holy water, and the additive rather than multiplicative
- * stacking that the dragon hunter crossbow and scorching bow have with the
- * black mask specifically — the wiki states both stack additively with the
- * slayer helmet's 15% while stacking multiplicatively with everything else.
- * That only matters when the slayer task switch is on.
- */
+// Resolves the gear effects that multiply the attack roll and the max hit.
+// Multipliers and stacking rules follow the LlemonDuck dps-calculator
+// (BSD-2), (c) Paul Norton, with the newer weapons and the raid-specific
+// rules taken from the wiki.
 @Singleton
 class GearBonusCalc
 {
@@ -111,7 +94,6 @@ class GearBonusCalc
 		total = total.combine(dharoksBonus(type, gear));
 		total = total.combine(avariceBonus(npc, gear));
 		total = total.combine(kerisBonus(type, npc, gear));
-		total = total.combine(fangBonus(type, gear));
 		total = total.combine(twistedBowBonus(type, npc, gear));
 		total = total.combine(tomeBonus(type, spell, gear));
 		total = total.combine(smokeStaffBonus(type, spell, gear));
@@ -371,7 +353,7 @@ class GearBonusCalc
 
 	/**
 	 * Demonbane weapons and spells. The listed bonus is scaled by the target's
-	 * demonbane effectiveness, which a handful of demons alter — Duke Sucellus
+	 * demonbane effectiveness, which a handful of demons alter, Duke Sucellus
 	 * resists it at 70% while Yama and the ice demon take more than the full
 	 * amount.
 	 */
@@ -433,22 +415,9 @@ class GearBonusCalc
 			1.0 + (raw.getDamage() - 1.0) * effectiveness);
 	}
 
-	/**
-	 * The keris family deals 33% more damage to kalphites and scabarites, with a
-	 * 1/51 chance of tripling it. The triple is reachable, so it counts towards
-	 * the max hit, but it only averages out to a few percent.
-	 *
-	 * <p>The jewelled partisans from the Tombs of Amascut differ: breaching adds
-	 * 33% accuracy on top, and amascut trades the damage bonus down to 15% in
-	 * exchange for base stats. Corruption and the sun keep the base bonus and
-	 * add a special attack instead.
-	 *
-	 * <p>Scabarites need no separate check — the monster data tags the raid's
-	 * scarabs and Kephri as kalphites already.
-	 *
-	 * <p>Not modelled: the sun's raid-only passives, which key off the target
-	 * being below 25% health.
-	 */
+	// The keris family deals 33% more damage to kalphites and scabarites, with
+	// a 1/51 chance of tripling it. The triple is reachable, so it counts
+	// towards the max hit, but it only averages out to a few percent.
 	private GearBonus kerisBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
 		if (npc == null || !npc.hasAttribute("kalphite") || !type.isMelee())
@@ -479,24 +448,8 @@ class GearBonusCalc
 			|| weapon == ItemID.KERIS_PARTISAN_AMASCUT;
 	}
 
-	/**
-	 * Osmumten's fang rolls damage between 15% and 85% of the max hit instead of
-	 * from zero. That lowers the reachable max to 85% while leaving the average
-	 * exactly where an ordinary weapon's sits, at half the unmodified max.
-	 *
-	 * <p>The fang's second accuracy roll is handled in {@code CombatCalc}, since
-	 * it changes the hit chance formula rather than multiplying a roll.
-	 */
-	private GearBonus fangBonus(AttackType type, Loadout gear)
-	{
-		if (!type.isMelee())
-		{
-			return GearBonus.NONE;
-		}
-		final int weapon = gear.id(EquipmentInventorySlot.WEAPON);
-		return weapon == ItemID.OSMUMTENS_FANG || weapon == ItemID.OSMUMTENS_FANG_ORNAMENT
-			? GearBonus.split(1.0, 0.85, 1.0) : GearBonus.NONE;
-	}
+	// Osmumten's fang has no entry here on purpose: both of its effects need
+	// arithmetic a multiplier cannot express, and both live in CombatCalc.
 
 	/**
 	 * The twisted bow scales off the target's magic, and turns into a penalty
@@ -528,19 +481,8 @@ class GearBonusCalc
 		return (base + linear - quadratic) / 100.0;
 	}
 
-	/**
-	 * Tome of fire boosts fire spells and tome of water water spells, both from
-	 * the standard spellbook only.
-	 *
-	 * <p>These are 10% against NPCs. The 50% and 20% the reference carries are
-	 * the against-players figures, which do not apply to anything this plugin
-	 * tracks. Fire is damage only; water boosts accuracy as well.
-	 *
-	 * <p>Not modelled: a tome of fire charged with searing pages raises the
-	 * minimum hit to 10% of the max, which lifts average damage. The tome keeps
-	 * the same item id whichever page it holds, so the charge type can't be told
-	 * apart from the equipped item.
-	 */
+	// Tome of fire boosts fire spells and tome of water water spells, both
+	// from the standard spellbook only.
 	private GearBonus tomeBonus(AttackType type, Spell spell, Loadout gear)
 	{
 		if (type != AttackType.MAGIC || spell == null || spell.getSpellbook() != Spellbook.STANDARD)
@@ -575,14 +517,8 @@ class GearBonusCalc
 			? GearBonus.symmetric(1.1) : GearBonus.NONE;
 	}
 
-	/**
-	 * The revenant weapons and their upgrades, which add 50% accuracy and damage
-	 * against any NPC in the Wilderness and nothing outside it.
-	 *
-	 * <p>The reference gives Thammaron's sceptre 2.0 accuracy and 1.25 damage,
-	 * but the wiki has all six weapons on a flat 50% of both, so that is what is
-	 * used here.
-	 */
+	// The revenant weapons and their upgrades, which add 50% accuracy and
+	// damage against any NPC in the Wilderness and nothing outside it.
 	private GearBonus revenantBonus(AttackType type, Loadout gear)
 	{
 		final String weapon = gear.name(EquipmentInventorySlot.WEAPON);
@@ -639,8 +575,8 @@ class GearBonusCalc
 	}
 
 	/**
-	 * Vampyrebane weapons. The monster data tags vampyres by tier — "vampyre1"
-	 * through "vampyre3" — rather than with a single "vampyre" tag, and the tier
+	 * Vampyrebane weapons. The monster data tags vampyres by tier, "vampyre1"
+	 * through "vampyre3", rather than with a single "vampyre" tag, and the tier
 	 * decides what can hurt them: blisterwood works on all three, the ivandis
 	 * flail only up to tier 2.
 	 */
@@ -677,7 +613,7 @@ class GearBonusCalc
 
 	/**
 	 * Full ahrim's plus the amulet of the damned gives a 25% chance of 30% extra
-	 * damage — not a flat 30%, which is what the reference models. Since the
+	 * damage, not a flat 30%, which is what the reference models. Since the
 	 * October 2024 update it applies to manual casts as well as autocasts, so
 	 * the style is not checked beyond it being magic.
 	 */
@@ -808,9 +744,25 @@ class GearBonusCalc
 	 * varbit. This also reads set in the lobby, which is harmless: nothing is
 	 * being fought there, so no multiplier is applied anyway.
 	 */
+	// The party status, not the raid level. The level is the raid's difficulty
+	// and is never cleared on leaving, so reading it scaled every NPC in the
+	// game once a raid had been done - a Guard in a POH read 128 defence
+	// against a base of 80. The status is 1 while in the raid and 0 everywhere
+	// else, measured in the open world before and after a raid and in a house.
+	void updateRaidState()
+	{
+		// Nothing to latch: the party status answers directly.
+	}
+
 	boolean inTombsOfAmascut()
 	{
-		return client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL) > 0;
+		return client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS) > 0;
+	}
+
+	/** The raid level, or 0 when the Tombs are not actually being fought. */
+	int tombsRaidLevel()
+	{
+		return inTombsOfAmascut() ? client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL) : 0;
 	}
 
 	private boolean inWilderness()

@@ -2,14 +2,9 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-/**
- * Running totals for the current trip, so the overlay can show how a whole
- * session went rather than resetting at each kill. A single unlucky kill says
- * little; forty of them say something.
- *
- * <p>Fed from the same events as {@link Fight} rather than by summing finished
- * fights, so the figures include the kill in progress.
- */
+// Running totals for the current trip, so the overlay can show how a whole
+// session went rather than resetting at each kill. A single unlucky kill
+// says little; forty of them say something.
 @Getter
 class SessionTotals
 {
@@ -80,15 +75,8 @@ class SessionTotals
 		lastActivityMillis = now;
 	}
 
-	/**
-	 * Books a tick that passed with the weapon off cooldown and no attack made.
-	 *
-	 * <p>Taken tick by tick from the fight in progress rather than summed from
-	 * finished fights, which left the trip's tick loss frozen until something
-	 * died. Only ticks the fight itself counts are passed here, so the gap
-	 * between one fight's last attack and the next fight's first stays out: that
-	 * is travel, not waste.
-	 */
+	// Books a tick that passed with the weapon off cooldown and no attack
+	// made.
 	void recordTickLost(boolean eating)
 	{
 		if (eating)
@@ -125,11 +113,11 @@ class SessionTotals
 		return engagements == 0 ? 0 : (double) sumTicksToEngage / engagements;
 	}
 
-	void recordAttempt(int damage, long now)
+	/** Damage from one hitsplat; see {@code Fight.recordDamageDealt}. */
+	void recordAttempt(int damage, boolean landedAttack, long now)
 	{
 		damageDealt += damage;
-		attempts++;
-		if (damage > 0)
+		if (landedAttack)
 		{
 			hits++;
 		}
@@ -142,22 +130,27 @@ class SessionTotals
 	 * the overlay shows it live for whatever is held now.
 	 */
 	/** How well one attack was set up, sampled on the tick it was made. */
-	void recordAttackMade(boolean prayed, boolean potted, double actualSetup, double idealSetup)
+	void recordAttackMade(boolean potted)
 	{
 		attacksMade++;
 		combatTicks++;
-		if (actualSetup >= 0 && idealSetup > 0)
+		attempts++;
+		if (potted)
 		{
-			sumActualSetup += actualSetup;
-			sumIdealSetup += idealSetup;
+			attacksPotted++;
 		}
+	}
+
+	void recordAttackResolved(boolean prayed, double actualSetup, double idealSetup)
+	{
 		if (prayed)
 		{
 			attacksPrayed++;
 		}
-		if (potted)
+		if (actualSetup >= 0 && idealSetup > 0)
 		{
-			attacksPotted++;
+			sumActualSetup += actualSetup;
+			sumIdealSetup += idealSetup;
 		}
 	}
 

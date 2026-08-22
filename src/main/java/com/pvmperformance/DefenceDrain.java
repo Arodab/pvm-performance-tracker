@@ -15,24 +15,7 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.plugins.specialcounter.SpecialCounterUpdate;
 import net.runelite.client.plugins.specialcounter.SpecialWeapon;
 
-/**
- * How much defence has been drained off each NPC being fought.
- *
- * <p>The expected accuracy is only honest if it knows this. A warhammer takes
- * 30% of what is left and a godsword takes the damage it dealt, so after a few
- * specials the target is far easier to hit than its book stats say, and a model
- * reading those stats reports the player as less accurate than they were.
- *
- * <p>Kept against the NPC's index, because that is what the drain belongs to. A
- * boss that transforms keeps its index and keeps the drain with it; one that
- * despawns and comes back is a new NPC with its stats restored, which is why
- * Olm's melee hand has to be drained again every phase.
- *
- * <p>The weapons and their arithmetic come from the special attack counter in
- * the client rather than being restated here, so the two cannot disagree and
- * new draining weapons arrive without this file changing. What that does not
- * carry is the floors, which are in {@link DefenceDrainCap}.
- */
+// How much defence has been drained off each NPC being fought.
 @Slf4j
 @Singleton
 class DefenceDrain
@@ -40,6 +23,7 @@ class DefenceDrain
 	// A special lands on the tick it is thrown for melee, and a few ticks later
 	// for the thrown and fired ones. Past this the special is forgotten rather
 	// than credited to whatever is hit next.
+	private static final int MAX_SPEC_ENERGY = 1000;
 	private static final int HIT_WINDOW_TICKS = 5;
 
 	private final Client client;
@@ -49,6 +33,9 @@ class DefenceDrain
 	// npc index -> defence levels taken off it.
 	private final Map<Integer, Integer> drained = new HashMap<>();
 
+	// Seeded from the live value rather than left unknown, so the first special
+	// after a reset is measured against something. Left at -1 it was swallowed:
+	// the drop that fired it looked like the first reading rather than a fall.
 	private int specEnergy = -1;
 	private SpecialWeapon firedWeapon;
 	private int firedTick = Integer.MIN_VALUE;
@@ -70,8 +57,8 @@ class DefenceDrain
 
 	/**
 	 * Notices the player's own special attack going out, from the energy
-	 * falling. The party message only carries what other members did — and only
-	 * while they are in a party — so a solo player's own specials have to be
+	 * falling. The party message only carries what other members did, and only
+	 * while they are in a party, so a solo player's own specials have to be
 	 * seen here or not at all.
 	 */
 	void onEnergyChanged()
@@ -79,7 +66,16 @@ class DefenceDrain
 		final int energy = client.getVarpValue(VarPlayerID.SA_ENERGY);
 		final int previous = specEnergy;
 		specEnergy = energy;
-		if (previous < 0 || energy >= previous)
+		if (previous < 0)
+		{
+			// First reading since a reset. A full bar cannot have just been
+			// spent, so anything short of it is a special that already went out.
+			if (energy >= MAX_SPEC_ENERGY)
+			{
+				return;
+			}
+		}
+		else if (energy >= previous)
 		{
 			return;
 		}
@@ -93,8 +89,8 @@ class DefenceDrain
 
 	/**
 	 * Applies the special's drain when its hit lands. The hit is what decides
-	 * the amount for both kinds — a percentage of what remains, or the damage
-	 * dealt — so nothing can be worked out until it arrives.
+	 * the amount for both kinds, a percentage of what remains, or the damage
+	 * dealt, so nothing can be worked out until it arrives.
 	 */
 	void onMyHitsplat(NPC npc, int amount)
 	{
@@ -117,14 +113,7 @@ class DefenceDrain
 		}
 	}
 
-	/**
-	 * Books a drain against the NPC, stopping at whatever floor it has.
-	 *
-	 * <p>Order matters and is why this takes them one at a time rather than
-	 * counting them: a warhammer takes a share of what is left, so two of them
-	 * are not twice one, and a godsword takes a flat amount that changes what
-	 * the next warhammer is a share of.
-	 */
+	// Books a drain against the NPC, stopping at whatever floor it has.
 	private void apply(NPC npc, SpecialWeapon weapon, int hit)
 	{
 		final MonsterStatsProvider.MonsterStats stats = monsters.get(npc.getId());

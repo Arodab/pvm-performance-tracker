@@ -5,16 +5,9 @@ import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/**
- * Combat spells and their base max hits, keyed by the value of
- * {@code VarbitID.AUTOCAST_SPELL} while the spell is set to autocast.
- *
- * <p>The base max hit is before magic damage bonuses. A varbit value of -1
- * marks a spell that cannot be autocast, so the plugin never resolves it —
- * those entries are kept only so the table stays complete.
- *
- * <p>Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton.
- */
+// Combat spells and their base max hits, keyed by the value of
+// VarbitID.AUTOCAST_SPELL while the spell is set to autocast.
+// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton.
 @Getter
 @RequiredArgsConstructor
 enum Spell
@@ -74,6 +67,78 @@ enum Spell
 	GHOSTLY_GRASP(56, "Ghostly Grasp", 12, Spellbook.ARCEUUS),
 	SKELETAL_GRASP(57, "Skeletal Grasp", 17, Spellbook.ARCEUUS),
 	UNDEAD_GRASP(58, "Undead Grasp", 24, Spellbook.ARCEUUS);
+
+	// Elemental spells rose to the strongest of their tier the caster has
+	// unlocked, in the May 2024 rework: a wind strike at magic 13 hits for 8,
+	// the fire strike figure, not 2. The ladders are the four unlock levels of
+	// each tier against the max hit they carry.
+	private static final int[] STRIKE_LEVELS = {1, 5, 9, 13};
+	private static final int[] STRIKE_HITS = {2, 4, 6, 8};
+	private static final int[] BOLT_LEVELS = {17, 23, 29, 35};
+	private static final int[] BOLT_HITS = {9, 10, 11, 12};
+	private static final int[] BLAST_LEVELS = {41, 47, 53, 59};
+	private static final int[] BLAST_HITS = {13, 14, 15, 16};
+	private static final int[] WAVE_LEVELS = {62, 65, 70, 75};
+	private static final int[] WAVE_HITS = {17, 18, 19, 20};
+	private static final int[] SURGE_LEVELS = {81, 85, 90, 95};
+	private static final int[] SURGE_HITS = {21, 22, 23, 24};
+
+	/**
+	 * The max hit for this spell at the given magic level. Only the elemental
+	 * spells move; everything else returns its listed figure.
+	 */
+	int maxHitAt(int magicLevel)
+	{
+		final int[] levels;
+		final int[] hits;
+		final String name = displayName;
+		if (name.endsWith("Strike") && isElemental(name))
+		{
+			levels = STRIKE_LEVELS;
+			hits = STRIKE_HITS;
+		}
+		else if (name.endsWith("Bolt") && isElemental(name))
+		{
+			levels = BOLT_LEVELS;
+			hits = BOLT_HITS;
+		}
+		else if (name.endsWith("Blast") && isElemental(name))
+		{
+			levels = BLAST_LEVELS;
+			hits = BLAST_HITS;
+		}
+		else if (name.endsWith("Wave") && isElemental(name))
+		{
+			levels = WAVE_LEVELS;
+			hits = WAVE_HITS;
+		}
+		else if (name.endsWith("Surge") && isElemental(name))
+		{
+			levels = SURGE_LEVELS;
+			hits = SURGE_HITS;
+		}
+		else
+		{
+			return baseMaxHit;
+		}
+		int best = baseMaxHit;
+		for (int i = 0; i < levels.length; i++)
+		{
+			if (magicLevel >= levels[i])
+			{
+				best = Math.max(best, hits[i]);
+			}
+		}
+		return best;
+	}
+
+	// Wind, Water, Earth and Fire only. Saradomin Strike and the god spells
+	// share the suffixes but not the mechanic.
+	private static boolean isElemental(String name)
+	{
+		return name.startsWith("Wind ") || name.startsWith("Water ")
+			|| name.startsWith("Earth ") || name.startsWith("Fire ");
+	}
 
 	private static final Map<Integer, Spell> BY_VARBIT = new HashMap<>();
 

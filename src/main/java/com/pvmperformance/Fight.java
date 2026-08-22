@@ -4,8 +4,8 @@ import lombok.Getter;
 
 /**
  * The performance of a single fight against one NPC: the measured side from
- * observed facts — damage from {@code hitsplat.isMine()} splats, hits vs zeros
- * for accuracy, damage taken, and wall-clock duration — alongside the expected
+ * observed facts, damage from {@code hitsplat.isMine()} splats, hits vs zeros
+ * for accuracy, damage taken, and wall-clock duration, alongside the expected
  * side sampled from the combat model once per attack made.
  */
 @Getter
@@ -18,12 +18,12 @@ class Fight
 	// The room or boss this fight is a part of, or null if it stands alone.
 	private final String groupName;
 	// Overrides the group name where the room alone is too coarse to compare
-	// against itself — Olm's phases, which differ by which special is running.
+	// against itself, Olm's phases, which differ by which special is running.
 	// Null unless set, which is also how an older history file reads.
 	private String encounterLabel;
 	// Stored the wrong way round on purpose. Deserialisation fills fields
 	// without running their initialisers, so a fight read back from a history
-	// file written before this existed gets false — which has to mean the
+	// file written before this existed gets false, which has to mean the
 	// ordinary case, that the fight counts.
 	private final boolean unscored;
 	// The raid this was fought in, and which run of it, so the history can be
@@ -40,8 +40,8 @@ class Fight
 	private long lastActivityMillis;
 	private int damageDealt;
 	private int damageTaken;
-	// Every resolved hit of mine on the target counts as an attempt; a non-zero
-	// one counts as a landed hit. accuracy = hits / attempts.
+	// One attempt per attack thrown, and a hit for each attack that landed
+	// anything. accuracy = hits / attempts.
 	private int attempts;
 	private int hits;
 	private boolean ended;
@@ -77,12 +77,9 @@ class Fight
 	private int combatTicks;
 	private boolean attacking;
 
-	// The tick this target became available to attack — the tick it respawned,
-	// for a boss watched across its death — and how long it then took to be
-	// attacked. Both are 0 when unknown rather than -1, so that a fight read
-	// back from a history file written before they existed reads as unknown
-	// too: the fields are filled in by deserialisation, which does not run
-	// their initialisers. A gap of 0 cannot occur, so 0 is free to mean this.
+	// The tick this target became attackable, and how long it then took to be
+	// attacked. 0 means unknown, not -1: deserialising an older history file
+	// does not run the initialisers, and a gap of 0 cannot occur anyway.
 	private transient int engageFromTick;
 	private int ticksToEngage;
 
@@ -112,17 +109,8 @@ class Fight
 		engageFromTick = tick;
 	}
 
-	/**
-	 * Times the first attack against the tick the target became attackable, and
-	 * returns the gap, or 0 if it isn't known.
-	 *
-	 * <p>Kept apart from the in-fight tick loss rather than added to it. That
-	 * figure is measured against a standard the plugin can check — the weapon
-	 * was off cooldown, so an attack was possible — and none of it is
-	 * unavoidable. This gap contains whatever the boss spends unattackable on
-	 * spawn, which no amount of skill removes, so folding it in would make the
-	 * two incomparable and every kill look worse than it was.
-	 */
+	// Times the first attack against the tick the target became attackable,
+	// and returns the gap, or 0 if it isn't known.
 	int recordEngaged(int tick)
 	{
 		if (engageFromTick <= 0 || tick <= engageFromTick)
@@ -130,8 +118,8 @@ class Fight
 			return 0;
 		}
 		final int gap = tick - engageFromTick;
-		// Beyond a minute the player was doing something else entirely — banking,
-		// restocking, away — and timing it says nothing about the kill.
+		// Beyond a minute the player was doing something else entirely, banking,
+		// restocking, away, and timing it says nothing about the kill.
 		ticksToEngage = gap > MAX_ENGAGE_TICKS ? 0 : gap;
 		return ticksToEngage;
 	}
@@ -161,21 +149,26 @@ class Fight
 		this.encounterLabel = label;
 	}
 
-	void recordDamageDealt(int amount, long now)
+	/**
+	 * Damage from one hitsplat. {@code landedAttack} says whether this hitsplat
+	 * is the one that makes its attack count as landed, the first of a burst to
+	 * deal anything. A dragon claw special lands four hitsplats and a dark bow
+	 * two, and those are one attack apiece, so only the first to do damage
+	 * credits a hit.
+	 */
+	void recordDamageDealt(int amount, long now, boolean landedAttack)
 	{
 		damageDealt += amount;
-		attempts++;
-		if (amount > 0)
+		if (landedAttack)
 		{
 			hits++;
 		}
 		lastActivityMillis = now;
 	}
 
-	/** A magic splash on the target: a missed attempt with no hitsplat. */
+	/** A magic splash on the target: an attack that landed nothing. */
 	void recordSplash(long now)
 	{
-		attempts++;
 		lastActivityMillis = now;
 	}
 
@@ -271,23 +264,36 @@ class Fight
 	 * Sampled here rather than where the damage lands, because that is the tick
 	 * the prayers and boosts actually applied to the attack.
 	 */
-	void recordAttackMade(boolean prayed, boolean potted, double actualSetup, double idealSetup)
+	// The prayer-dependent half of an attack: whether the goal prayer was up,
+	// and how the attack was set up given that. Kept apart from recordAttackMade
+	// because a projectile's prayer is only known when it resolves, and the flag
+	// and the efficiency pair have to come from the same reading.
+	void recordAttackResolved(boolean prayed, double actualSetup, double idealSetup)
 	{
-		attacking = true;
-		combatTicks++;
-		attacksMade++;
 		if (prayed)
 		{
 			attacksPrayed++;
-		}
-		if (potted)
-		{
-			attacksPotted++;
 		}
 		if (actualSetup >= 0 && idealSetup > 0)
 		{
 			sumActualSetup += actualSetup;
 			sumIdealSetup += idealSetup;
+		}
+	}
+
+	void recordAttackMade(boolean potted)
+	{
+		attacking = true;
+		combatTicks++;
+		attacksMade++;
+		// One attack, one attempt. Counted here rather than where the damage
+		// arrives so that a spec landing four hitsplats is the single attack it
+		// was, and so the measured side is denominated the same way the expected
+		// side is, both are now per attack thrown.
+		attempts++;
+		if (potted)
+		{
+			attacksPotted++;
 		}
 	}
 

@@ -8,19 +8,12 @@ import net.runelite.api.Client;
 import net.runelite.api.gameval.NpcID;
 import net.runelite.api.gameval.VarbitID;
 
-/**
- * Raid scaling applied to a monster's levels, in one place because two callers
- * need the same answer: the model that rolls against a target, and the drain
- * tracker that takes a share of its defence.
- *
- * <p>The Chambers arithmetic is taken from the GearScape DPS calculator, which
- * is the only working record of it — the wiki says only that stats scale, the
- * spreadsheet it descends from has not been updated in a year, and the
- * BSD-2 calculator this project's formulas otherwise come from does not model
- * the Chambers at all. Credit belongs to GearScape and is owed in the
- * submission. What is reproduced is the arithmetic of a game mechanic rather
- * than any of their code.
- */
+// Raid scaling applied to a monster's levels, in one place because two
+// callers need the same answer: the model that rolls against a target, and
+// the drain tracker that takes a share of its defence.
+// The Chambers arithmetic is taken from the GearScape DPS calculator, the
+// only working record of it, and credit is owed to them in the submission.
+// What is reproduced is the arithmetic of a game mechanic, not their code.
 final class RaidScaling
 {
 	// The few whose magic level is worth rolling against, and so is scaled with
@@ -35,18 +28,8 @@ final class RaidScaling
 	{
 	}
 
-	/**
-	 * The share of a hit that reaches the target, for the few that shrug most of
-	 * it off.
-	 *
-	 * <p>Two things need this. Olm's hands each keep a third of anything that is
-	 * not their own style:
-	 * the right hand is the mage hand and mitigates everything but magic, the
-	 * left is the melee hand and mitigates everything but melee. Attacking the
-	 * wrong one with the wrong style is three times weaker than the loadout
-	 * suggests, which is far too large an error to leave out of a figure meant
-	 * to say how the player is doing.
-	 */
+	// The share of a hit that reaches the target, for the few that shrug most
+	// of it off.
 	static double damageTaken(int npcId, AttackType type)
 	{
 		if (npcId == NpcID.OLM_HAND_RIGHT || npcId == NpcID.OLM_HAND_RIGHT_SPAWNING)
@@ -101,15 +84,7 @@ final class RaidScaling
 			: base;
 	}
 
-	/**
-	 * A monster's magic level as the raid leaves it.
-	 *
-	 * <p>The Tombs do not scale it — a twisted bow reads the same max hit
-	 * against the Wardens at invocation 0 and 500, and its magic level of 190
-	 * could not have stayed under the bow's cap of 250 through a +200% scaling.
-	 * The Chambers scale it, but only for the few whose magic is worth rolling
-	 * against.
-	 */
+	// A monster's magic level as the raid leaves it.
 	static int magic(Client client, int npcId, int base, String name, int partyHitpoints)
 	{
 		if (!inChambers(client) || !scalesMagic(name))
@@ -124,7 +99,7 @@ final class RaidScaling
 
 	/**
 	 * Tombs of Amascut: 2% for every five raid levels, additively, so 300 is
-	 * +120% and 500 is +200%. The defence level only — magic level does not
+	 * +120% and 500 is +200%. The defence level only, magic level does not
 	 * move, and defence bonuses are armour rather than levels.
 	 */
 	static int tombs(int base, int raidLevel)
@@ -132,16 +107,10 @@ final class RaidScaling
 		return base * (100 + 2 * (raidLevel / 5)) / 100;
 	}
 
-	/**
-	 * Chambers of Xeric: the level is taken down by the party's hitpoints and
-	 * back up by its size, then multiplied for challenge mode. Each step floors,
-	 * and the order they are applied in changes the answer, so it is kept.
-	 *
-	 * <p>The hitpoints term is the party's <em>highest</em> hitpoints level,
-	 * which comes from {@link PartyHitpoints}: the game exposes only the
-	 * player's own, and the party plugin's broadcasts are where the rest of it
-	 * is. At 99 the term saturates, so for most raiders it changes nothing.
-	 */
+	// Chambers of Xeric: the level is taken down by the party's hitpoints and
+	// back up by its size, then multiplied for challenge mode. Each step
+	// floors, and the order they are applied in changes the answer, so it is
+	// kept.
 	static int chambers(int base, int partySize, int partyHitpoints, double cmMultiplier)
 	{
 		final int party = Math.max(1, Math.min(100, partySize));
@@ -155,8 +124,8 @@ final class RaidScaling
 	}
 
 	/**
-	 * Challenge mode raises defence by half, except for Tekton — a fifth in a
-	 * small team and rather more in a large one — and the glowing crystal, whose
+	 * Challenge mode raises defence by half, except for Tekton, a fifth in a
+	 * small team and rather more in a large one, and the glowing crystal, whose
 	 * defence it leaves alone.
 	 */
 	static double defenceMultiplier(boolean challengeMode, int partySize, String name)
@@ -220,8 +189,17 @@ final class RaidScaling
 	}
 
 	/** Reads in the Tombs lobby as well, where nothing is fought. */
+	// Set by the plugin each tick from GearBonusCalc, which latches the raid on
+	// the way in. The varbit alone cannot answer it: it is never cleared.
+	private static int tombsLevel;
+
+	static void setTombsRaidLevel(int level)
+	{
+		tombsLevel = level;
+	}
+
 	private static int tombsRaidLevel(Client client)
 	{
-		return client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL);
+		return tombsLevel;
 	}
 }
