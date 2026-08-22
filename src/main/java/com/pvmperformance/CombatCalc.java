@@ -90,9 +90,6 @@ class CombatCalc
 	private static final int IDEAL = 1;
 	private static final int PRAYER_HELD = 2;
 	private int mode = REAL;
-	// Whether the prayer reads should answer from the client's own copy of the
-	// prayer varbits rather than the server's. See prayerActive.
-	private boolean clientPrayerView;
 	// The index of the NPC the figures are being computed against, so the
 	// defence read can account for what has been drained off it.
 	private int targetIndex = -1;
@@ -1604,60 +1601,6 @@ class CombatCalc
 		return attack >= goal.getAttackMultiplier() && strength >= goal.getStrengthMultiplier();
 	}
 
-	// TRACE only. The style the prayer question is being asked about, the goal
-	// that style implies, and what each view of the varbits actually reaches.
-	// Strip with the rest of the TRACE lines.
-	String prayerTrace()
-	{
-		final AttackType type = attackStyle().getAttackType();
-		final PrayerChoice goal = prayerGoal();
-		final String reached;
-		clientPrayerView = true;
-		try
-		{
-			reached = prayerReachedTrace(type);
-		}
-		finally
-		{
-			clientPrayerView = false;
-		}
-		return String.format("style=%s goal=%s(a%.2f s%.2f) client[%s] server[%s]",
-			type, goal, goal.getAttackMultiplier(), goal.getStrengthMultiplier(),
-			reached, prayerReachedTrace(type));
-	}
-
-	private String prayerReachedTrace(AttackType type)
-	{
-		switch (type)
-		{
-			case MAGIC:
-				return String.format("a%.2f s%.2f", magicAccuracyPrayer(), 1.0);
-			case RANGED:
-				return String.format("a%.2f s%.2f", rangedAccuracyPrayer(), rangedPrayer());
-			default:
-				return String.format("a%.2f s%.2f", meleeAccuracyPrayer(), meleePrayer());
-		}
-	}
-
-	/**
-	 * As {@link #hasOffensivePrayer()}, but from the client's own copy of the
-	 * prayer varbits: what the player has just clicked, whether or not the server
-	 * has confirmed it. Answers "is it up as of this instant" for a prayer
-	 * switched on part-way through a tick.
-	 */
-	boolean hasOffensivePrayerNow()
-	{
-		clientPrayerView = true;
-		try
-		{
-			return hasOffensivePrayer();
-		}
-		finally
-		{
-			clientPrayerView = false;
-		}
-	}
-
 	// Whether every combat stat the current style rolls on is at the full
 	// boost the best potion here would give.
 	boolean isPotted()
@@ -1685,7 +1628,14 @@ class CombatCalc
 	private boolean prayerActive(Prayer prayer)
 	{
 		final int varbit = prayer.getVarbit();
-		return (clientPrayerView ? client.getVarbitValue(varbit) : client.getServerVarbitValue(varbit)) == 1;
+		// The server's copy, always. Clicking a prayer flips the client's copy at
+		// once so the orb responds without waiting for a reply, which answers for
+		// the click rather than for the attack: flick a prayer off at the end of
+		// a tick and the client reads off while the server resolved the attack
+		// with it up. The xp drop plugins read the server copy for the same
+		// reason. A client-view mode existed here and was removed once the last
+		// caller went; it undercounted every flick it was used for.
+		return client.getServerVarbitValue(varbit) == 1;
 	}
 
 	// Magic attack prayer multiplier.

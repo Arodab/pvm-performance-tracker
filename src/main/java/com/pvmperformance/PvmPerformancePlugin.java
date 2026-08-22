@@ -281,8 +281,6 @@ public class PvmPerformancePlugin extends Plugin
 	// The attack speed in force on each recent tick, so the wait after an attack
 	// is the throwing weapon's and not that of whatever replaced it.
 	private final Map<Integer, Integer> speedByTick = new HashMap<>();
-	// TRACE. The tick a prayer pulse was last logged on, so one flick logs once.
-	private int prayerPulseTick = Integer.MIN_VALUE;
 	// The tick an eat was last seen on, so the pause it causes is credited to it
 	// rather than only the one tick its animation shows for.
 	private int lastConsumeTick;
@@ -991,14 +989,6 @@ public class PvmPerformancePlugin extends Plugin
 				- (attackObservedFromProjectile ? PROJECTILE_BOOKING_LAG : MELEE_BOOKING_LAG);
 			final boolean prayed = Boolean.TRUE.equals(prayerUpByTick.get(attackTick));
 			final boolean potted = attackObservedPotted;
-			log.debug("TRACE prayed booked={} attackTick={} projectile={} prayed={}"
-					+ " hist[-0]={} hist[-1]={} hist[-2]={} hist[-3]={} now: {}",
-				client.getTickCount(), attackTick, attackObservedFromProjectile, prayed,
-				prayerUpByTick.get(client.getTickCount()),
-				prayerUpByTick.get(client.getTickCount() - 1),
-				prayerUpByTick.get(client.getTickCount() - 2),
-				prayerUpByTick.get(client.getTickCount() - 3),
-				combatCalc.prayerTrace());
 			// Worked out both ways now, while the loadout and boost are the ones
 			// that threw the attack. Which of the two applies is decided by the
 			// prayer, and for a projectile that is not known until it lands.
@@ -1010,15 +1000,6 @@ public class PvmPerformancePlugin extends Plugin
 			// means the tick was never sampled, which is not evidence of a
 			// missed switch, so it reads as clean.
 			final boolean switched = !Boolean.FALSE.equals(switchedByTick.get(attackTick));
-			log.debug("TRACE switch booked={} attackTick={} switched={}"
-					+ " hist[-0]={} hist[-1]={} hist[-2]={} weapon={} cat={}"
-					+ " speedThen={} speedNow={}",
-				client.getTickCount(), attackTick, switched,
-				switchedByTick.get(client.getTickCount()),
-				switchedByTick.get(client.getTickCount() - 1),
-				switchedByTick.get(client.getTickCount() - 2),
-				combatCalc.equippedWeaponId(), combatCalc.categoryName(),
-				speedByTick.get(attackTick), combatCalc.attackSpeedTicks());
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
@@ -1101,9 +1082,6 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final boolean eating = isConsuming();
-		log.debug("TRACE tickLost tick={} dueTick={} lag={} melee={} eating={} speedNow={} weapon={} cat={}",
-			client.getTickCount(), attackDueTick, lag, combatCalc.isMeleeEquipped(), eating,
-			combatCalc.attackSpeedTicks(), combatCalc.equippedWeaponId(), combatCalc.categoryName());
 		current.recordTickLost(eating);
 		if (counts)
 		{
@@ -1214,14 +1192,6 @@ public class PvmPerformancePlugin extends Plugin
 		// says a special went out and the player's own specials are not carried
 		// by the party message.
 		drain.onEnergyChanged();
-		// TRACE. The pulse is no longer acted on — see the history write — but
-		// seeing when it lands is what tells a mistimed flick from a missed one.
-		if (combatCalc.hasOffensivePrayerNow() && prayerPulseTick != client.getTickCount())
-		{
-			log.debug("TRACE prayerPulse seenAtTick={} cycle={} client=true server={}",
-				client.getTickCount(), client.getGameCycle(), combatCalc.hasOffensivePrayer());
-			prayerPulseTick = client.getTickCount();
-		}
 	}
 
 	@Subscribe
@@ -1253,12 +1223,6 @@ public class PvmPerformancePlugin extends Plugin
 		// tick went out on an earlier one and reads that tick's stored answer,
 		// so this write must not land before the read.
 		final boolean upThisTick = combatCalc.hasOffensivePrayer();
-		if (current != null && !current.isEnded())
-		{
-			log.debug("TRACE prayerHist tick={} stored={} clientSays={} {}",
-				client.getTickCount(), upThisTick, combatCalc.hasOffensivePrayerNow(),
-				combatCalc.prayerTrace());
-		}
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
 		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
 
