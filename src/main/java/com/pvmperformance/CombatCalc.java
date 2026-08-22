@@ -21,6 +21,7 @@ import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.api.gameval.NpcID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.game.ItemEquipmentStats;
@@ -341,7 +342,10 @@ class CombatCalc
 		{
 			return -1;
 		}
-		final double ordinary = accuracy * (averageMax / 2.0);
+		final int cap = damageCap(npcId);
+		final double ordinary = cap == Integer.MAX_VALUE
+			? accuracy * (averageMax / 2.0)
+			: accuracy * cappedAverage((int) averageMax, cap);
 
 		final EnchantedBolt bolt = loadedBolt(npcId);
 		if (bolt == null)
@@ -1007,7 +1011,59 @@ class CombatCalc
 	{
 		// What actually lands, which against Olm's hands is a third of it when the
 		// style is the wrong one for that hand.
-		return (int) (unmitigatedMaxHit(npcId) * mitigation(npcId));
+		return Math.min(damageCap(npcId),
+			(int) (unmitigatedMaxHit(npcId) * mitigation(npcId)));
+	}
+
+	/**
+	 * The most a single hit may deal against this target, whatever the roll.
+	 *
+	 * <p>A cap is not a smaller max hit and must not be modelled as one: rolling
+	 * nought to sixty and capping at nine averages a little over eight, where
+	 * half of nine is four and a half. {@link #cappedAverage} is what the
+	 * expected damage uses.
+	 *
+	 * <p>The Hueycoatl's tail is the only one known: nine while the player's
+	 * crush attack bonus is their highest, four otherwise, which is what makes
+	 * that phase drag for a team without a crush weapon.
+	 */
+	private int damageCap(int npcId)
+	{
+		if (npcId != NpcID.HUEY_TAIL && npcId != NpcID.HUEY_TAIL_BROKEN)
+		{
+			return Integer.MAX_VALUE;
+		}
+		return crushIsHighestAttackBonus() ? 9 : 4;
+	}
+
+	private boolean crushIsHighestAttackBonus()
+	{
+		final int crush = attackBonus(AttackType.CRUSH);
+		return crush >= attackBonus(AttackType.STAB)
+			&& crush >= attackBonus(AttackType.SLASH)
+			&& crush >= attackBonus(AttackType.RANGED)
+			&& crush >= attackBonus(AttackType.MAGIC);
+	}
+
+	/**
+	 * The average of a hit rolled uniformly from nought to {@code trueMax} and
+	 * then capped. Static and separate because the arithmetic is the whole point
+	 * of the distinction: every roll above the cap collapses onto it, so the
+	 * average sits far closer to the cap than to half of it.
+	 */
+	static double cappedAverage(int trueMax, int cap)
+	{
+		if (trueMax <= 0)
+		{
+			return 0;
+		}
+		if (cap >= trueMax)
+		{
+			return trueMax / 2.0;
+		}
+		final double atOrBelow = cap * (cap + 1) / 2.0;
+		final double collapsedOnto = (double) (trueMax - cap) * cap;
+		return (atOrBelow + collapsedOnto) / (trueMax + 1);
 	}
 
 	private int unmitigatedMaxHit(int npcId)
