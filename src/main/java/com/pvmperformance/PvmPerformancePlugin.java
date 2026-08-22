@@ -758,6 +758,23 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
+	 * Whether the target is dead but still on its feet. A fight only ends when
+	 * the NPC despawns, and the death animation runs for several ticks before
+	 * that — long enough for the next attack to come due against something that
+	 * cannot be attacked. Those ticks belong with the unattackable ones: no
+	 * attack was possible, so neither counting them lost nor counting them spent
+	 * says anything about how the fight was played.
+	 *
+	 * <p>Reported as a lost tick on a kill finished with a dart and followed by
+	 * a switch, which is simply the longest gap the booking lag allows before
+	 * the corpse disappears.
+	 */
+	private boolean targetIsDying()
+	{
+		return targetNpc != null && targetNpc.isDead();
+	}
+
+	/**
 	 * Whether an attack that has not been booked by now is late. Static and
 	 * separate because the whole of a bug lived in it: dueTick counts in attack
 	 * ticks and {@code now} is a booking tick, and the two are a tick or two
@@ -1053,7 +1070,7 @@ public class PvmPerformancePlugin extends Plugin
 		// in whole-trip mode moves during a fight rather than only at its end.
 		// Both are gated on the fight having started, which is the fight's rule
 		// for counting a tick at all.
-		if (EncounterGroup.isUnattackable(targetLiveId))
+		if (EncounterGroup.isUnattackable(targetLiveId) || targetIsDying())
 		{
 			// Between phases, charging, or dead but still standing. The tick is
 			// booked neither lost nor spent: no attack was possible, so counting
