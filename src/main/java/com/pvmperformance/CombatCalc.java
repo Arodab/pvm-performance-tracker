@@ -759,6 +759,18 @@ class CombatCalc
 	}
 
 	/** The spell being cast, manual taking priority over autocast. */
+	/**
+	 * Whether the attack in hand lands without a projectile, which is the
+	 * ancient area spells. Their attacks cannot be booked from a projectile
+	 * because the client never shows one, so the hitsplat has to serve.
+	 */
+	boolean castLandsWithoutProjectile()
+	{
+		final Spell spell = activeSpell();
+		return spell != null && spell.landsWithoutProjectile()
+			&& attackStyle().getAttackType() == AttackType.MAGIC;
+	}
+
 	private Spell activeSpell()
 	{
 		final Spell manual = activeManualCast();

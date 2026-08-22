@@ -449,13 +449,20 @@ public class PvmPerformancePlugin extends Plugin
 			// is held cannot decide this alone: a spell cast from a melee weapon
 			// lands a hitsplat like any other, and one that resolves something
 			// already in flight was booked when it was fired.
-			final boolean melee = combatCalc.isMeleeEquipped();
+			// Melee lands on the tick it is thrown, and so do the ancient area
+			// spells: a barrage gives no projectile to book from, so its
+			// hitsplat is the only thing that says an attack happened. Both are
+			// booked here; everything else is booked from its projectile.
+			final boolean melee = combatCalc.isMeleeEquipped()
+				|| combatCalc.castLandsWithoutProjectile();
 			final boolean firstOfBurst = !burstBooked.contains(npc.getIndex());
 			log.debug("TRACE hitsplat tick={} npc={} amount={} fromFlight={} melee={}"
 					+ " newBurst={} firstOfBurst={} books={} cat={} weapon={}",
 				tick, npc.getIndex(), hitsplat.getAmount(), arrivedFromFlight, melee,
 				newBurst, firstOfBurst, !arrivedFromFlight && melee && firstOfBurst,
 				combatCalc.categoryName(), combatCalc.equippedWeaponId());
+			log.debug("TRACE hitsplat noProjectileCast={} meleeEquipped={}",
+				combatCalc.castLandsWithoutProjectile(), combatCalc.isMeleeEquipped());
 			if (!arrivedFromFlight && melee && burstBooked.add(npc.getIndex()))
 			{
 				recordAttackObserved(false, npc.getId());

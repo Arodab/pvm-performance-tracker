@@ -163,6 +163,21 @@ enum Spell
 
 	private final Spellbook spellbook;
 
+	/**
+	 * Whether this spell reaches its target without a projectile the client
+	 * shows us. The ancient area spells — the burst and barrage families — land
+	 * on the tick they are cast and give no projectile to book an attack from,
+	 * so their attacks have to be taken from the hitsplat instead.
+	 *
+	 * <p>Found in a trace: blood barrage damage arrived every five ticks with
+	 * no projectile event anywhere near it, while other people's projectiles in
+	 * the same fight were seen and rejected normally.
+	 */
+	boolean landsWithoutProjectile()
+	{
+		return displayName.endsWith("Burst") || displayName.endsWith("Barrage");
+	}
+
 	/** The autocast spell for a varbit value, or null when nothing is set to autocast. */
 	static Spell forVarbit(int varbitValue)
 	{
