@@ -449,8 +449,14 @@ public class PvmPerformancePlugin extends Plugin
 			// is held cannot decide this alone: a spell cast from a melee weapon
 			// lands a hitsplat like any other, and one that resolves something
 			// already in flight was booked when it was fired.
-			if (!arrivedFromFlight && combatCalc.isMeleeEquipped()
-				&& burstBooked.add(npc.getIndex()))
+			final boolean melee = combatCalc.isMeleeEquipped();
+			final boolean firstOfBurst = !burstBooked.contains(npc.getIndex());
+			log.debug("TRACE hitsplat tick={} npc={} amount={} fromFlight={} melee={}"
+					+ " newBurst={} firstOfBurst={} books={} cat={} weapon={}",
+				tick, npc.getIndex(), hitsplat.getAmount(), arrivedFromFlight, melee,
+				newBurst, firstOfBurst, !arrivedFromFlight && melee && firstOfBurst,
+				combatCalc.categoryName(), combatCalc.equippedWeaponId());
+			if (!arrivedFromFlight && melee && burstBooked.add(npc.getIndex()))
 			{
 				recordAttackObserved(false, npc.getId());
 			}
@@ -1020,6 +1026,12 @@ public class PvmPerformancePlugin extends Plugin
 
 		if (current == null || current.isEnded())
 		{
+			if (attacked)
+			{
+				log.debug("TRACE attack DROPPED tick={} current={} ended={}",
+					client.getTickCount(), current != null,
+					current != null && current.isEnded());
+			}
 			attackDueTick = Integer.MIN_VALUE;
 			lastAttackFromProjectile = false;
 			return;
