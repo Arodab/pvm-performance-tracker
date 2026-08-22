@@ -217,6 +217,10 @@ public class PvmPerformancePlugin extends Plugin
 	// booking measures the gap between bookings instead, and that gap is a tick
 	// longer whenever the style changes from melee to a projectile one.
 	private int attackDueTick = Integer.MIN_VALUE;
+	// Whether the last attack was proven by a projectile, and so is booked two
+	// ticks after it went out rather than one. Kept because a switch can leave
+	// one weapon's attack in flight while another is already in hand.
+	private boolean lastAttackFromProjectile;
 	// The tick an attack was last seen going out on, set from the events that
 	// prove one happened rather than from what the player looks like, and which
 	// event proved it. A projectile is a cast or a shot; a hitsplat is a melee
@@ -766,6 +770,25 @@ public class PvmPerformancePlugin extends Plugin
 		return now >= dueTick + bookingLag;
 	}
 
+	/**
+	 * How long a booking might still take to arrive: the longer of what the
+	 * last attack needs and what the weapon in hand would need.
+	 *
+	 * <p>Two attacks can be outstanding across a switch. The one already thrown
+	 * carries the old weapon's lag — a dart fired before the swap is booked two
+	 * ticks later whatever is held by then — while the next one will carry the
+	 * new weapon's. Nothing can be called late until the longer of the two has
+	 * had time to arrive, and taking only the weapon in hand booked a lost tick
+	 * on every switch out of a projectile weapon into melee.
+	 *
+	 * <p>Self-limiting rather than merely lenient: once the deadline has passed
+	 * by the longer lag, nothing can still be in flight.
+	 */
+	static int pendingBookingLag(boolean lastAttackWasProjectile, boolean meleeEquippedNow)
+	{
+		return lastAttackWasProjectile || !meleeEquippedNow ? PROJECTILE_BOOKING_LAG : MELEE_BOOKING_LAG;
+	}
+
 	private void record(boolean prayed, boolean switched, double actual, double ideal)
 	{
 		if (current != null && !current.isEnded())
@@ -921,6 +944,7 @@ public class PvmPerformancePlugin extends Plugin
 		if (current == null || current.isEnded())
 		{
 			attackDueTick = Integer.MIN_VALUE;
+			lastAttackFromProjectile = false;
 			return;
 		}
 		if (attacked)
@@ -1030,6 +1054,7 @@ public class PvmPerformancePlugin extends Plugin
 			final Integer threwAt = speedByTick.get(attackTick);
 			attackDueTick = attackTick
 				+ (threwAt != null ? threwAt : combatCalc.attackSpeedTicks());
+			lastAttackFromProjectile = attackObservedFromProjectile;
 			if (attackObservedFromProjectile)
 			{
 				// Only a cast can spend a cast. A melee blow landing on the tick
@@ -1065,7 +1090,7 @@ public class PvmPerformancePlugin extends Plugin
 		// followed by a switch to a trident is booked two ticks after the trident
 		// goes out, and holding that to the whip's one-tick lag booked a lost
 		// tick on every switch from melee into a projectile weapon.
-		final int lag = combatCalc.isMeleeEquipped() ? MELEE_BOOKING_LAG : PROJECTILE_BOOKING_LAG;
+		final int lag = pendingBookingLag(lastAttackFromProjectile, combatCalc.isMeleeEquipped());
 		if (!attackOverdue(client.getTickCount(), attackDueTick, lag))
 		{
 			current.recordTickSpent();

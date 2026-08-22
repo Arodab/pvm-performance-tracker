@@ -1,5 +1,6 @@
 package com.pvmperformance;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import org.junit.Test;
@@ -59,7 +60,9 @@ public class AttackDueTest
 	@Test
 	public void switchingIntoMeleeArrivesEarlyRatherThanLate()
 	{
-		assertFalse(PvmPerformancePlugin.attackOverdue(4, DUE, MELEE));
+		// The lag here is the projectile one, because the attack being waited
+		// for was thrown before the switch.
+		assertFalse(PvmPerformancePlugin.attackOverdue(4, DUE, PROJECTILE));
 	}
 
 	@Test
@@ -69,6 +72,44 @@ public class AttackDueTest
 		// it and both styles report it.
 		assertTrue(PvmPerformancePlugin.attackOverdue(9, DUE, MELEE));
 		assertTrue(PvmPerformancePlugin.attackOverdue(9, DUE, PROJECTILE));
+	}
+
+	/**
+	 * Taken straight from a trace. A dart went out on 162 and another on 164,
+	 * both on time for a two tick weapon, and the whip came out on 165. Tick
+	 * 165 was booked lost because the lag was read off the whip, while the
+	 * booking being waited for belonged to the dart already in the air — it
+	 * arrived on 166 exactly as a projectile should.
+	 */
+	@Test
+	public void aDartStillInFlightKeepsItsOwnLag()
+	{
+		final int dueAfterTheDartOn162 = 164;
+		final int lag = PvmPerformancePlugin.pendingBookingLag(true, true);
+		assertEquals(PROJECTILE, lag);
+		assertFalse(PvmPerformancePlugin.attackOverdue(165, dueAfterTheDartOn162, lag));
+		// And the dart's booking lands on 166, so nothing was ever late.
+	}
+
+	@Test
+	public void theLongerOfTheTwoLagsWins()
+	{
+		// Melee thrown, projectile weapon now in hand: the next attack is the
+		// slow one to surface.
+		assertEquals(PROJECTILE, PvmPerformancePlugin.pendingBookingLag(false, false));
+		// Projectile thrown, melee now in hand: the one already in the air is.
+		assertEquals(PROJECTILE, PvmPerformancePlugin.pendingBookingLag(true, true));
+		// Melee either side is the only case that can be judged a tick sooner.
+		assertEquals(MELEE, PvmPerformancePlugin.pendingBookingLag(false, true));
+		assertEquals(PROJECTILE, PvmPerformancePlugin.pendingBookingLag(true, false));
+	}
+
+	@Test
+	public void theLongerLagStillEndsInALostTick()
+	{
+		// Leniency that never expires would be a hole. Two ticks past the
+		// deadline nothing can still be in flight, and the tick is lost.
+		assertTrue(PvmPerformancePlugin.attackOverdue(6, DUE, PROJECTILE));
 	}
 
 	@Test
