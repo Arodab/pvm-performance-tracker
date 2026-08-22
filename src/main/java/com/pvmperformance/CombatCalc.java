@@ -100,7 +100,8 @@ class CombatCalc
 	/** The gear multipliers for the current loadout against this target. */
 	private GearBonus computeGearBonus(int npcId)
 	{
-		return gearBonuses.compute(attackStyle(), monsters.get(npcId), activeSpell(), !config.slayerHelmetOffTask());
+		return gearBonuses.compute(gear(), attackStyle(), monsters.get(npcId), activeSpell(),
+			!config.slayerHelmetOffTask());
 	}
 
 	// Held for the tick. Equipment, varbits and the combat option cannot change
@@ -857,7 +858,7 @@ class CombatCalc
 		if (type == AttackType.MAGIC)
 		{
 			// The shadow multiplies the magic accuracy of everything else worn.
-			total *= gearBonuses.shadowMultiplier();
+			total *= gearBonuses.shadowMultiplier(gear);
 		}
 		if (type == AttackType.RANGED)
 		{
@@ -1131,9 +1132,9 @@ class CombatCalc
 				percent += e.getMdmg();
 			}
 		}
-		percent += gearBonuses.virtusAncientDamagePercent(spell);
+		percent += gearBonuses.virtusAncientDamagePercent(gear, spell);
 		// The shadow's multiplied magic damage is capped at 100%.
-		final int multiplier = gearBonuses.shadowMultiplier();
+		final int multiplier = gearBonuses.shadowMultiplier(gear);
 		percent *= multiplier;
 		if (multiplier > 1)
 		{

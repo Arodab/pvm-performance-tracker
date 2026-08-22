@@ -7,14 +7,10 @@ import javax.inject.Singleton;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.EquipmentInventorySlot;
-import net.runelite.api.Item;
-import net.runelite.api.ItemContainer;
 import net.runelite.api.Player;
 import net.runelite.api.Skill;
-import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarbitID;
-import net.runelite.client.game.ItemManager;
 
 // Resolves the gear effects that multiply the attack roll and the max hit.
 // Multipliers and stacking rules follow the LlemonDuck dps-calculator
@@ -44,22 +40,20 @@ class GearBonusCalc
 	}
 
 	private final Client client;
-	private final ItemManager itemManager;
 
 	@Inject
-	GearBonusCalc(Client client, ItemManager itemManager)
+	GearBonusCalc(Client client)
 	{
 		this.client = client;
-		this.itemManager = itemManager;
 	}
 
 	/**
-	 * The combined multipliers for the current loadout against this target.
-	 * A null target skips the effects that depend on what is being fought.
+	 * The combined multipliers for this loadout against this target. A null
+	 * target skips the effects that depend on what is being fought.
 	 */
-	GearBonus compute(AttackStyle style, MonsterStatsProvider.MonsterStats npc, Spell spell, boolean onSlayerTask)
+	GearBonus compute(Loadout gear, AttackStyle style, MonsterStatsProvider.MonsterStats npc, Spell spell,
+		boolean onSlayerTask)
 	{
-		final Loadout gear = snapshot();
 		if (gear == null)
 		{
 			return GearBonus.NONE;
@@ -682,14 +676,9 @@ class GearBonusCalc
 	 * on top of the 2% each already carries as a plain stat, so a full set is
 	 * 15% rather than 6%. Nothing outside the ancient spellbook benefits.
 	 */
-	double virtusAncientDamagePercent(Spell spell)
+	double virtusAncientDamagePercent(Loadout gear, Spell spell)
 	{
-		if (spell == null || spell.getSpellbook() != Spellbook.ANCIENT)
-		{
-			return 0.0;
-		}
-		final Loadout gear = snapshot();
-		if (gear == null)
+		if (spell == null || spell.getSpellbook() != Spellbook.ANCIENT || gear == null)
 		{
 			return 0.0;
 		}
@@ -719,9 +708,8 @@ class GearBonusCalc
 	 * rest of the loadout, by 3 normally and by 4 inside the Tombs of Amascut.
 	 * Returns 1 when the shadow isn't equipped.
 	 */
-	int shadowMultiplier()
+	int shadowMultiplier(Loadout gear)
 	{
-		final Loadout gear = snapshot();
 		if (gear == null)
 		{
 			return 1;
@@ -773,12 +761,5 @@ class GearBonusCalc
 	private static boolean startsWith(String name, String prefix)
 	{
 		return name != null && name.startsWith(prefix);
-	}
-
-	/** The worn items, resolved once so each effect does not re-read the container. */
-	private Loadout snapshot()
-	{
-		final ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		return equipment == null ? null : Loadout.worn(itemManager, equipment);
 	}
 }
