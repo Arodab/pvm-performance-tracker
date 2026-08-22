@@ -1025,9 +1025,24 @@ public class PvmPerformancePlugin extends Plugin
 	public void onNpcChanged(NpcChanged event)
 	{
 		final NPC npc = event.getNpc();
-		if (current != null && !current.isEnded() && current.getTargetIndex() == npc.getIndex())
+		if (current == null || current.isEnded())
+		{
+			return;
+		}
+		if (current.getTargetIndex() == npc.getIndex())
 		{
 			targetLiveId = npc.getId();
+		}
+		// A boss that is never removed from the scene announces its defeat by
+		// changing into a beaten form. That is the kill, and it beats waiting
+		// for loot: in a group there may be no drop for this player at all, and
+		// then no loot event ever arrives.
+		if (EncounterGroup.isDefeated(npc.getId())
+			&& EncounterGroup.sameGroup(npc.getId(), current.getTargetId()))
+		{
+			log.debug("TRACE defeated tick={} id={} targetId={}",
+				client.getTickCount(), npc.getId(), current.getTargetId());
+			finalizeFight(true, System.currentTimeMillis());
 		}
 	}
 

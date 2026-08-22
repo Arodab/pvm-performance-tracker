@@ -314,6 +314,24 @@ final class EncounterGroup
 			NpcID.NIGHTMARE_CHALLENGE_SLEEPWALKER)));
 	}
 
+	/**
+	 * Whether wearing this id means the boss has been beaten. A transform to it
+	 * is a kill, which matters for a boss whose NPCs are never removed from the
+	 * scene: the Hueycoatl's are not, so nothing despawns to end the fight.
+	 *
+	 * <p>Kept apart from {@link #isUnattackable(int)} even though the ids
+	 * overlap. Plenty of forms cannot be attacked without the fight being over —
+	 * Verzik between phases, the Wardens while they charge — so "cannot be hit"
+	 * must not be read as "dead".
+	 */
+	static boolean isDefeated(int npcId)
+	{
+		return DEFEATED.contains(npcId);
+	}
+
+	private static final Set<Integer> DEFEATED = Collections.unmodifiableSet(
+		new HashSet<>(Collections.singletonList(NpcID.HUEY_HEAD_DEFEATED)));
+
 	private static Set<Integer> buildUnattackable()
 	{
 		return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
