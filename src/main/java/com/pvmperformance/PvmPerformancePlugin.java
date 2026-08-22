@@ -135,6 +135,12 @@ public class PvmPerformancePlugin extends Plugin
 	// equals the game cycle at the event, so it carries no history.
 	private static final int MELEE_BOOKING_LAG = 1;
 	private static final int PROJECTILE_BOOKING_LAG = 2;
+	// And three for a cast that has no projectile. Measured, like the other two:
+	// the barrage cast animation started on 21, 26 and 31 and its damage landed
+	// on 24, 29 and 34. Borrowing melee's one left the prayer being read two
+	// ticks after the cast, which counted a prayer raised well after the spell
+	// had gone out.
+	private static final int NO_PROJECTILE_BOOKING_LAG = 3;
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -227,6 +233,8 @@ public class PvmPerformancePlugin extends Plugin
 	// attackDueTick, which is only set once the attack is booked: this one has
 	// to be right immediately, because it is what says the weapon is busy.
 	private int lastAttackSeenTick = Integer.MIN_VALUE;
+	// How far behind the attack the observation that proved it was.
+	private int attackObservedLag = MELEE_BOOKING_LAG;
 	// The tick a projectile was last taken as mine, so at most one is taken per
 	// tick. A player cannot throw two attacks in one.
 	private int acceptedProjectileTick = Integer.MIN_VALUE;
@@ -466,7 +474,8 @@ public class PvmPerformancePlugin extends Plugin
 				combatCalc.castLandsWithoutProjectile(), combatCalc.isMeleeEquipped());
 			if (!arrivedFromFlight && melee && burstBooked.add(npc.getIndex()))
 			{
-				recordAttackObserved(false, npc.getId());
+				recordAttackObserved(false, npc.getId(), combatCalc.isMeleeEquipped()
+					? MELEE_BOOKING_LAG : NO_PROJECTILE_BOOKING_LAG);
 			}
 		}
 		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
@@ -791,7 +800,7 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			// Harmless if the same cast also landed on something else: an attack
 			// is booked once a tick however many times it is observed.
-			recordAttackObserved(false, ((NPC) actor).getId());
+			recordAttackObserved(false, ((NPC) actor).getId(), NO_PROJECTILE_BOOKING_LAG);
 		}
 		current.recordSplash(now);
 		// Gated exactly as a landed hit is: an unscored NPC spends the tick but
@@ -1152,8 +1161,7 @@ public class PvmPerformancePlugin extends Plugin
 			// cycle it was fired on, and a hitsplat lands the tick of the blow.
 			// Guessed offsets could not work here, because the gap between an
 			// attack and its booking is not constant.
-			final int attackTick = client.getTickCount()
-				- (attackObservedFromProjectile ? PROJECTILE_BOOKING_LAG : MELEE_BOOKING_LAG);
+			final int attackTick = client.getTickCount() - attackObservedLag;
 			final boolean prayed = Boolean.TRUE.equals(prayerUpByTick.get(attackTick));
 			final boolean potted = attackObservedPotted;
 			// Worked out both ways now, while the loadout and boost are the ones
@@ -1302,6 +1310,17 @@ public class PvmPerformancePlugin extends Plugin
 	 */
 	private void recordAttackObserved(boolean fromProjectile, int npcId)
 	{
+		recordAttackObserved(fromProjectile, npcId,
+			fromProjectile ? PROJECTILE_BOOKING_LAG : MELEE_BOOKING_LAG);
+	}
+
+	// How far behind the attack this observation is depends on what proved it,
+	// and there are three answers rather than two: a melee blow lands the tick
+	// it is thrown, a projectile surfaces two ticks later, and a cast with no
+	// projectile lands three.
+	private void recordAttackObserved(boolean fromProjectile, int npcId, int bookingLag)
+	{
+		attackObservedLag = bookingLag;
 		// Recorded here rather than at the booking, which is a tick or two
 		// later: this is what says a weapon is on cooldown, and it has to be
 		// true from the moment the attack goes out.
