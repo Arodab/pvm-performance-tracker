@@ -274,6 +274,9 @@ public class PvmPerformancePlugin extends Plugin
 	// a history for the same reason the prayer is: the tick an attack is booked
 	// on is not the tick it went out on, and a switch can land in between.
 	private final Map<Integer, Boolean> switchedByTick = new HashMap<>();
+	// The attack speed in force on each recent tick, so the wait after an attack
+	// is the throwing weapon's and not that of whatever replaced it.
+	private final Map<Integer, Integer> speedByTick = new HashMap<>();
 	// TRACE. The tick a prayer pulse was last logged on, so one flick logs once.
 	private int prayerPulseTick = Integer.MIN_VALUE;
 	// The tick an eat was last seen on, so the pause it causes is credited to it
@@ -721,6 +724,14 @@ public class PvmPerformancePlugin extends Plugin
 		switchedByTick.put(client.getTickCount(),
 			!combatCalc.missedGearSwitch(shown != null ? shown.getTargetId() : -1));
 		switchedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
+		// The speed of the weapon that will throw an attack on this tick, kept
+		// per tick for the same reason as everything else here. Asked at the
+		// booking instead it answers for whatever is held by then, which after a
+		// switch is the wrong weapon — and can be worse than wrong, since the
+		// combat tab lags a swap by a tick and rapid would then be read off the
+		// old style and applied to the new weapon's speed.
+		speedByTick.put(client.getTickCount(), combatCalc.attackSpeedTicks());
+		speedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
 		if (shown != null)
 		{
 			// Pass the target so salve, dragon hunter and the rest can apply.
@@ -976,12 +987,14 @@ public class PvmPerformancePlugin extends Plugin
 			// missed switch, so it reads as clean.
 			final boolean switched = !Boolean.FALSE.equals(switchedByTick.get(attackTick));
 			log.debug("TRACE switch booked={} attackTick={} switched={}"
-					+ " hist[-0]={} hist[-1]={} hist[-2]={} weapon={} cat={}",
+					+ " hist[-0]={} hist[-1]={} hist[-2]={} weapon={} cat={}"
+					+ " speedThen={} speedNow={}",
 				client.getTickCount(), attackTick, switched,
 				switchedByTick.get(client.getTickCount()),
 				switchedByTick.get(client.getTickCount() - 1),
 				switchedByTick.get(client.getTickCount() - 2),
-				combatCalc.equippedWeaponId(), combatCalc.categoryName());
+				combatCalc.equippedWeaponId(), combatCalc.categoryName(),
+				speedByTick.get(attackTick), combatCalc.attackSpeedTicks());
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
@@ -1010,10 +1023,13 @@ public class PvmPerformancePlugin extends Plugin
 			// out, the cooldown included, a cast holds the weapon for five ticks
 			// and a whip for four, so spending the cast any earlier would put the
 			// spell on the whip's clock.
-			// From the tick the attack went out on, not from this one. This is
-			// the booking tick, which trails the attack by one for melee and
-			// two for a projectile.
-			attackDueTick = attackTick + combatCalc.attackSpeedTicks();
+			// From the tick the attack went out on, not from this one, and with
+			// the speed that was in force then. This is the booking tick, which
+			// trails the attack by one for melee and two for a projectile, so
+			// reading the speed here reads it off whatever is held by now.
+			final Integer threwAt = speedByTick.get(attackTick);
+			attackDueTick = attackTick
+				+ (threwAt != null ? threwAt : combatCalc.attackSpeedTicks());
 			if (attackObservedFromProjectile)
 			{
 				// Only a cast can spend a cast. A melee blow landing on the tick
@@ -1060,6 +1076,9 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final boolean eating = isConsuming();
+		log.debug("TRACE tickLost tick={} dueTick={} lag={} melee={} eating={} speedNow={} weapon={} cat={}",
+			client.getTickCount(), attackDueTick, lag, combatCalc.isMeleeEquipped(), eating,
+			combatCalc.attackSpeedTicks(), combatCalc.equippedWeaponId(), combatCalc.categoryName());
 		current.recordTickLost(eating);
 		if (counts)
 		{
