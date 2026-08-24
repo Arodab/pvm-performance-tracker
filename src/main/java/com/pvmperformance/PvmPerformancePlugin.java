@@ -1388,13 +1388,18 @@ public class PvmPerformancePlugin extends Plugin
 		if (current.getTargetIndex() == npc.getIndex())
 		{
 			targetLiveId = npc.getId();
-			// The form it was is not the form it is. Anything of mine still in
-			// the air was nulled by the change, and a nulled attack pays no
-			// experience, which is exactly how a miss is recognised — so it
-			// would arm the gauntlets against an enemy that never dodged
-			// anything. The index does not change when a boss transforms in
-			// place, so nothing else would clear it.
-			combatCalc.forgetConflictionCharge();
+			// Anything of mine still in the air was nulled by the change, and a
+			// cast waiting on damage that will never arrive is not a splash.
+			// Left in place it resolves as one when its due tick comes, which
+			// counts a splash that did not happen and arms the gauntlets
+			// against an enemy that never dodged anything.
+			//
+			// Note what this is NOT. The experience is paid on the tick the
+			// attack goes out whether the damage lands or is nulled, so the
+			// drop still reports it correctly and nothing is wrong with the
+			// charge itself. It is only the pending cast, which judges by
+			// whether a hitsplat turned up, that is fooled.
+			castsAwaiting.removeIf(cast -> cast.npcIndex == npc.getIndex());
 		}
 		// A boss that is never removed from the scene announces its defeat by
 		// changing into a beaten form. That is the kill, and it beats waiting
@@ -2263,9 +2268,9 @@ public class PvmPerformancePlugin extends Plugin
 		// read as underperformance.
 		dropPendingSamples();
 		// A cast still in the air when the target died is not a splash, and the
-		// fight it belonged to is over either way. The gauntlets go with it: an
-		// attack whose damage the kill nulled pays no experience and would
-		// otherwise read as a miss, and a respawn can reuse the same NPC index.
+		// fight it belonged to is over either way. The charge goes with it
+		// because the server reuses NPC indices, so a respawn can arrive
+		// wearing the one it was held against.
 		castsAwaiting.clear();
 		combatCalc.forgetConflictionCharge();
 		pendingMineHits.clear();

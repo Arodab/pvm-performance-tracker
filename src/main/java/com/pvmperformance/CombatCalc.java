@@ -711,15 +711,12 @@ class CombatCalc
 	}
 
 	/**
-	 * Forgets any charge the gauntlets were holding, because the enemy it was
-	 * held against is gone or is no longer that enemy.
+	 * Forgets any charge the gauntlets were holding, because the fight it
+	 * belonged to is over.
 	 *
-	 * <p>An attack whose damage was nulled — the target died while it was in the
-	 * air, or changed into its next form — pays no experience, and no experience
-	 * is how a miss is recognised. So it reads as a miss and arms, and on a boss
-	 * that transforms in place the NPC index does not change, so the charge is
-	 * still held against what looks like the same enemy and the doubled accuracy
-	 * stays on screen. It was not a miss; there was nothing to miss.
+	 * <p>Worth clearing rather than leaving to expire: the charge is held
+	 * against an NPC index, and the server reuses indices, so a respawn can
+	 * arrive wearing the index the last charge was held against.
 	 */
 	void forgetConflictionCharge()
 	{
