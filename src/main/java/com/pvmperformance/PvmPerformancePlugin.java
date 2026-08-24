@@ -504,13 +504,6 @@ public class PvmPerformancePlugin extends Plugin
 				&& client.getTickCount() - lastCastBookedTick > CAST_HITSPLAT_BOOKING_LAG;
 			final boolean melee = combatCalc.isMeleeEquipped() || unbookedCast;
 			final boolean firstOfBurst = !burstBooked.contains(npc.getIndex());
-			log.debug("TRACE hitsplat tick={} npc={} amount={} fromFlight={} melee={}"
-					+ " newBurst={} firstOfBurst={} books={} cat={} weapon={}",
-				tick, npc.getIndex(), hitsplat.getAmount(), arrivedFromFlight, melee,
-				newBurst, firstOfBurst, !arrivedFromFlight && melee && firstOfBurst,
-				combatCalc.categoryName(), combatCalc.equippedWeaponId());
-			log.debug("TRACE hitsplat noProjectileCast={} meleeEquipped={}",
-				combatCalc.castLandsWithoutProjectile(), combatCalc.isMeleeEquipped());
 			if (!arrivedFromFlight && melee && burstBooked.add(npc.getIndex()))
 			{
 				recordAttackObserved(false, npc.getId(), combatCalc.isMeleeEquipped()
@@ -616,8 +609,6 @@ public class PvmPerformancePlugin extends Plugin
 		// used for the figures and for the hit.
 		if (acceptedProjectileTick == client.getTickCount())
 		{
-			log.debug("TRACE proj REJECT second-this-tick tick={} id={}",
-				client.getTickCount(), projectile.getId());
 			return;
 		}
 		acceptedProjectileTick = client.getTickCount();
@@ -697,9 +688,6 @@ public class PvmPerformancePlugin extends Plugin
 		// asked while the firing tile still means something.
 		if (!firedFromWhereIWas(projectile, me))
 		{
-			log.debug("TRACE proj REJECT tile tick={} id={} x1={} y1={} me={} anim={}",
-				client.getTickCount(), projectile.getId(), projectile.getX1(),
-				projectile.getY1(), me.getLocalLocation(), me.getAnimation());
 			return false;
 		}
 		// And I have to have been able to fire it. Two players stand on one
@@ -713,9 +701,6 @@ public class PvmPerformancePlugin extends Plugin
 		// than dropping it.
 		if (client.getTickCount() < lastAttackSeenTick + combatCalc.attackSpeedTicks())
 		{
-			log.debug("TRACE proj REJECT cooldown tick={} id={} lastSeen={} speed={} cat={}",
-				client.getTickCount(), projectile.getId(), lastAttackSeenTick,
-				combatCalc.attackSpeedTicks(), combatCalc.categoryName());
 			return false;
 		}
 		// And I have to have been doing something. An attack animates, so a
@@ -732,8 +717,6 @@ public class PvmPerformancePlugin extends Plugin
 		// accepts and moves on, whatever the eat does to the attack animation.
 		if (me.getAnimation() == IDLE_ANIMATION)
 		{
-			log.debug("TRACE proj REJECT idle tick={} id={} pose={}",
-				client.getTickCount(), projectile.getId(), me.getPoseAnimation());
 			return false;
 		}
 		// And aimed at something I am engaged with. Held loosely on purpose:
@@ -746,9 +729,6 @@ public class PvmPerformancePlugin extends Plugin
 			|| me.getInteracting() == target
 			|| (current != null && !current.isEnded()
 				&& current.getTargetIndex() == aimedAt.getIndex());
-		log.debug("TRACE proj {} tick={} id={} npc={} anim={} engaged={}",
-			engaged ? "ACCEPT" : "REJECT target", client.getTickCount(), projectile.getId(),
-			aimedAt.getIndex(), me.getAnimation(), engaged);
 		return engaged;
 	}
 
@@ -819,9 +799,6 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final int index = ((NPC) actor).getIndex();
-		log.debug("TRACE splash tick={} npc={} index={} target={} noProjectileCast={} spell={}",
-			client.getTickCount(), ((NPC) actor).getId(), index, current.getTargetIndex(),
-			combatCalc.castLandsWithoutProjectile(), combatCalc.activeSpellName());
 		if (current.getTargetIndex() != index)
 		{
 			return;
@@ -1161,8 +1138,6 @@ public class PvmPerformancePlugin extends Plugin
 		if (EncounterGroup.isDefeated(npc.getId())
 			&& EncounterGroup.sameGroup(npc.getId(), current.getTargetId()))
 		{
-			log.debug("TRACE defeated tick={} id={} targetId={}",
-				client.getTickCount(), npc.getId(), current.getTargetId());
 			finalizeFight(true, System.currentTimeMillis());
 		}
 	}
@@ -1257,9 +1232,6 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			startFight(target, now);
 		}
-		log.debug("TRACE cast tick={} anim={} npc={} spell={}",
-			client.getTickCount(), me.getAnimation(), target.getIndex(),
-			combatCalc.activeSpellName());
 		lastCastBookedTick = client.getTickCount();
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
@@ -1303,8 +1275,6 @@ public class PvmPerformancePlugin extends Plugin
 		if (current.getTargetIndex() == npc.getIndex()
 			|| EncounterGroup.sameGroup(npc.getId(), current.getTargetId()))
 		{
-			log.debug("TRACE loot kill tick={} id={} targetId={}",
-				client.getTickCount(), npc.getId(), current.getTargetId());
 			finalizeFight(true, System.currentTimeMillis());
 		}
 	}
@@ -1319,10 +1289,6 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
-		log.debug("TRACE despawn tick={} id={} index={} dead={} target={} targetId={} sameGroup={}",
-			client.getTickCount(), npc.getId(), npc.getIndex(), npc.isDead(),
-			current.getTargetIndex(), current.getTargetId(),
-			EncounterGroup.sameGroup(npc.getId(), current.getTargetId()));
 		if (current.getTargetIndex() == npc.getIndex())
 		{
 			finalizeFight(npc.isDead(), System.currentTimeMillis());
@@ -1351,12 +1317,6 @@ public class PvmPerformancePlugin extends Plugin
 
 		if (current == null || current.isEnded())
 		{
-			if (attacked)
-			{
-				log.debug("TRACE attack DROPPED tick={} current={} ended={}",
-					client.getTickCount(), current != null,
-					current != null && current.isEnded());
-			}
 			attackDueTick = Integer.MIN_VALUE;
 			lastAttackFromProjectile = false;
 			return;

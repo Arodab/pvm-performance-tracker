@@ -491,12 +491,6 @@ class CombatCalc
 	}
 
 	/** The NPC the expected figures are being asked about, for the drain lookup. */
-	/** TRACE only: whether the gauntlets are armed against the current target. */
-	boolean conflictionArmed()
-	{
-		return conflictionArmedIndex >= 0 && conflictionArmedIndex == targetIndex;
-	}
-
 	void setTargetIndex(int npcIndex)
 	{
 		this.targetIndex = npcIndex;
@@ -841,7 +835,8 @@ class CombatCalc
 	 * ancient area spells. Their attacks cannot be booked from a projectile
 	 * because the client never shows one, so the hitsplat has to serve.
 	 */
-	// TRACE only.
+	// Names the spell in the "cast UNKNOWN ANIM" line, which is how the cast
+	// animation list gets extended. Kept for that.
 	String activeSpellName()
 	{
 		final Spell spell = activeSpell();
