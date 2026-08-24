@@ -37,6 +37,7 @@ import net.runelite.api.Hitsplat;
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
+import net.runelite.api.Skill;
 import net.runelite.api.Projectile;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.events.AnimationChanged;
@@ -162,6 +163,14 @@ public class PvmPerformancePlugin extends Plugin
 	// weapon. Extend it from the "cast UNKNOWN ANIM" trace rather than by guess.
 	private static final Set<Integer> CAST_ANIMATIONS =
 		Collections.unmodifiableSet(new HashSet<>(Collections.singletonList(10092)));
+	// A cast with no projectile, waiting to be told whether it landed: the tick
+	// it went out on, what it was aimed at, and the hitpoints xp at the time.
+	// See resolveCastFromHitpointsXp.
+	private int castAwaitingResolve = Integer.MIN_VALUE;
+	private int castAwaitingResolveIndex = -1;
+	private int castAwaitingResolveXp;
+	// Whether a hitsplat of mine has landed on that NPC since the cast went out.
+	private boolean castAwaitingResolveConnected;
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -470,10 +479,16 @@ public class PvmPerformancePlugin extends Plugin
 			// This is the attack landing, so whatever was waiting on this NPC
 			// gets its expectation counted now, beside the damage it did.
 			resolvePendingSample(npc.getIndex());
-			// TRACE. A miss that produces a zero hitsplat and a miss that
-			// produces nothing at all are the two cases to tell apart.
-			log.debug("TRACE hitsplat tick {} npc {} amount {} gauntlets {}", tick, npc.getIndex(),
-				hitsplat.getAmount(), combatCalc.usesConflictionGauntlets());
+			// A cast waiting to be told whether it landed has its answer the
+			// moment one of my hitsplats reaches the NPC it was aimed at. A
+			// zero counts: a spell that rolls a hit for no damage still
+			// connected, and telling that from a splash is the whole reason
+			// this is watched per NPC rather than read off the xp.
+			if (castAwaitingResolve != Integer.MIN_VALUE
+				&& castAwaitingResolveIndex == npc.getIndex())
+			{
+				castAwaitingResolveConnected = true;
+			}
 			// A zero is a miss, which is what arms the confliction gauntlets
 			// for the next cast against this same enemy.
 			if (combatCalc.usesConflictionGauntlets())
@@ -784,16 +799,19 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
-		// This is the ONLY route that can see a splash. A splash produces no
-		// hitsplat — confirmed by the user, and it is worth being blunt about
-		// because the opposite was written here for two sessions and cost both
-		// of them. The zero hitsplats that were seen arriving during a kill,
-		// and read at the time as splashes booking normally, were not splashes.
+		// A splash produces no hitsplat — confirmed by the user, and worth
+		// being blunt about because the opposite was written here for two
+		// sessions and cost both of them. The zero hitsplats seen arriving
+		// during a kill, and read at the time as splashes booking normally,
+		// were not splashes.
 		//
-		// Everything downstream follows from that. A missed cast leaves no
-		// hitsplat and no projectile, so nothing but this graphic says it
-		// happened, and the confliction gauntlets — which are armed by a miss —
-		// can only be armed from here.
+		// This used to be the only thing that could see a missed cast, which
+		// made the whole of it hang on one spotanim id being right and on the
+		// splash landing on the NPC the fight happened to be open on. Neither
+		// holds for an area spell. Hitpoints xp answers the same question
+		// without either assumption — see resolveCastFromHitpointsXp — and this
+		// is now the fast route rather than the only one: it fires the tick the
+		// splash is drawn instead of waiting out the cast's resolve window.
 		//
 		// It only counts if it resolves one of my own casts, which excludes
 		// other players' splashes.
@@ -835,9 +853,6 @@ public class PvmPerformancePlugin extends Plugin
 				current.getTargetIndex());
 			return;
 		}
-		log.debug("TRACE splash accepted tick {} npc {} noProjectile {} gauntlets {}",
-			client.getTickCount(), index, combatCalc.castLandsWithoutProjectile(),
-			combatCalc.usesConflictionGauntlets());
 		// A splash names no caster, so ordinarily it only counts as mine when it
 		// resolves a projectile I fired.
 		//
@@ -852,10 +867,22 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
-		// The attack itself is not booked here. A cast with no projectile is
-		// booked from the caster's animation, which is the only thing that sees
-		// one that misses, so booking it again here would double it.
-		final long now = System.currentTimeMillis();
+		recordSplash(index, System.currentTimeMillis());
+	}
+
+	/**
+	 * A cast of mine that missed, however it was found out. The attack itself is
+	 * not booked here: a cast with no projectile is booked from the caster's
+	 * animation, which is the only thing that sees one before it resolves, so
+	 * booking it again would double it.
+	 */
+	private void recordSplash(int index, long now)
+	{
+		// Nothing is left waiting on this NPC, whichever route got here first.
+		// Both can fire for one cast — the graphic on the tick it is drawn, the
+		// xp check at the end of the resolve window — and a splash counted twice
+		// would leave attempts running ahead of attacks made.
+		castAwaitingResolve = Integer.MIN_VALUE;
 		resolvePendingSample(index);
 		if (combatCalc.usesConflictionGauntlets())
 		{
@@ -868,6 +895,70 @@ public class PvmPerformancePlugin extends Plugin
 		if (current.isScored())
 		{
 			session.recordAttempt(0, false, now);
+		}
+	}
+
+	/**
+	 * Whether the cast waiting on an answer landed, decided by hitpoints xp.
+	 *
+	 * <p>A cast with no projectile is the one attack whose failure nothing
+	 * reports: no projectile to go unresolved, no hitsplat, and no splash of the
+	 * hitsplat kind. So the question is turned around and asked as "did it
+	 * land", which two things witness, and they answer different questions.
+	 *
+	 * <p><b>A hitsplat of mine on the NPC it was aimed at</b> says the cast
+	 * connected <i>with that enemy</i>, which is what the confliction gauntlets
+	 * turn on — the wiki's wording is "against the same enemy". Hitpoints xp
+	 * cannot answer this one: a barrage is an area spell, so xp moves when any
+	 * NPC in the splash takes damage, and at a boss made of several NPCs — the
+	 * Hueycoatl, which is where this was reported — a body segment taking a hit
+	 * would report the cast as landed on a head it splashed on. A zero hitsplat
+	 * counts as connecting, because a spell that rolls a hit for no damage did
+	 * hit, and xp cannot tell that from a splash either.
+	 *
+	 * <p><b>Hitpoints xp</b> says the cast dealt damage to <i>something</i>,
+	 * which is the right question for whether the attack was a splash at all.
+	 * It is exact and needs no table of per-spell xp: damage of mine always
+	 * grants it and a splash never does, a standard spell paying its base magic
+	 * xp and no hitpoints xp, a powered staff paying nothing at all. Read as a
+	 * total rather than watched as an event — taken when the cast goes out and
+	 * compared when it should have landed — so xp arriving on any tick in
+	 * between needs no bookkeeping.
+	 */
+	private void resolveCastFromHitpointsXp(long now)
+	{
+		if (castAwaitingResolve == Integer.MIN_VALUE)
+		{
+			return;
+		}
+		if (current == null || current.isEnded())
+		{
+			castAwaitingResolve = Integer.MIN_VALUE;
+			return;
+		}
+		if (!castResolved(client.getTickCount(), castAwaitingResolve))
+		{
+			return;
+		}
+		final int index = castAwaitingResolveIndex;
+		final boolean connected = castAwaitingResolveConnected;
+		final boolean damagedSomething =
+			client.getSkillExperience(Skill.HITPOINTS) > castAwaitingResolveXp;
+		castAwaitingResolve = Integer.MIN_VALUE;
+		if (connected)
+		{
+			return; // the hitsplat has already booked everything it owes
+		}
+		log.debug("TRACE cast did not connect: npc {} tick {} hp xp moved {}", index,
+			client.getTickCount(), damagedSomething);
+		if (combatCalc.usesConflictionGauntlets())
+		{
+			// Missed this enemy, whatever it did to anything else beside it.
+			combatCalc.noteMagicResolved(index, true);
+		}
+		if (!damagedSomething)
+		{
+			recordSplash(index, now);
 		}
 	}
 
@@ -963,6 +1054,21 @@ public class PvmPerformancePlugin extends Plugin
 	 * ticks and {@code now} is a booking tick, and the two are a tick or two
 	 * apart depending on what will prove the next attack.
 	 */
+	/**
+	 * Whether a cast thrown on {@code castTick} has had long enough to land.
+	 *
+	 * <p>The gap is the measured cast-to-damage one that
+	 * {@code CAST_HITSPLAT_BOOKING_LAG} already holds: the barrage animation
+	 * fired on 21, 26 and 31 and the damage landed on 24, 29 and 34. Waiting
+	 * exactly that long and no longer is what matters — the answer arms the
+	 * gauntlets for the NEXT cast, and a five tick weapon leaves no room to be
+	 * late with it.
+	 */
+	static boolean castResolved(int now, int castTick)
+	{
+		return now - castTick >= CAST_HITSPLAT_BOOKING_LAG;
+	}
+
 	static boolean attackOverdue(int now, int dueTick, int bookingLag)
 	{
 		return now >= dueTick + bookingLag;
@@ -1269,6 +1375,10 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(target, now);
 		}
 		lastCastBookedTick = client.getTickCount();
+		castAwaitingResolve = client.getTickCount();
+		castAwaitingResolveIndex = target.getIndex();
+		castAwaitingResolveXp = client.getSkillExperience(Skill.HITPOINTS);
+		castAwaitingResolveConnected = false;
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
 
@@ -1720,6 +1830,9 @@ public class PvmPerformancePlugin extends Plugin
 				combatCalc.traceLine());
 		}
 		trackAttackCooldown();
+		// After the booking, so a cast that went out this tick starts its wait
+		// this tick rather than being resolved on the tick it was cast.
+		resolveCastFromHitpointsXp(System.currentTimeMillis());
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
