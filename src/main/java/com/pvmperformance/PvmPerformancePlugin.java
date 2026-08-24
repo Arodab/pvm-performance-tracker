@@ -1513,13 +1513,18 @@ public class PvmPerformancePlugin extends Plugin
 	 * the LOCAL player's follower, so whatever it returns is theirs by
 	 * definition — no proximity, no matching a cast, no guessing in a crowd.
 	 *
-	 * <p>Whether a thrall actually occupies that slot is the open question, and
-	 * it is traced rather than assumed. If it does, this settles ownership
-	 * outright; if it does not, the summon route below still names the thrall
-	 * and nothing is lost. The resurrection varbits are printed beside it —
-	 * the game's own word for a thrall is "resurrection", which is why a search
-	 * for "thrall" found nothing — in case one of them carries the tier and
-	 * makes even the summon route unnecessary.
+	 * <p><b>That slot is the pet slot</b>, and a player with a pet out has it
+	 * filled already — so a thrall may well never appear here at all. Nothing is
+	 * mistaken either way: the id is looked up in the thrall table, and a pet is
+	 * not in it, so a pet reads as no thrall rather than as the wrong one. But
+	 * if the trace shows the slot only ever holding a pet, this route never
+	 * fires and should be deleted rather than left looking like it works.
+	 *
+	 * <p>The resurrection varbits are printed beside it — the game's own word
+	 * for a thrall is "resurrection", which is why a search for "thrall" found
+	 * nothing — because one of them carrying the tier would beat both routes:
+	 * a varbit is the local player's own state, so there is no ownership
+	 * question left to ask.
 	 */
 	private void trackThrallFromFollower()
 	{
