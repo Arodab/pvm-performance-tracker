@@ -16,6 +16,10 @@ class SessionTotals
 	private int damageDealt;
 	private int attempts;
 	private int hits;
+	// Attacks that went out and never resolved, because the target died or
+	// changed form while they were in the air. Not misses; see
+	// Fight.recordAttackNulled.
+	private int nulled;
 	private int attacksMade;
 	private int attacksPrayed;
 	private int attacksPotted;
@@ -55,6 +59,7 @@ class SessionTotals
 		damageDealt = 0;
 		attempts = 0;
 		hits = 0;
+		nulled = 0;
 		attacksMade = 0;
 		attacksPrayed = 0;
 		attacksPotted = 0;
@@ -145,6 +150,23 @@ class SessionTotals
 		{
 			attacksPotted++;
 		}
+	}
+
+	void recordAttackNulled()
+	{
+		nulled++;
+	}
+
+	/** Attacks that actually got an answer, which is what accuracy divides by. */
+	int resolvedAttempts()
+	{
+		return Math.max(0, attempts - nulled);
+	}
+
+	double accuracy()
+	{
+		final int resolved = resolvedAttempts();
+		return resolved == 0 ? 0 : (double) hits / resolved;
 	}
 
 	void recordAttackResolved(boolean prayed, boolean switched, double actualSetup, double idealSetup)

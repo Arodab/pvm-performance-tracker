@@ -10,6 +10,9 @@ import lombok.Getter;
 class NpcStats
 {
 	private final String name;
+	// Rooms, not sub-fights. One Hueycoatl is a fight against a body and then
+	// one against the head, and counting those separately read as "2 fights, 1
+	// kill" for a single clean kill.
 	private int fights;
 	private int kills;
 	private int maxHp = -1;
@@ -28,9 +31,16 @@ class NpcStats
 		this.name = name;
 	}
 
-	void add(Fight fight)
+	/**
+	 * @param startsRoom whether this fight opens a new room rather than
+	 *                   continuing the one before it
+	 */
+	void add(Fight fight, boolean startsRoom)
 	{
-		fights++;
+		if (startsRoom)
+		{
+			fights++;
+		}
 		if (fight.isTargetDied())
 		{
 			kills++;
@@ -45,7 +55,7 @@ class NpcStats
 		}
 		maxHp = Math.max(maxHp, fight.getMaxHp());
 		totalDamageDealt += fight.getDamageDealt();
-		totalAttempts += fight.getAttempts();
+		totalAttempts += fight.resolvedAttempts();
 		totalHits += fight.getHits();
 		sumActualSetup += fight.getSumActualSetup();
 		sumIdealSetup += fight.getSumIdealSetup();
@@ -72,7 +82,12 @@ class NpcStats
 		return seconds < 0.6 ? 0 : totalDamageDealt / seconds;
 	}
 
-	/** Mean damage per attack made across every fight, counting misses as zero. */
+	/**
+	 * Mean damage per attack across every fight, counting misses as zero.
+	 * Denominated on attacks that actually resolved: one nulled by the kill
+	 * dealt nothing because there was nothing left to deal it to, not because
+	 * it was thrown badly.
+	 */
 	double avgHit()
 	{
 		return totalAttempts == 0 ? 0 : (double) totalDamageDealt / totalAttempts;

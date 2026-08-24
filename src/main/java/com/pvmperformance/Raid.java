@@ -64,6 +64,12 @@ class Raid
 		return total;
 	}
 
+	double accuracy()
+	{
+		final int attempts = getAttempts();
+		return attempts == 0 ? 0 : (double) getHits() / attempts;
+	}
+
 	int getHits()
 	{
 		int total = 0;

@@ -44,6 +44,9 @@ class Fight
 	// anything. accuracy = hits / attempts.
 	private int attempts;
 	private int hits;
+	// Attacks that went out and never resolved, because the target died or
+	// changed form while they were still in the air. See recordAttackNulled.
+	private int nulled;
 	private boolean ended;
 	private boolean targetDied;
 	// Whether this fight is the last of its room: the one the boss's loot
@@ -224,13 +227,15 @@ class Fight
 	 */
 	double averageHit()
 	{
-		return attempts == 0 ? 0 : (double) damageDealt / attempts;
+		final int resolved = resolvedAttempts();
+		return resolved == 0 ? 0 : (double) damageDealt / resolved;
 	}
 
 	/** 0..1; share of my resolved attacks that dealt more than 0. */
 	double accuracy()
 	{
-		return attempts == 0 ? 0 : (double) hits / attempts;
+		final int resolved = resolvedAttempts();
+		return resolved == 0 ? 0 : (double) hits / resolved;
 	}
 
 	/**
@@ -295,6 +300,32 @@ class Fight
 			sumActualSetup += actualSetup;
 			sumIdealSetup += idealSetup;
 		}
+	}
+
+	/**
+	 * An attack that went out and never got an answer: the target died or
+	 * changed form while it was in the air, so the damage was nulled.
+	 *
+	 * <p>It still happened — it cost a tick, it was thrown with whatever prayer
+	 * and gear were up, and {@code attacksMade} keeps it. What it has no claim
+	 * to is an <i>outcome</i>. Left in the denominator it counts as a miss that
+	 * dealt nothing, which drags accuracy and average hit down for a kill that
+	 * went perfectly: a boss that dies to the blow before last hands the last
+	 * one back as a failure.
+	 *
+	 * <p>The expected side already drops these — the pending sample is thrown
+	 * away rather than counted against a measured nought — so this is the
+	 * measured side being denominated the same way.
+	 */
+	void recordAttackNulled()
+	{
+		nulled++;
+	}
+
+	/** Attacks that actually got an answer, which is what accuracy divides by. */
+	int resolvedAttempts()
+	{
+		return Math.max(0, attempts - nulled);
 	}
 
 	void recordAttackMade(boolean potted)

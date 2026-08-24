@@ -129,10 +129,17 @@ class PvmPerformanceOverlay extends OverlayPanel
 			: raid != null ? raid.getHits() : room.getHits();
 		final double expHits = session != null ? session.getSumExpectedAccuracy()
 			: raid != null ? raid.sumExpectedAccuracy() : room.sumExpectedAccuracy();
+		// Measured hits against what was expected of the attacks thrown, and then
+		// the accuracy those two actually make. The top half of the overlay
+		// already carries the accuracy the LOADOUT should get; this is the one
+		// that happened, which is the comparison worth having and was otherwise
+		// left for the reader to do in their head.
+		final double realAccuracy = session != null ? session.accuracy()
+			: raid != null ? raid.accuracy() : room.accuracy();
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Hits")
 			.right(expHits > 0
-				? String.format("%d / %.1f", hits, expHits)
+				? String.format("%d / %.1f (%.0f%%)", hits, expHits, realAccuracy * 100)
 				: String.valueOf(hits))
 			.build());
 

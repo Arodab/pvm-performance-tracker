@@ -115,6 +115,12 @@ class Encounter
 		return total;
 	}
 
+	/**
+	 * Attacks that got an answer. An attack nulled by the kill - in the air when
+	 * the target died or changed form - is not one of them: it has no outcome to
+	 * be right or wrong about, and left in here it reads as a miss that dealt
+	 * nothing.
+	 */
 	int getAttempts()
 	{
 		int total = 0;
@@ -122,7 +128,7 @@ class Encounter
 		{
 			if (fight.isScored())
 			{
-				total += fight.getAttempts();
+				total += fight.resolvedAttempts();
 			}
 		}
 		return total;

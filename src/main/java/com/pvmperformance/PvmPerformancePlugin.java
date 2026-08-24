@@ -1330,8 +1330,25 @@ public class PvmPerformancePlugin extends Plugin
 
 	// Anything still waiting once its target is gone never landed, and is
 	// dropped rather than counted against a measured nought.
+	/**
+	 * Throws away what was expected of attacks that never landed, and tells the
+	 * fight it lost that many. Both halves matter: counting an expectation
+	 * against a measured nought reads as underperformance, and leaving the
+	 * attack in the measured denominator reads as a miss.
+	 */
 	private void dropPendingSamples()
 	{
+		if (current != null)
+		{
+			for (int i = 0; i < pendingSamples.size(); i++)
+			{
+				current.recordAttackNulled();
+				if (current.isScored())
+				{
+					session.recordAttackNulled();
+				}
+			}
+		}
 		pendingSamples.clear();
 	}
 
@@ -2472,17 +2489,38 @@ public class PvmPerformancePlugin extends Plugin
 	List<NpcStats> getNpcStats(boolean bossOnly)
 	{
 		final Map<String, NpcStats> byName = new LinkedHashMap<>();
-		for (Fight fight : history)
+		// Oldest first, so "does this fight continue the room before it" can be
+		// asked at all. The history is kept most-recent-first for the panel, so
+		// the result is turned back round at the end.
+		final Set<String> roomOpen = new HashSet<>();
+		for (int i = history.size() - 1; i >= 0; i--)
 		{
+			final Fight fight = history.get(i);
 			if (bossOnly && !isBoss(fight))
 			{
 				continue;
 			}
 			// Keyed on the room rather than the NPC, so a grouped room reads as
 			// one line instead of one per add.
-			byName.computeIfAbsent(fight.encounterName(), NpcStats::new).add(fight);
+			final String name = fight.encounterName();
+			// A fight only starts a room if nothing has one open under that
+			// name. An ungrouped NPC never continues anything, and the fight the
+			// kill closed on ends the room it was in — which is what makes one
+			// Hueycoatl count once rather than once per body segment.
+			final boolean startsRoom = fight.getGroupName() == null || !roomOpen.contains(name);
+			byName.computeIfAbsent(name, NpcStats::new).add(fight, startsRoom);
+			if (fight.getGroupName() == null || fight.isClosedRoom())
+			{
+				roomOpen.remove(name);
+			}
+			else
+			{
+				roomOpen.add(name);
+			}
 		}
-		return new ArrayList<>(byName.values());
+		final List<NpcStats> stats = new ArrayList<>(byName.values());
+		Collections.reverse(stats);
+		return stats;
 	}
 
 	boolean isBoss(Fight fight)
