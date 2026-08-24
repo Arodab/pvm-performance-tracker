@@ -97,7 +97,7 @@ class CombatCalc
 	// The enemy a miss has armed the confliction gauntlets against, or -1. Held
 	// per enemy because the effect is spent on the next attack against that
 	// same one, and dropped by switching target.
-	private int conflictionArmedIndex = -1;
+	private final ConflictionCharge charge = new ConflictionCharge();
 	private BlowpipeDart cachedDart;
 	private ItemEquipmentStats cachedDartStats;
 
@@ -576,10 +576,10 @@ class CombatCalc
 		// "Against the same enemy" is the wiki's wording and is why this is
 		// armed against an index rather than a flag: switching target drops it.
 		// Both have to name a real enemy. No fight means targetIndex is -1, and
-		// unarmed means conflictionArmedIndex is -1, so comparing them bare made
+		// unarmed means the armed index is -1, so comparing them bare made
 		// the two nothings match and left the doubled roll showing for good once
 		// a boss died.
-		final boolean armed = conflictionArmedIndex >= 0 && conflictionArmedIndex == targetIndex;
+		final boolean armed = conflictionArmedAgainst(charge.armedIndex(), targetIndex);
 		return armed
 			? 1.0 - sharedDefenceMissChance(attRoll, defRoll)
 			: hitChanceFrom(attRoll, defRoll);
@@ -588,14 +588,50 @@ class CombatCalc
 	/**
 	 * Notes how a magic attack of mine ended, which is what says whether the
 	 * next one against that enemy rolls twice. A miss arms the gauntlets and a
-	 * hit spends them; the effect does not stack across consecutive misses,
-	 * so arming twice is the same as arming once.
+	 * hit spends them; the effect does not stack across consecutive misses, so
+	 * arming twice is the same as arming once.
+	 *
+	 * <p>Only a hit on the enemy the charge is held against spends it. It used
+	 * to clear on any hit of mine, and this fires for every NPC I damage, so a
+	 * blow landing on anything else disarmed the gauntlets against the enemy
+	 * being fought — traced at the Hueycoatl, where the charge was armed on one
+	 * tick and gone on the next while the target had not changed. The charge is
+	 * held against an enemy on both sides of the question or on neither.
 	 */
 	void noteMagicResolved(int npcIndex, boolean missed)
 	{
-		log.debug("TRACE gauntlets resolved npc={} missed={} armed {} -> {}", npcIndex, missed,
-			conflictionArmedIndex, missed ? npcIndex : -1);
-		conflictionArmedIndex = missed ? npcIndex : -1;
+		charge.resolved(npcIndex, missed);
+	}
+
+	/**
+	 * Which enemy the doubled roll is being held against, as a thing on its own
+	 * so the rules can be tested without a Client. There are only two, and both
+	 * have been wrong at some point.
+	 */
+	static final class ConflictionCharge
+	{
+		private int armedIndex = -1;
+
+		int armedIndex()
+		{
+			return armedIndex;
+		}
+
+		void resolved(int npcIndex, boolean missed)
+		{
+			if (missed)
+			{
+				// The last miss is what it is held against, and a second miss
+				// on the same enemy is the same charge: the effect does not
+				// stack.
+				armedIndex = npcIndex;
+			}
+			else if (armedIndex == npcIndex)
+			{
+				// Only a hit on the enemy it is held against spends it.
+				armedIndex = -1;
+			}
+		}
 	}
 
 	// TRACE. Two symptoms to settle: augury reading as some weaker magic prayer,
@@ -620,7 +656,7 @@ class CombatCalc
 			appendPrayer(b, "will", Prayer.MYSTIC_WILL);
 		}
 		b.append(" gauntlets=").append(hasConflictionGauntlets())
-			.append(" armed=").append(conflictionArmedIndex)
+			.append(" armed=").append(charge.armedIndex())
 			.append(" target=").append(targetIndex);
 		return b.toString();
 	}
@@ -632,6 +668,32 @@ class CombatCalc
 		b.append(' ').append(name).append('=')
 			.append(client.getServerVarbitValue(prayer.getVarbit()))
 			.append('/').append(client.getVarbitValue(prayer.getVarbit()));
+	}
+
+	/**
+	 * Whether the doubled accuracy roll applies to the attack about to be
+	 * thrown: the gauntlets were armed by a miss, and the attack is against the
+	 * enemy that miss was against. The wiki's wording is "against the same
+	 * enemy", so switching target drops it.
+	 *
+	 * <p>Both have to name a real enemy. No fight means the target is -1 and
+	 * unarmed means the armed index is -1, so comparing the two bare made the
+	 * two nothings match and left the doubled roll showing for good once a boss
+	 * died. That is a regression this has already had once.
+	 */
+	static boolean conflictionArmedAgainst(int armedIndex, int targetIndex)
+	{
+		return armedIndex >= 0 && armedIndex == targetIndex;
+	}
+
+	/**
+	 * Whether the gauntlets can work at all: they are worn, and the weapon is
+	 * not two-handed. A two-hander disables the effect outright, which is a
+	 * property of the item and not of what is being fought.
+	 */
+	static boolean conflictionGauntletsWork(int glovesItemId, boolean twoHandedWeapon)
+	{
+		return glovesItemId == ItemID.CONFLICTION_GAUNTLETS && !twoHandedWeapon;
 	}
 
 	/** Whether the gauntlets are in play at all, so the caller can skip the rest. */
@@ -646,12 +708,9 @@ class CombatCalc
 	 */
 	private boolean hasConflictionGauntlets()
 	{
-		if (equippedItemId(EquipmentInventorySlot.GLOVES) != ItemID.CONFLICTION_GAUNTLETS)
-		{
-			return false;
-		}
 		final ItemEquipmentStats weapon = weaponStats();
-		return weapon == null || !weapon.isTwoHanded();
+		return conflictionGauntletsWork(equippedItemId(EquipmentInventorySlot.GLOVES),
+			weapon != null && weapon.isTwoHanded());
 	}
 
 	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
@@ -1589,6 +1648,23 @@ class CombatCalc
 				bonus.getAccuracy(), bonus.getDamage(),
 				gearBonuses.hasMarkOfDarkness() ? "UP" : "down"));
 		}
+
+		// Which prayers are actually up, by name. "prayed 0/n" with augury held
+		// all fight turned out to be Mystic Lore being the prayer really on,
+		// and nothing printed enough to see that: the figures showed a 1.10
+		// accuracy multiplier and 1.0% magic damage, which name the prayer only
+		// if you already know the table.
+		final StringBuilder up = new StringBuilder();
+		for (Prayer prayer : Prayer.values())
+		{
+			if (prayerActive(prayer))
+			{
+				up.append(up.length() == 0 ? "" : ", ").append(prayer);
+			}
+		}
+		lines.add(String.format("Prayers up: %s (goal %s, %s)",
+			up.length() == 0 ? "none" : up.toString(), prayerGoal(),
+			hasOffensivePrayer() ? "met" : "NOT met"));
 
 		final int spec = specialAttackMaxHit(npcId);
 		if (spec > 0)

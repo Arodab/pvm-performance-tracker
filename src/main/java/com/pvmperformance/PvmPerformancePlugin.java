@@ -470,8 +470,19 @@ public class PvmPerformancePlugin extends Plugin
 			// The first hitsplat of the burst to actually deal damage is what
 			// makes its attack a landed one. A claw special that opens with a
 			// zero and then connects still landed once.
-			final boolean landedAttack = hitsplat.getAmount() > 0
-				&& !burstLanded.contains(npc.getIndex());
+			final boolean alreadyLanded = burstLanded.contains(npc.getIndex());
+			final boolean landedAttack = hitsplat.getAmount() > 0 && !alreadyLanded;
+			// TRACE. Some hits count their damage but not the hit itself, and
+			// the only thing that can swallow one is this grouping: a hitsplat
+			// within a tick of the last on the same NPC is read as the same
+			// attack landing twice. Everything that decides it is printed,
+			// read before the add below, because which input is wrong is
+			// exactly what is not known. Hitsplat type is in there too — a
+			// thrall's or a familiar's damage counting as mine would land on
+			// the tick after my own and be grouped into it.
+			log.debug("TRACE hitsplat tick {} npc {} amount {} type {} lastSeen {} newBurst {} "
+					+ "alreadyLanded {} -> landed {}", tick, npc.getIndex(), hitsplat.getAmount(),
+				hitsplat.getHitsplatType(), seen, newBurst, alreadyLanded, landedAttack);
 			if (landedAttack)
 			{
 				burstLanded.add(npc.getIndex());
@@ -1797,6 +1808,12 @@ public class PvmPerformancePlugin extends Plugin
 		// where the expected figures are sampled, and they have to describe the
 		// loadout that threw it, reading a cache filled at the end of the last
 		// tick would date every sample by one tick and misattribute any switch.
+		// Before the figures are refreshed, not after. The armed accuracy is
+		// worth showing on the tick the miss becomes known — three ticks after
+		// the cast, which is two before the next one goes out — and refreshing
+		// first put it a further tick behind, close enough to the next attack
+		// to be unreadable.
+		resolveCastFromHitpointsXp(System.currentTimeMillis());
 		refreshExpected();
 		// The server's copy, which is the only one that answers the question
 		// being asked: did the server resolve this tick with the prayer up.
@@ -1831,9 +1848,6 @@ public class PvmPerformancePlugin extends Plugin
 				combatCalc.traceLine());
 		}
 		trackAttackCooldown();
-		// After the booking, so a cast that went out this tick starts its wait
-		// this tick rather than being resolved on the tick it was cast.
-		resolveCastFromHitpointsXp(System.currentTimeMillis());
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
