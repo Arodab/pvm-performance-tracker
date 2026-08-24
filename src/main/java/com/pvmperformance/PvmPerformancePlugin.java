@@ -176,6 +176,12 @@ public class PvmPerformancePlugin extends Plugin
 	// superior look like a greater.
 	private Thrall thrall;
 	private int thrallIndex = -1;
+	// The resurrect cast the local player last made, which is what identifies
+	// the thrall that appears next as theirs. See trackThrall.
+	private AttackType summonedType;
+	private int summonedTick = Integer.MIN_VALUE;
+	// How long after a resurrect cast the thrall it summoned may take to appear.
+	private static final int THRALL_SUMMON_TICKS = 2;
 	// The ticks an attack of mine dealt damage on, from the hitpoints experience
 	// drop, real or fake. See onFakeXpDrop.
 	private final Set<Integer> damageDealtTicks = new HashSet<>();
@@ -927,6 +933,10 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
+		// Ahead of the fight guard below, because a thrall is summoned BEFORE
+		// engaging rather than during a fight. Behind it, the cast that names
+		// the thrall as the player's own was never seen in the ordinary case.
+		noteResurrectCast(event.getActor());
 		// A splash produces no hitsplat — confirmed by the user, and worth
 		// being blunt about because the opposite was written here for two
 		// sessions and cost both of them. The zero hitsplats seen arriving
@@ -1453,24 +1463,78 @@ public class PvmPerformancePlugin extends Plugin
 	 * fought at all, Sotetseg wears a separate one for the maze.
 	 */
 	/**
-	 * Notices the player's thrall arriving. Whichever is nearest is taken as
-	 * theirs — a thrall follows whoever summoned it, and in a crowd everyone
-	 * else's is further away. Getting the wrong one costs only the tier, since
-	 * the damage itself is credited by the game.
+	 * Notices the player's own thrall arriving.
+	 *
+	 * <p><b>Nothing on an NPC says who owns it.</b> There is no owner on
+	 * {@code NPC}, no varbit for the thrall or its duration, and its
+	 * {@code getInteracting} points at whatever is being fought rather than at
+	 * whoever summoned it. So the summon has to be caught instead of the summon
+	 * being asked.
+	 *
+	 * <p>Casting a resurrect spell puts a spotanim on the CASTER, one per
+	 * family, and that is the local player only when it is the local player's
+	 * cast. A thrall of the matching family appearing within a tick or two of it
+	 * is the one just summoned. Another player's arrives on their tick, not
+	 * this one.
+	 *
+	 * <p>Adjacency is kept only as a fallback for when no cast was seen at all —
+	 * logging in with a thrall already out, or the plugin being switched on
+	 * mid-fight — and only while nothing better is known. That is the case this
+	 * can still get wrong, and what it costs is the tier and nothing else: the
+	 * damage itself is credited by the game, so the measured side is right
+	 * either way and only the expectation shifts by half a point a hit.
 	 */
 	private void trackThrall(NPC npc)
 	{
 		final Thrall spawned = Thrall.forNpc(npc.getId());
-		final Player me = client.getLocalPlayer();
-		if (spawned == null || me == null || npc.getWorldLocation() == null
-			|| me.getWorldLocation() == null
-			|| npc.getWorldLocation().distanceTo(me.getWorldLocation()) > 2)
+		if (spawned == null)
+		{
+			return;
+		}
+		final boolean justSummoned = summonedType == spawned.getAttackType()
+			&& client.getTickCount() - summonedTick <= THRALL_SUMMON_TICKS;
+		if (!justSummoned && (thrall != null || !adjacentToMe(npc)))
 		{
 			return;
 		}
 		thrall = spawned;
 		thrallIndex = npc.getIndex();
-		log.debug("TRACE thrall {} max {} npc {}", spawned, spawned.getMaxHit(), npc.getIndex());
+		log.debug("TRACE thrall {} max {} npc {} fromCast {}", spawned, spawned.getMaxHit(),
+			npc.getIndex(), justSummoned);
+	}
+
+	private boolean adjacentToMe(NPC npc)
+	{
+		final Player me = client.getLocalPlayer();
+		return me != null && me.getWorldLocation() != null && npc.getWorldLocation() != null
+			&& npc.getWorldLocation().distanceTo(me.getWorldLocation()) <= 2;
+	}
+
+	/**
+	 * The resurrect cast the local player just made, which is what says a thrall
+	 * about to appear is theirs. One spotanim per family, drawn on the caster.
+	 */
+	private void noteResurrectCast(Actor actor)
+	{
+		if (actor != client.getLocalPlayer())
+		{
+			return;
+		}
+		final AttackType summoned =
+			actor.hasSpotAnim(SpotanimID.RESURRECT_GHOST_CAST_SPOTANIM) ? AttackType.MAGIC
+				: actor.hasSpotAnim(SpotanimID.RESURRECT_SKELETON_CAST_SPOTANIM) ? AttackType.RANGED
+				: actor.hasSpotAnim(SpotanimID.RESURRECT_ZOMBIE_CAST_SPOTANIM) ? AttackType.CRUSH
+				: null;
+		if (summoned == null)
+		{
+			return;
+		}
+		summonedType = summoned;
+		summonedTick = client.getTickCount();
+		// The one that is out has been replaced, whatever it was.
+		thrall = null;
+		thrallIndex = -1;
+		log.debug("TRACE resurrect cast tick {} {}", summonedTick, summoned);
 	}
 
 	@Subscribe
