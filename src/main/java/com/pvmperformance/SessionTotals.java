@@ -16,6 +16,9 @@ class SessionTotals
 	private int damageDealt;
 	private int attempts;
 	private int hits;
+	// The thrall's share, kept apart from the player's. See Fight.
+	private int thrallDamageDealt;
+	private double sumExpectedThrallDamage;
 	// Attacks that went out and never resolved, because the target died or
 	// changed form while they were in the air. Not misses; see
 	// Fight.recordAttackNulled.
@@ -60,6 +63,8 @@ class SessionTotals
 		attempts = 0;
 		hits = 0;
 		nulled = 0;
+		thrallDamageDealt = 0;
+		sumExpectedThrallDamage = 0;
 		attacksMade = 0;
 		attacksPrayed = 0;
 		attacksPotted = 0;
@@ -150,6 +155,12 @@ class SessionTotals
 		{
 			attacksPotted++;
 		}
+	}
+
+	void recordThrallDamage(int amount, double expected)
+	{
+		thrallDamageDealt += amount;
+		sumExpectedThrallDamage += expected;
 	}
 
 	void recordAttackNulled()

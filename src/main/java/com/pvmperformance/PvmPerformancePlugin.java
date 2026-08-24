@@ -35,6 +35,7 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Hitsplat;
+import net.runelite.api.HitsplatID;
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
@@ -169,6 +170,12 @@ public class PvmPerformancePlugin extends Plugin
 	private final List<PendingCast> castsAwaiting = new ArrayList<>();
 	// The last per-tick trace line printed, so an unchanged one is not repeated.
 	private String lastTraceLine;
+	// The player's thrall, while one is out. Read from the scene rather than
+	// guessed from the damage: the tier decides what a hit is worth, and a
+	// target that takes double from the thrall's style would otherwise make a
+	// superior look like a greater.
+	private Thrall thrall;
+	private int thrallIndex = -1;
 	// The ticks an attack of mine dealt damage on, from the hitpoints experience
 	// drop, real or fake. See onFakeXpDrop.
 	private final Set<Integer> damageDealtTicks = new HashSet<>();
@@ -458,6 +465,11 @@ public class PvmPerformancePlugin extends Plugin
 		if (actor instanceof NPC && hitsplat.isMine() && !EncounterGroup.isIgnored(((NPC) actor).getId()))
 		{
 			final NPC npc = (NPC) actor;
+			if (isThrallDamage(hitsplat))
+			{
+				recordThrallHit(npc, hitsplat.getAmount(), now);
+				return;
+			}
 			if (current == null || current.isEnded() || current.getTargetIndex() != npc.getIndex())
 			{
 				startFight(npc, now);
@@ -1055,6 +1067,51 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Whether this hitsplat is the thrall's rather than the player's own.
+	 *
+	 * <p>The colour is the only thing that separates them — a hitsplat carries
+	 * its type, its amount and nothing else, and the game credits both to the
+	 * player. Damage from a summon is drawn in the cyan family, which is why a
+	 * fight with a thrall out shows small hits of a different colour arriving on
+	 * their own four tick beat between the player's own.
+	 *
+	 * <p>Traced rather than assumed: if these turn out to carry something else
+	 * as well, the log names the type of every hitsplat beside the thrall that
+	 * was in the scene.
+	 */
+	private static boolean isThrallDamage(Hitsplat hitsplat)
+	{
+		final int type = hitsplat.getHitsplatType();
+		return type == HitsplatID.DAMAGE_ME_CYAN || type == HitsplatID.DAMAGE_MAX_ME_CYAN;
+	}
+
+	/**
+	 * The thrall's damage, kept out of the player's totals entirely.
+	 *
+	 * <p>What was expected of it is settled here rather than sampled at an
+	 * attack, because a thrall has no accuracy to model: the wiki is explicit
+	 * that they always land, so one hit is worth half the tier's maximum. That
+	 * also means a hit is the only evidence of an attack worth counting — one
+	 * nulled by the target dying leaves no hitsplat and so falls out of both
+	 * sides on its own, the same way a nulled attack of the player's does.
+	 */
+	private void recordThrallHit(NPC npc, int amount, long now)
+	{
+		log.debug("TRACE thrall hit npc {} amount {} thrall {}", npc.getIndex(), amount, thrall);
+		if (current == null || current.isEnded() || thrall == null || !current.isScored())
+		{
+			return;
+		}
+		// A target that takes more or less from the thrall's style moves what a
+		// hit is worth, and it is the only thing that does. The Nightmare's
+		// pillars taking double from magic are the case to keep in mind.
+		final double expected = thrall.expectedDamage()
+			* RaidScaling.damageTaken(npc.getId(), thrall.getAttackType());
+		current.recordThrallDamage(amount, expected, now);
+		session.recordThrallDamage(amount, expected);
+	}
+
 	/** A cast of mine that reached the enemy it was aimed at and did nothing. */
 	private void splashed(PendingCast cast, long now)
 	{
@@ -1374,6 +1431,7 @@ public class PvmPerformancePlugin extends Plugin
 	public void onNpcSpawned(NpcSpawned event)
 	{
 		final NPC npc = event.getNpc();
+		trackThrall(npc);
 		final OlmPhase phase = OlmPhase.forNpc(npc.getId());
 		if (phase != null)
 		{
@@ -1394,6 +1452,27 @@ public class PvmPerformancePlugin extends Plugin
 	 * index and changes its id, and the new id is what says whether it can be
 	 * fought at all, Sotetseg wears a separate one for the maze.
 	 */
+	/**
+	 * Notices the player's thrall arriving. Whichever is nearest is taken as
+	 * theirs — a thrall follows whoever summoned it, and in a crowd everyone
+	 * else's is further away. Getting the wrong one costs only the tier, since
+	 * the damage itself is credited by the game.
+	 */
+	private void trackThrall(NPC npc)
+	{
+		final Thrall spawned = Thrall.forNpc(npc.getId());
+		final Player me = client.getLocalPlayer();
+		if (spawned == null || me == null || npc.getWorldLocation() == null
+			|| me.getWorldLocation() == null
+			|| npc.getWorldLocation().distanceTo(me.getWorldLocation()) > 2)
+		{
+			return;
+		}
+		thrall = spawned;
+		thrallIndex = npc.getIndex();
+		log.debug("TRACE thrall {} max {} npc {}", spawned, spawned.getMaxHit(), npc.getIndex());
+	}
+
 	@Subscribe
 	public void onNpcChanged(NpcChanged event)
 	{
@@ -1646,6 +1725,11 @@ public class PvmPerformancePlugin extends Plugin
 		final NPC npc = event.getNpc();
 		// The drain dies with the NPC, as its stats do.
 		drain.forget(npc.getIndex());
+		if (npc.getIndex() == thrallIndex)
+		{
+			thrall = null;
+			thrallIndex = -1;
+		}
 		if (current == null || current.isEnded())
 		{
 			return;

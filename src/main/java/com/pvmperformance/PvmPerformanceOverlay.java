@@ -118,12 +118,40 @@ class PvmPerformanceOverlay extends OverlayPanel
 			: raid != null ? raid.getDamageDealt() : room.getDamageDealt();
 		final double expDamage = session != null ? session.getSumExpectedAverageHit()
 			: raid != null ? raid.sumExpectedAverageHit() : room.sumExpectedAverageHit();
+		final int thrallDamage = session != null ? session.getThrallDamageDealt()
+			: raid != null ? raid.getThrallDamageDealt() : room.getThrallDamageDealt();
+		final double expThrallDamage = session != null ? session.getSumExpectedThrallDamage()
+			: raid != null ? raid.sumExpectedThrallDamage() : room.sumExpectedThrallDamage();
+
+		// The headline is the one number worth reading at a glance: everything
+		// dealt against everything expected of it, as a share. The two lines
+		// under it say where it came from, and they are worth keeping apart —
+		// a thrall's chip damage is not the loadout's doing, and folded in it
+		// flatters a bad weapon and hides a good one.
+		final double totalExpected = expDamage + expThrallDamage;
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left("Damage")
+			.right(totalExpected > 0
+				? String.format("%.0f%%", (damage + thrallDamage) / totalExpected * 100)
+				: QuantityFormatter.formatNumber(damage + thrallDamage))
+			.build());
+		panelComponent.getChildren().add(LineComponent.builder()
+			.left("  player")
 			.right(expDamage > 0
 				? String.format("%s / %.0f", QuantityFormatter.formatNumber(damage), expDamage)
 				: QuantityFormatter.formatNumber(damage))
 			.build());
+		// Only when there is one. A line reading 0 / 0 for every player who does
+		// not use thralls is noise on the one overlay that has to stay readable
+		// at a glance.
+		if (thrallDamage > 0 || expThrallDamage > 0)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("  thrall")
+				.right(String.format("%s / %.0f",
+					QuantityFormatter.formatNumber(thrallDamage), expThrallDamage))
+				.build());
+		}
 
 		final int hits = session != null ? session.getHits()
 			: raid != null ? raid.getHits() : room.getHits();
