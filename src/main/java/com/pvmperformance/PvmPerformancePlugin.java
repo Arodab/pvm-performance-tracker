@@ -48,6 +48,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GraphicChanged;
+import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
@@ -172,6 +173,9 @@ public class PvmPerformancePlugin extends Plugin
 	private final List<PendingCast> castsAwaiting = new ArrayList<>();
 	// The last per-tick trace line printed, so an unchanged one is not repeated.
 	private String lastTraceLine;
+	// TRACE. Magic and hitpoints experience as last seen, so a change can be
+	// printed with the tick it arrived on. See onStatChanged.
+	private final int[] tracedXp = new int[2];
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -819,6 +823,40 @@ public class PvmPerformancePlugin extends Plugin
 		if (phase != null)
 		{
 			olmPhase = phase;
+		}
+	}
+
+	/**
+	 * TRACE ONLY, and the one measurement that decides whether a splash can be
+	 * known on the tick it is cast.
+	 *
+	 * <p>Everything above waits for the damage to land, because that is when the
+	 * hitsplat says a cast connected. If experience instead arrives when the
+	 * spell is <i>cast</i>, then magic xp moving while hitpoints xp does not is
+	 * a splash, known immediately and with no waiting at all. Nothing on the
+	 * wiki says which it is — the Hit delay article does not mention xp and the
+	 * Splashing article only confirms a splash pays no hitpoints xp — and this
+	 * timing has been guessed wrong three times already, so it gets measured.
+	 *
+	 * <p>Read against the cast and hitsplat traces: if the magic xp line shares
+	 * a tick with "booked", it is granted at the cast and a splash is knowable
+	 * at once. If it shares a tick with "hitsplat", it is granted on landing and
+	 * the wait is unavoidable.
+	 */
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		final Skill skill = event.getSkill();
+		if (skill != Skill.MAGIC && skill != Skill.HITPOINTS)
+		{
+			return;
+		}
+		final int index = skill == Skill.MAGIC ? 0 : 1;
+		final int was = tracedXp[index];
+		tracedXp[index] = event.getXp();
+		if (was > 0 && event.getXp() != was && current != null && !current.isEnded())
+		{
+			log.debug("TRACE xp tick {} {} +{}", client.getTickCount(), skill, event.getXp() - was);
 		}
 	}
 
