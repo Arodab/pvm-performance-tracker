@@ -48,7 +48,6 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GraphicChanged;
-import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
@@ -836,40 +835,6 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	/**
-	 * TRACE ONLY, and the one measurement that decides whether a splash can be
-	 * known on the tick it is cast.
-	 *
-	 * <p>Everything above waits for the damage to land, because that is when the
-	 * hitsplat says a cast connected. If experience instead arrives when the
-	 * spell is <i>cast</i>, then magic xp moving while hitpoints xp does not is
-	 * a splash, known immediately and with no waiting at all. Nothing on the
-	 * wiki says which it is — the Hit delay article does not mention xp and the
-	 * Splashing article only confirms a splash pays no hitpoints xp — and this
-	 * timing has been guessed wrong three times already, so it gets measured.
-	 *
-	 * <p>Read against the cast and hitsplat traces: if the magic xp line shares
-	 * a tick with "booked", it is granted at the cast and a splash is knowable
-	 * at once. If it shares a tick with "hitsplat", it is granted on landing and
-	 * the wait is unavoidable.
-	 */
-	@Subscribe
-	public void onStatChanged(StatChanged event)
-	{
-		final Skill skill = event.getSkill();
-		if (skill != Skill.MAGIC && skill != Skill.HITPOINTS)
-		{
-			return;
-		}
-		final int index = skill == Skill.MAGIC ? 0 : 1;
-		final int was = tracedXp[index];
-		tracedXp[index] = event.getXp();
-		if (was > 0 && event.getXp() != was && current != null && !current.isEnded())
-		{
-			log.debug("TRACE xp tick {} {} +{}", client.getTickCount(), skill, event.getXp() - was);
-		}
-	}
-
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
@@ -993,6 +958,18 @@ public class PvmPerformancePlugin extends Plugin
 	 * compared at the resolve, so xp arriving on any tick between needs no
 	 * bookkeeping.
 	 */
+	// TRACE. Prints an experience change with the tick it arrived on.
+	private void traceXpChange(Skill skill, int index)
+	{
+		final int xp = client.getSkillExperience(skill);
+		final int was = tracedXp[index];
+		tracedXp[index] = xp;
+		if (was > 0 && xp != was)
+		{
+			log.debug("TRACE xp tick {} {} +{}", client.getTickCount(), skill, xp - was);
+		}
+	}
+
 	private void resolveCasts(long now)
 	{
 		final Iterator<PendingCast> waiting = castsAwaiting.iterator();
@@ -1451,17 +1428,20 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(target, now);
 		}
 		lastCastBookedTick = client.getTickCount();
-		// Due at the END OF THIS TICK, not when the damage lands. Experience is
-		// granted when the spell is cast — confirmed in game, and it is how the
-		// customizable xp drops plugin reports a cast the moment it goes out —
-		// so hitpoints xp has already moved by now if this one connected. The
-		// hit delay no longer gates the answer at all.
+		// Due when the damage would land, and HITPOINTS xp cannot make it any
+		// sooner. Judging on the cast tick was tried and the log threw it out:
+		// a cast booked on tick 20 read "hp xp moved false" while its hitsplat
+		// arrived on tick 25 for 28 damage, and the same on ticks 30, 52, 82 and
+		// 97. Hitpoints xp arrives WITH THE DAMAGE. Every cast therefore read as
+		// a splash, which armed the gauntlets on hits and counted the expected
+		// damage on the cast instead of on the landing.
 		//
-		// The xp to compare against is last tick's, never a value read now: the
-		// animation event and the xp event both arrive inside this tick and
-		// nothing fixes their order, so reading it here could already include
-		// this cast's own drop and report every cast as a splash.
-		castsAwaiting.add(new PendingCast(target.getIndex(), client.getTickCount(),
+		// What is still open is MAGIC xp, which may well arrive at the cast —
+		// that is what an xp drop plugin shows immediately. If it does, a splash
+		// is knowable at once and the wait goes away. It is being measured; see
+		// the xp trace in onGameTick.
+		castsAwaiting.add(new PendingCast(target.getIndex(),
+			client.getTickCount() + magicHitDelay(castDistance(target)),
 			hitpointsXpLastTick));
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
@@ -1913,6 +1893,24 @@ public class PvmPerformancePlugin extends Plugin
 		// where the expected figures are sampled, and they have to describe the
 		// loadout that threw it, reading a cache filled at the end of the last
 		// tick would date every sample by one tick and misattribute any switch.
+		// Before the figures are refreshed, so the armed accuracy is on screen
+		// the moment the miss is known. Safe ahead of the booking below because
+		// a cast is never judged on its own tick — the hit delay is at least
+		// one — so this can only arm for an attack thrown later, which is the
+		// attack the bonus really does apply to.
+		resolveCasts(System.currentTimeMillis());
+		// TRACE. Sampled here rather than from StatChanged, which was subscribed
+		// and registered and never once printed across a whole session. Whatever
+		// the reason, a tick loop that is known to run is the better instrument,
+		// and the question it has to answer is narrow: does MAGIC xp move on the
+		// tick a spell is cast, or on the tick its damage lands? Read it against
+		// the "booked" and "hitsplat" lines. Hitpoints xp is in there beside it
+		// as the control — that one is already known to arrive with the damage.
+		if (current != null && !current.isEnded())
+		{
+			traceXpChange(Skill.MAGIC, 0);
+			traceXpChange(Skill.HITPOINTS, 1);
+		}
 		refreshExpected();
 		// The server's copy, which is the only one that answers the question
 		// being asked: did the server resolve this tick with the prayer up.
@@ -1953,12 +1951,6 @@ public class PvmPerformancePlugin extends Plugin
 			}
 		}
 		trackAttackCooldown();
-		// AFTER the booking, and that ordering is the whole of it. A cast is
-		// judged on the tick it goes out now, so arming before the booking would
-		// hand the doubled roll to the very attack whose miss armed it. Judged
-		// here, the overlay carries it from the next tick — four ticks clear of
-		// the next cast on a five tick weapon, where it used to arrive with it.
-		resolveCasts(System.currentTimeMillis());
 		hitpointsXpLastTick = client.getSkillExperience(Skill.HITPOINTS);
 
 		final Player me = client.getLocalPlayer();
