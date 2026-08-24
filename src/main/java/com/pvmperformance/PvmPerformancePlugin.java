@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -163,17 +164,14 @@ public class PvmPerformancePlugin extends Plugin
 	// weapon. Extend it from the "cast UNKNOWN ANIM" trace rather than by guess.
 	private static final Set<Integer> CAST_ANIMATIONS =
 		Collections.unmodifiableSet(new HashSet<>(Collections.singletonList(10092)));
-	// A cast with no projectile, waiting to be told whether it landed: the tick
-	// it went out on, what it was aimed at, and the hitpoints xp at the time.
-	// See resolveCastFromHitpointsXp.
-	private int castAwaitingResolve = Integer.MIN_VALUE;
-	private int castAwaitingResolveIndex = -1;
-	private int castAwaitingResolveXp;
+	// Casts with no projectile, waiting to be told whether they landed. Usually
+	// none or one; two only while a cast thrown at long range is still in the
+	// air as the next goes out. A single slot used to hold this, and the new
+	// cast overwrote the old one's verdict before it could be given — at range
+	// the two coincide exactly, so every splash from far off was lost.
+	private final List<PendingCast> castsAwaiting = new ArrayList<>();
 	// The last per-tick trace line printed, so an unchanged one is not repeated.
 	private String lastTraceLine;
-	// The weapon's speed when it went out, which is how long the answer is
-	// worth waiting for. See castResolved.
-	private int castAwaitingResolveSpeed;
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -504,9 +502,18 @@ public class PvmPerformancePlugin extends Plugin
 			// case hitpoints xp cannot see, and taking it this way makes damage
 			// dealt the single question both witnesses answer. Worth revisiting
 			// if the gauntlets ever need to be exact.
-			if (castAwaitingResolveIndex == npc.getIndex() && hitsplat.getAmount() > 0)
+			if (hitsplat.getAmount() > 0)
 			{
-				castAwaitingResolve = Integer.MIN_VALUE;
+				for (PendingCast cast : castsAwaiting)
+				{
+					// The oldest unanswered cast on this NPC is the one that
+					// landed: they resolve in the order they were thrown.
+					if (cast.npcIndex == npc.getIndex() && !cast.connected)
+					{
+						cast.connected = true;
+						break;
+					}
+				}
 			}
 			// A zero is a miss, which is what arms the confliction gauntlets
 			// for the next cast against this same enemy.
@@ -828,7 +835,7 @@ public class PvmPerformancePlugin extends Plugin
 		// made the whole of it hang on one spotanim id being right and on the
 		// splash landing on the NPC the fight happened to be open on. Neither
 		// holds for an area spell. Hitpoints xp answers the same question
-		// without either assumption — see resolveCastFromHitpointsXp — and this
+		// without either assumption — see resolveCasts — and this
 		// is now the fast route rather than the only one: it fires the tick the
 		// splash is drawn instead of waiting out the cast's resolve window.
 		//
@@ -899,9 +906,9 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		// Nothing is left waiting on this NPC, whichever route got here first.
 		// Both can fire for one cast — the graphic on the tick it is drawn, the
-		// xp check at the end of the resolve window — and a splash counted twice
-		// would leave attempts running ahead of attacks made.
-		castAwaitingResolve = Integer.MIN_VALUE;
+		// xp check when the damage should have landed — and a splash counted
+		// twice would leave attempts running ahead of attacks made.
+		castsAwaiting.removeIf(cast -> cast.npcIndex == index);
 		resolvePendingSample(index);
 		if (combatCalc.usesConflictionGauntlets())
 		{
@@ -918,7 +925,7 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
-	 * Whether the cast waiting on an answer landed, decided by hitpoints xp.
+	 * Judges the casts whose damage should have landed by now.
 	 *
 	 * <p>A cast with no projectile is the one attack whose failure nothing
 	 * reports: no projectile to go unresolved, no hitsplat, and no splash of the
@@ -927,53 +934,45 @@ public class PvmPerformancePlugin extends Plugin
 	 *
 	 * <p><b>A hitsplat of mine on the NPC it was aimed at</b> says the cast
 	 * connected <i>with that enemy</i>, which is what the confliction gauntlets
-	 * turn on — the wiki's wording is "against the same enemy". Two things xp
-	 * cannot answer. A hit that rolls zero damage pays no hitpoints xp and is
-	 * still a hit, and the gauntlets care about the difference; a zero hitsplat
-	 * therefore counts as connecting. And where an area spell really does catch
-	 * several NPCs, xp moves when any of them takes damage, so a cast that
-	 * splashed on the target reads as landed. (Not at the Hueycoatl, where only
-	 * one target can be hit at a time — but this code is not written for one
-	 * boss.)
+	 * turn on — the wiki's wording is "against the same enemy". It ends that
+	 * cast's wait where it lands; nothing later can unsay it.
 	 *
-	 * <p><b>Hitpoints xp</b> says the cast dealt damage to <i>something</i>,
-	 * which is the right question for whether the attack was a splash at all.
-	 * It is exact and needs no table of per-spell xp: damage of mine always
-	 * grants it and a splash never does, a standard spell paying its base magic
-	 * xp and no hitpoints xp, a powered staff paying nothing at all. Read as a
-	 * total rather than watched as an event — taken when the cast goes out and
-	 * compared when it should have landed — so xp arriving on any tick in
-	 * between needs no bookkeeping.
+	 * <p><b>Hitpoints experience</b> says the cast damaged <i>something</i>,
+	 * which is the right question for whether it was a splash at all, and needs
+	 * no table of per-spell xp: damage of mine always pays it and a splash never
+	 * does, a standard spell paying its base magic xp and no hitpoints xp, a
+	 * powered staff paying nothing. Read as a total taken at the cast and
+	 * compared at the resolve, so xp arriving on any tick between needs no
+	 * bookkeeping.
 	 */
-	private void resolveCastFromHitpointsXp(long now)
+	private void resolveCasts(long now)
 	{
-		if (castAwaitingResolve == Integer.MIN_VALUE)
+		final Iterator<PendingCast> waiting = castsAwaiting.iterator();
+		while (waiting.hasNext())
 		{
-			return;
-		}
-		if (current == null || current.isEnded())
-		{
-			castAwaitingResolve = Integer.MIN_VALUE;
-			return;
-		}
-		if (!castResolved(client.getTickCount(), castAwaitingResolve, castAwaitingResolveSpeed))
-		{
-			return;
-		}
-		final int index = castAwaitingResolveIndex;
-		final boolean damagedSomething =
-			client.getSkillExperience(Skill.HITPOINTS) > castAwaitingResolveXp;
-		castAwaitingResolve = Integer.MIN_VALUE;
-		log.debug("TRACE cast did not connect: npc {} tick {} hp xp moved {}", index,
-			client.getTickCount(), damagedSomething);
-		if (combatCalc.usesConflictionGauntlets())
-		{
-			// Missed this enemy, whatever it did to anything else beside it.
-			combatCalc.noteMagicResolved(index, true);
-		}
-		if (!damagedSomething)
-		{
-			recordSplash(index, now);
+			final PendingCast cast = waiting.next();
+			if (client.getTickCount() < cast.resolveTick)
+			{
+				continue;
+			}
+			waiting.remove();
+			if (cast.connected || current == null || current.isEnded())
+			{
+				continue;
+			}
+			final boolean damagedSomething =
+				client.getSkillExperience(Skill.HITPOINTS) > cast.xpBefore;
+			log.debug("TRACE cast did not connect: npc {} tick {} hp xp moved {}", cast.npcIndex,
+				client.getTickCount(), damagedSomething);
+			if (combatCalc.usesConflictionGauntlets())
+			{
+				// Missed this enemy, whatever it did to anything else beside it.
+				combatCalc.noteMagicResolved(cast.npcIndex, true);
+			}
+			if (!damagedSomething)
+			{
+				recordSplash(cast.npcIndex, now);
+			}
 		}
 	}
 
@@ -1070,28 +1069,29 @@ public class PvmPerformancePlugin extends Plugin
 	 * apart depending on what will prove the next attack.
 	 */
 	/**
-	 * Whether a cast thrown on {@code castTick} has waited long enough to be
-	 * called a miss. Only reached when no hitsplat has arrived; one that has
-	 * ends the wait where it lands.
+	 * Ticks between an area spell going out and its damage landing.
 	 *
-	 * <p><b>The gap is not a constant, and treating it as one is what made this
-	 * wrong.</b> It was fixed at the three ticks measured once — the barrage
-	 * animation on 21, 26 and 31 with damage on 24, 29 and 34 — and a later
-	 * trace of the same spell at the same boss shows casts on 408, 413, 418 and
-	 * 428 landing on 413, 418, 423 and 433. Five ticks, not three. A spell's
-	 * damage is delayed by how far away the target is, so no single number
-	 * covers it, and judging at three armed the gauntlets on casts that landed
-	 * two ticks later. That is precisely the reported symptom: the accuracy
-	 * went up after a hit.
+	 * <p>Wiki (Hit delay): {@code MagicDelay = 1 + floor((1 + Distance) / 3)},
+	 * in game ticks. <b>The gap is not a constant, and every earlier attempt
+	 * here treated it as one.</b> It was three, measured once; then the weapon's
+	 * speed, which was five for a barrage. Both are right sometimes: a trace
+	 * shows casts on 366 and 371 landing on 369 and 374, three ticks, and casts
+	 * on 408, 413, 418 and 428 landing on 413, 418, 423 and 433, five. Distance
+	 * is what separates them.
 	 *
-	 * <p>So the wait is the weapon's own speed instead, which is the tick the
-	 * next attack goes out on and therefore the last moment the answer can
-	 * still be of use. Floored at the old three so a fast weapon cannot judge a
-	 * cast before any spell could possibly have landed.
+	 * <p>Judging late is not a small error. At five ticks with a five tick
+	 * weapon the verdict arrives on the very tick the next cast goes out, which
+	 * is both too late to read and late enough that the next cast used to
+	 * overwrite it — so a splash thrown from range was never counted at all.
+	 *
+	 * <p>Distance is Chebyshev, and for these spells it is measured <i>from the
+	 * player to the NPC's south-west tile</i> rather than edge to edge — the
+	 * wiki calls barrage out as the exception. That is why standing against
+	 * something the size of the Hueycoatl still reads as a dozen tiles.
 	 */
-	static boolean castResolved(int now, int castTick, int weaponSpeedTicks)
+	static int magicHitDelay(int distance)
 	{
-		return now - castTick >= Math.max(CAST_HITSPLAT_BOOKING_LAG, weaponSpeedTicks);
+		return 1 + (1 + Math.max(0, distance)) / 3;
 	}
 
 	static boolean attackOverdue(int now, int dueTick, int bookingLag)
@@ -1403,11 +1403,43 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(target, now);
 		}
 		lastCastBookedTick = client.getTickCount();
-		castAwaitingResolve = client.getTickCount();
-		castAwaitingResolveIndex = target.getIndex();
-		castAwaitingResolveXp = client.getSkillExperience(Skill.HITPOINTS);
-		castAwaitingResolveSpeed = combatCalc.attackSpeedTicks();
+		castsAwaiting.add(new PendingCast(target.getIndex(),
+			client.getTickCount() + magicHitDelay(castDistance(target)),
+			client.getSkillExperience(Skill.HITPOINTS)));
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
+	}
+
+	/**
+	 * Chebyshev distance from the player to the target's south-west tile, which
+	 * is what these spells measure and not the edge-to-edge distance everything
+	 * else uses. {@code getWorldLocation} on an NPC is that tile already.
+	 */
+	private int castDistance(NPC target)
+	{
+		final Player me = client.getLocalPlayer();
+		if (me == null || me.getWorldLocation() == null || target.getWorldLocation() == null)
+		{
+			return 0;
+		}
+		return Math.max(
+			Math.abs(me.getWorldLocation().getX() - target.getWorldLocation().getX()),
+			Math.abs(me.getWorldLocation().getY() - target.getWorldLocation().getY()));
+	}
+
+	/** A cast with no projectile, and the tick its damage should land on. */
+	private static final class PendingCast
+	{
+		private final int npcIndex;
+		private final int resolveTick;
+		private final int xpBefore;
+		private boolean connected;
+
+		PendingCast(int npcIndex, int resolveTick, int xpBefore)
+		{
+			this.npcIndex = npcIndex;
+			this.resolveTick = resolveTick;
+			this.xpBefore = xpBefore;
+		}
 	}
 
 	// What the cast is aimed at: what I am interacting with, or failing that
@@ -1829,7 +1861,7 @@ public class PvmPerformancePlugin extends Plugin
 		// the cast, which is two before the next one goes out — and refreshing
 		// first put it a further tick behind, close enough to the next attack
 		// to be unreadable.
-		resolveCastFromHitpointsXp(System.currentTimeMillis());
+		resolveCasts(System.currentTimeMillis());
 		refreshExpected();
 		// The server's copy, which is the only one that answers the question
 		// being asked: did the server resolve this tick with the prayer up.
@@ -2095,6 +2127,9 @@ public class PvmPerformancePlugin extends Plugin
 		// to deal against the nought it actually dealt is what made a group kill
 		// read as underperformance.
 		dropPendingSamples();
+		// A cast still in the air when the target died is not a splash, and the
+		// fight it belonged to is over either way.
+		castsAwaiting.clear();
 		pendingMineHits.clear();
 		// Nothing is being fought, so no drain should be read against anything.
 		combatCalc.setTargetIndex(-1);
