@@ -413,12 +413,20 @@ class CombatCalc
 			return -1;
 		}
 		final int cap = damageCap(npcId);
-		final double perHit = cap == Integer.MAX_VALUE
-			? accuracy * (averageMax / 2.0)
-			: accuracy * cappedAverage((int) averageMax, cap);
-		// A scythe swing is several hits, each rolled on its own, so what one
-		// attack is expected to deal is their sum and not the first of them.
-		final double ordinary = perHit * scytheDamageShare(npcId);
+		// A scythe swing is several hits, each rolling its own accuracy and its
+		// own damage, so what one attack is expected to deal is their sum. Each
+		// hit's max is half the one before ROUNDED DOWN, which is why this walks
+		// them rather than multiplying the first by 1.75: a 51 max is 51, 25, 12
+		// and those come to 88, not 89.25.
+		double ordinary = 0;
+		double max = averageMax;
+		for (int hit = 0; hit < hitsPerAttack(npcId); hit++)
+		{
+			ordinary += cap == Integer.MAX_VALUE
+				? accuracy * (max / 2.0)
+				: accuracy * cappedAverage((int) max, cap);
+			max = Math.floor(max / 2.0);
+		}
 
 		final EnchantedBolt bolt = loadedBolt(npcId);
 		if (bolt == null)
@@ -1212,8 +1220,78 @@ class CombatCalc
 	{
 		// What actually lands, which against Olm's hands is a third of it when the
 		// style is the wrong one for that hand.
-		return Math.min(damageCap(npcId),
-			(int) (unmitigatedMaxHit(npcId) * mitigation(npcId)));
+		final int first = (int) (unmitigatedMaxHit(npcId) * mitigation(npcId));
+		final int cap = damageCap(npcId);
+		// The most ONE ATTACK can deal, which for a scythe is all of its hits
+		// together. A 51 max against a 3x3 is 51 + 25 + 12, not 51: the halving
+		// rounds down at every step, so the parts do not come to twice the
+		// first. The cap is per hit, being a limit on what one blow may land.
+		int total = 0;
+		int max = first;
+		for (int hit = 0; hit < hitsPerAttack(npcId); hit++)
+		{
+			total += Math.min(cap, max);
+			max = nextScytheMax(max);
+		}
+		return total;
+	}
+
+	/**
+	 * The max hit of the hit after this one in a scythe swing: half, rounded
+	 * down. Wiki (Scythe of Vitur): "each hit will deal 50% less damage,
+	 * (rounded down), than the preceding hit", with a base of 47 giving 47-23-11
+	 * and a base of 48 giving 48-24-12.
+	 *
+	 * <p>Halving the first hit's *average* instead — treating three hits as 1.75
+	 * of the first — is what this replaced. It is close, within about a point,
+	 * but it is not what the game does and the difference is visible beside a
+	 * measured total.
+	 */
+	// The parts behind a scythe's total, which is otherwise one number with
+	// nothing behind it — the same reason the magic max hit is broken out.
+	private String scytheBreakdown(int npcId)
+	{
+		final int hits = hitsPerAttack(npcId);
+		if (hits < 2)
+		{
+			return "";
+		}
+		final StringBuilder parts = new StringBuilder(" (");
+		final int cap = damageCap(npcId);
+		int max = (int) (unmitigatedMaxHit(npcId) * mitigation(npcId));
+		for (int hit = 0; hit < hits; hit++)
+		{
+			parts.append(hit == 0 ? "" : "+").append(Math.min(cap, max));
+			max = nextScytheMax(max);
+		}
+		return parts.append(')').toString();
+	}
+
+	static int nextScytheMax(int max)
+	{
+		return max / 2;
+	}
+
+	/**
+	 * The chance that an attack lands at all, which is not the same as its
+	 * accuracy once one attack is several hits. A scythe swing against a 3x3
+	 * rolls three times and the measured side counts the swing once, however
+	 * many of them connect, so the two only compare if this is the chance that
+	 * at least one did.
+	 */
+	double landChance(int npcId)
+	{
+		final double accuracy = hitChance(npcId);
+		if (accuracy < 0)
+		{
+			return accuracy;
+		}
+		return landChance(accuracy, hitsPerAttack(npcId));
+	}
+
+	static double landChance(double accuracy, int hits)
+	{
+		return accuracy < 0 ? accuracy : 1.0 - Math.pow(1.0 - accuracy, hits);
 	}
 
 	/**
@@ -1249,22 +1327,6 @@ class CombatCalc
 			return 1;
 		}
 		return npc.getSize() >= 3 ? 3 : 2;
-	}
-
-	// Each hit deals half the one before, so two hits are worth 1.5 of the
-	// first and three are worth 1.75. The wiki's odd-max-hit rounding is not
-	// modelled; it moves the total by well under a point.
-	private double scytheDamageShare(int npcId)
-	{
-		switch (hitsPerAttack(npcId))
-		{
-			case 3:
-				return 1.75;
-			case 2:
-				return 1.5;
-			default:
-				return 1.0;
-		}
 	}
 
 	private boolean isScytheEquipped()
@@ -1634,8 +1696,9 @@ class CombatCalc
 		final double accuracy = hitChance(npcId);
 		lines.add(accuracy < 0
 			? String.format("Max hit %d, no accuracy without target stats", maxHit(npcId))
-			: String.format("Max hit %d, accuracy %.1f%%, avg hit %.2f",
-				maxHit(npcId), accuracy * 100, averageHit(npcId)));
+			: String.format("Max hit %d%s, accuracy %.1f%% (lands %.1f%%), avg hit %.2f",
+				maxHit(npcId), scytheBreakdown(npcId), accuracy * 100,
+				landChance(npcId) * 100, averageHit(npcId)));
 
 		// Where a magic max hit came from. Every part of it is a separate rule
 		// and a wrong figure is otherwise one number with nothing behind it —

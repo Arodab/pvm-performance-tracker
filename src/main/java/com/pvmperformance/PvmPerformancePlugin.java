@@ -1168,12 +1168,15 @@ public class PvmPerformancePlugin extends Plugin
 		//
 		// A melee blow is booked by its own hitsplat, so it has already
 		// resolved and goes straight in.
-		// One attack can be several rolls. A scythe swing against a large target
-		// hits two or three times, each rolling its own accuracy, so the chances
-		// expected of it are that many — otherwise the measured side counts
-		// every hitsplat while the expected side counts one, and the ratio reads
-		// three to one against the player.
-		final double expectedChances = accuracy * combatCalc.hitsPerAttack(targetId);
+		// One attack can be several rolls, and the measured side counts the
+		// ATTACK, not the rolls: three scythe hitsplats land on one tick and the
+		// burst grouping books them as one landed attack. So the expectation
+		// beside it is the chance that AT LEAST ONE of the rolls connected, not
+		// the sum of them. Summing read three chances against one measured hit
+		// and marked the player down by that ratio — masked until now only
+		// because the scythe was never being recognised in the first place.
+		final double expectedChances =
+			CombatCalc.landChance(accuracy, combatCalc.hitsPerAttack(targetId));
 		if (attackObservedLag == MELEE_BOOKING_LAG)
 		{
 			fight.recordExpected(maxHit, expectedChances, averageHit);
