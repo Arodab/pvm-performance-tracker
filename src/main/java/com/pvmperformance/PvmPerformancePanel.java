@@ -261,7 +261,6 @@ class PvmPerformancePanel extends PluginPanel
 		final JPanel row = new JPanel(new BorderLayout(6, 0));
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(new EmptyBorder(6, 8, 6, 8));
-		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
 
 		// Two lines: what was fought, then how well. Efficiency and lost ticks
 		// are the two that say where to improve, so they go on the end where the
@@ -282,6 +281,12 @@ class PvmPerformancePanel extends PluginPanel
 		export.addActionListener(e -> plugin.exportNpc(s.getName()));
 		row.add(export, BorderLayout.EAST);
 
+		// Height capped only now that the row holds something. Asked before the
+		// label and the button went in, the preferred height is an empty
+		// panel's — the border and nothing else — and the row is then pinned to
+		// twelve pixels with its contents clipped away. That is what an empty
+		// looking side panel of bare grey bars was: the rows were all there.
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
 		return row;
 	}
 }
