@@ -16,47 +16,40 @@ import org.junit.Test;
 public class MagicHitDelayTest
 {
 	@Test
-	public void theWikisWorkedExamples()
+	public void theTwoCastsLoggedWithTheirDistances()
 	{
-		assertEquals(3, PvmPerformancePlugin.magicHitDelay(5));
-		assertEquals(4, PvmPerformancePlugin.magicHitDelay(10));
+		// Where the plus-one comes from. A cast queued at distance 2 was due on
+		// 552 and its hitsplat arrived on 553; one at distance 6 was due on 454
+		// and arrived on 455. Judged a tick early, both were called splashes,
+		// and one of them had hit for 58.
+		assertEquals(3, PvmPerformancePlugin.magicHitDelay(2));
+		assertEquals(4, PvmPerformancePlugin.magicHitDelay(6));
 	}
 
 	@Test
-	public void theCloseCastsFromTheTrace()
-	{
-		// Casts on 366 and 371 landed on 369 and 374: three ticks.
-		assertEquals(3, PvmPerformancePlugin.magicHitDelay(6));
-		assertEquals(3, PvmPerformancePlugin.magicHitDelay(7));
-	}
-
-	@Test
-	public void theDistantCastsFromTheTrace()
+	public void theDistantCastsFromTheEarlierTrace()
 	{
 		// Casts on 408, 413, 418 and 428 landed on 413, 418, 423 and 433: five.
-		assertEquals(5, PvmPerformancePlugin.magicHitDelay(11));
-		assertEquals(5, PvmPerformancePlugin.magicHitDelay(13));
+		assertEquals(5, PvmPerformancePlugin.magicHitDelay(8));
+		assertEquals(5, PvmPerformancePlugin.magicHitDelay(10));
 	}
 
 	@Test
 	public void adjacentIsTheShortestDelay()
 	{
-		assertEquals(1, PvmPerformancePlugin.magicHitDelay(0));
-		assertEquals(1, PvmPerformancePlugin.magicHitDelay(1));
+		assertEquals(2, PvmPerformancePlugin.magicHitDelay(0));
+		assertEquals(2, PvmPerformancePlugin.magicHitDelay(1));
 	}
 
 	@Test
-	public void aCloseCastResolvesWellBeforeTheNextOne()
+	public void aCloseCastStillResolvesBeforeTheNextOne()
 	{
-		// The point of the whole change: at three ticks the verdict lands two
-		// ticks before a five tick weapon swings again, so the armed accuracy
-		// is readable rather than arriving with the next attack.
-		assertTrue(PvmPerformancePlugin.magicHitDelay(6) < 5);
+		assertTrue(PvmPerformancePlugin.magicHitDelay(2) < 5);
 	}
 
 	@Test
 	public void aNegativeDistanceCannotShortenIt()
 	{
-		assertEquals(1, PvmPerformancePlugin.magicHitDelay(-3));
+		assertEquals(2, PvmPerformancePlugin.magicHitDelay(-3));
 	}
 }

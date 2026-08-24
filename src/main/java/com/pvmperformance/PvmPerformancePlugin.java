@@ -1160,18 +1160,17 @@ public class PvmPerformancePlugin extends Plugin
 	/**
 	 * Ticks between an area spell going out and its damage landing.
 	 *
-	 * <p>Wiki (Hit delay): {@code MagicDelay = 1 + floor((1 + Distance) / 3)},
-	 * in game ticks. <b>The gap is not a constant, and every earlier attempt
-	 * here treated it as one.</b> It was three, measured once; then the weapon's
-	 * speed, which was five for a barrage. Both are right sometimes: a trace
-	 * shows casts on 366 and 371 landing on 369 and 374, three ticks, and casts
-	 * on 408, 413, 418 and 428 landing on 413, 418, 423 and 433, five. Distance
-	 * is what separates them.
+	 * <p>Built on the wiki's Hit delay formula,
+	 * {@code MagicDelay = 1 + floor((1 + Distance) / 3)}, <b>plus one tick,
+	 * which is measured and not a fudge.</b> Two casts logged with their
+	 * distances came in a tick later than the formula every time: distance 2,
+	 * due on 552, hitsplat on 553; distance 6, due on 454, hitsplat on 455. The
+	 * wiki describes when the server applies the hit; this has to describe when
+	 * the client sees the hitsplat, and that is a tick behind it.
 	 *
-	 * <p>Judging late is not a small error. At five ticks with a five tick
-	 * weapon the verdict arrives on the very tick the next cast goes out, which
-	 * is both too late to read and late enough that the next cast used to
-	 * overwrite it — so a splash thrown from range was never counted at all.
+	 * <p>Being a tick short is not harmless. The cast at distance 2 was declared
+	 * a splash and its hitsplat then arrived for 58 damage — a splash counted
+	 * that never happened, and the gauntlets armed on a hit.
 	 *
 	 * <p>Distance is Chebyshev, and for these spells it is measured <i>from the
 	 * player to the NPC's south-west tile</i> rather than edge to edge — the
@@ -1180,7 +1179,7 @@ public class PvmPerformancePlugin extends Plugin
 	 */
 	static int magicHitDelay(int distance)
 	{
-		return 1 + (1 + Math.max(0, distance)) / 3;
+		return 2 + (1 + Math.max(0, distance)) / 3;
 	}
 
 	static boolean attackOverdue(int now, int dueTick, int bookingLag)
@@ -1712,17 +1711,27 @@ public class PvmPerformancePlugin extends Plugin
 			// means the tick was never sampled, which is not evidence of a
 			// missed switch, so it reads as clean.
 			final boolean switched = !Boolean.FALSE.equals(switchedByTick.get(attackTick));
-			// TRACE, not a decision. Whether the experience drop lands on the
-			// tick an attack goes OUT or on the tick its damage arrives is
-			// still open, and it cannot be read off a Hueycoatl log: the cast
-			// cadence and the hit delay at that range are both five ticks, so
-			// the two land on the same tick and every sample fits both stories.
-			// Arming from it was tried and got the answer wrong in both
-			// directions, so it is only printed until a session cast from close
-			// range settles it — there the delay falls to one or two while the
-			// cadence stays five.
-			log.debug("TRACE arming would say tick {} attackTick {} dealt {} drops {}",
-				client.getTickCount(), attackTick, dealtDamageOn(attackTick), damageDealtTicks);
+			// Whether this attack dealt damage, read from the tick it went out.
+			// This arms or spends the confliction gauntlets, and it is decided
+			// here because every style passes through this one place with its
+			// attack tick already worked out.
+			//
+			// The drop lands on the tick the attack GOES OUT, measured at last
+			// rather than assumed. A Hueycoatl log could not show it: there the
+			// cast cadence and the hit delay are both five ticks, so a drop and
+			// the previous cast's damage share a tick and every sample fits
+			// either story. Cast from close range they separate, and they did —
+			// a cast queued on 550 at distance 2 dropped on 550 with its damage
+			// landing on 553, and one queued on 451 at distance 6 dropped on
+			// 451 and landed on 455.
+			//
+			// A powered staff is the case that had nothing at all: no base
+			// experience on a miss, a projectile so it never reached the cast
+			// path, and no hitsplat when it misses. Its misses were invisible.
+			if (combatCalc.usesConflictionGauntlets())
+			{
+				combatCalc.noteMagicResolved(current.getTargetIndex(), !dealtDamageOn(attackTick));
+			}
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
