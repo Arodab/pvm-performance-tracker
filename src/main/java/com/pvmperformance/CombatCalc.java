@@ -141,12 +141,22 @@ class CombatCalc
 	private GearBonus memoGear;
 	private Loadout memoLoadout;
 	// The gear search's answer. Outlives the tick memo on purpose — the search
-	// is the one expensive thing in this class, and what it depends on is the
-	// worn and carried items and the target, none of which is a tick.
+	// is the one expensive thing in this class, and none of what it depends on
+	// is a tick. Nor is it the worn items: the answer names item ids, and a
+	// switch only moves one between the hand and the bag, so the same answer
+	// keeps describing what the player should be wearing while they wear it.
 	private int memoBestGearNpc = Integer.MIN_VALUE;
 	private Loadout memoBestGear;
-	// The equippable items carried when the search last ran.
-	private long lastCarriedSignature;
+	// What the answer was worked out under. The weapon because it is pinned
+	// rather than judged, the style because which attack bonus counts turns on
+	// it, and the signature because the search can only offer what is there.
+	private int memoBestGearWeapon = Integer.MIN_VALUE;
+	private AttackStyle memoBestGearStyle;
+	private long memoBestGearAvailable = Long.MIN_VALUE;
+	// Every equippable item on the player, worn and carried together, and
+	// whether a container has said anything moved since it was last counted.
+	private long availableSignature;
+	private boolean availableStale = true;
 
 	/** Drops everything held once the tick it was worked out for has passed. */
 	// Dropped when the worn items change as well as when the tick does. A tick
@@ -155,50 +165,68 @@ class CombatCalc
 	// swapped part way through a tick left every figure already worked out that
 	// tick answering for the weapon before it, so the overlay showed one
 	// weapon's max hit beside the other's accuracy for a tick after every swap.
+	// The gear search's answer is not dropped here — see bestGear.
 	void invalidateGear()
 	{
 		memoTick = Integer.MIN_VALUE;
-		memoBestGear = null;
+		availableStale = true;
 	}
 
 	/**
-	 * The carried items changed. The search behind the best-gear figure is only
-	 * dropped if what changed could actually be worn.
-	 *
-	 * <p>This fires on every inventory change, which means every bite and every
-	 * sip — and a dose drunk changes the item's id, so comparing ids alone would
-	 * still throw the answer away. Only equippable ids go into the signature, so
-	 * food and potions fall out of it and a search survives a trip's worth of
-	 * eating.
+	 * Something moved in or out of the inventory. Only a note that the count of
+	 * what could be worn is worth taking again — the count itself waits until
+	 * the search asks for it, because this fires on every bite and every sip.
 	 */
 	void invalidateInventory()
 	{
-		final long carried = carriedEquippableSignature();
-		if (carried != lastCarriedSignature)
-		{
-			lastCarriedSignature = carried;
-			memoBestGear = null;
-		}
+		availableStale = true;
 	}
 
-	// Order-independent, so items shuffled around the inventory are not a
-	// change. Cheap next to the search it avoids: one stats lookup an item
-	// against a search that evaluates hundreds of loadouts.
-	private long carriedEquippableSignature()
+	/**
+	 * How many of what the player could put on, worn and carried counted
+	 * together. A switch leaves this alone, which is the point: an item on the
+	 * arm is an item no longer in the bag, and the search's answer holds until
+	 * the player actually gains or loses one.
+	 *
+	 * <p>Recounted at most once a tick and only after a container said
+	 * something moved, so eating a trip's worth of food costs one count each
+	 * rather than one search. It is asked off the game tick, by which point
+	 * both containers have reported; a switch counted while only one of them
+	 * had would cost the one extra search the tick after, and no more.
+	 */
+	private long availableEquippableSignature()
 	{
-		final ItemContainer inventory = client.getItemContainer(InventoryID.INV);
-		if (inventory == null)
+		if (!availableStale)
 		{
-			return 0;
+			return availableSignature;
 		}
+		availableStale = false;
+		// Order-independent, so items shuffled between slots and between the two
+		// containers are not a change. Cheap next to the search it avoids: one
+		// stats lookup an item against hundreds of loadouts evaluated.
 		long signature = 0;
-		for (Item item : inventory.getItems())
+		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
 		{
-			if (equipmentStats(item.getId()) != null)
+			final int id = gear().id(slot);
+			if (id >= 0)
 			{
-				signature += (long) item.getId() * 2654435761L;
+				signature += (long) id * 2654435761L;
 			}
 		}
+		final ItemContainer inventory = client.getItemContainer(InventoryID.INV);
+		if (inventory != null)
+		{
+			for (Item item : inventory.getItems())
+			{
+				// Food and potions fall out here, and a dose drunk changes the
+				// item's id, so counting ids alone would throw the answer away.
+				if (equipmentStats(item.getId()) != null)
+				{
+					signature += (long) item.getId() * 2654435761L;
+				}
+			}
+		}
+		availableSignature = signature;
 		return signature;
 	}
 
@@ -1664,18 +1692,42 @@ class CombatCalc
 		return !bestGear(npcId).sameItems(gear());
 	}
 
-	// The best gear available against this target, held until the worn or
-	// carried items change or the target does. Never worked out per tick: it
-	// is asked for once an attack, and the search is the expensive thing here.
+	// The best gear available against this target, held until one of the three
+	// things it actually answers for moves: the weapon, the combat style, or
+	// what the player has on them. Deliberately not the worn items — switching
+	// into the answer must not throw the answer away, or the search runs again
+	// on every attack of a fight fought properly. What it does not key on is
+	// the spell, which changes the figure but rarely the gear that maximises
+	// it; the magic damage on a body does not care which spell is cast.
 	private Loadout bestGear(int npcId)
 	{
-		if (memoBestGear != null && memoBestGearNpc == npcId)
+		final Loadout worn = gear();
+		final int weaponId = worn.id(EquipmentInventorySlot.WEAPON);
+		final AttackStyle style = attackStyle();
+		final long available = availableEquippableSignature();
+		if (memoBestGear != null && memoBestGearNpc == npcId && memoBestGearWeapon == weaponId
+			&& memoBestGearStyle == style && memoBestGearAvailable == available)
 		{
+			// Kept only while it still beats what is being worn. The search is
+			// greedy, so an answer reached from one set is not guaranteed to
+			// beat a different set reached later — full void put on after the
+			// fact is exactly that — and holding a stale answer against gear
+			// that is actually better would mark a player down for doing the
+			// right thing. Two evaluations, and only while a switch is
+			// outstanding: gear that matches the answer never gets here.
+			if (!memoBestGear.sameItems(worn)
+				&& averageHitWith(worn, npcId, IDEAL)
+				> averageHitWith(memoBestGear, npcId, IDEAL) - GearSearch.MEANINGFUL)
+			{
+				memoBestGear = worn;
+			}
 			return memoBestGear;
 		}
-		final Loadout worn = gear();
 		final ItemEquipmentStats weapon = weaponStats();
 		memoBestGearNpc = npcId;
+		memoBestGearWeapon = weaponId;
+		memoBestGearStyle = style;
+		memoBestGearAvailable = available;
 		memoBestGear = GearSearch.best(worn, carriedCandidates(), weapon != null && weapon.isTwoHanded(),
 			candidate -> averageHitWith(candidate, npcId, IDEAL));
 		return memoBestGear;

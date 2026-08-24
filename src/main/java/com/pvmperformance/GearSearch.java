@@ -19,8 +19,10 @@ final class GearSearch
 	private static final int MAX_PASSES = 2;
 	// Expected damage is a double. Anything under this is arithmetic noise
 	// rather than a switch worth making, and calling it a miss would mark a
-	// player down for nothing.
-	private static final double MEANINGFUL = 1e-6;
+	// player down for nothing. Shared with the caller, which holds a search's
+	// answer across ticks and needs the same threshold to decide it still
+	// stands.
+	static final double MEANINGFUL = 1e-6;
 
 	/** One thing that could go in one slot. */
 	static final class Candidate

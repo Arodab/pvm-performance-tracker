@@ -864,8 +864,9 @@ public class PvmPerformancePlugin extends Plugin
 		// tab, so they only describe this attack while this tick is current.
 		//
 		// Cheap despite appearances. The search behind it is held until the
-		// worn items, the carried items or the target change, so an ordinary
-		// tick costs a cache hit and a slot comparison.
+		// weapon, the combat style, the target, or what the player has on them
+		// changes — putting the answer on is none of those — so a fight fought
+		// in one set searches once and every tick after costs a comparison.
 		switchedByTick.put(client.getTickCount(),
 			!combatCalc.missedGearSwitch(shown != null ? shown.getTargetId() : -1));
 		switchedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
@@ -1568,9 +1569,10 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		else if (event.getContainerId() == InventoryID.INV)
 		{
-			// What could have been switched into changed. Eating and drinking
-			// fire this too, which is why the search behind it is worked out
-			// lazily on the next attack rather than here.
+			// What could have been switched into may have changed. Eating and
+			// drinking fire this too, and so does every switch, which is why
+			// nothing is counted here — the next attack decides whether the
+			// player actually gained or lost anything wearable.
 			combatCalc.invalidateInventory();
 		}
 	}
