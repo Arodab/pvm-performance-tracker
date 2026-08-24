@@ -879,6 +879,32 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Whether the attack that went out on this tick dealt damage.
+	 *
+	 * <p><b>Within a tick of it, and that is not a fudge.</b> The drop lands on
+	 * the tick the attack goes out — confirmed against the log: casts on 56, 61,
+	 * 66 and 71 each produced a drop on that same tick, with the damage arriving
+	 * five ticks later each time. But only an attack booked from its ANIMATION
+	 * knows its own tick exactly. The other two work back from a lag, and both
+	 * of those lags are estimates that were seen to be a tick out: a cast booked
+	 * from its hitsplat worked back to 72 for an attack thrown on 71, because
+	 * the hit delay is taken from the distance NOW and the player has moved
+	 * since casting; and a projectile booked at a flat two ticks worked back to
+	 * 129 for a drop on 128.
+	 *
+	 * <p>Reading the estimate literally found no drop and armed the confliction
+	 * gauntlets on attacks that had plainly connected — accuracy climbing
+	 * through a fight with no splash in it. Nothing swings faster than two
+	 * ticks, so a one tick window cannot reach a neighbouring attack's drop.
+	 */
+	private boolean dealtDamageOn(int attackTick)
+	{
+		return damageDealtTicks.contains(attackTick)
+			|| damageDealtTicks.contains(attackTick - 1)
+			|| damageDealtTicks.contains(attackTick + 1);
+	}
+
 	private void noteDamageDealt()
 	{
 		log.debug("TRACE hp xp drop tick {}", client.getTickCount());
@@ -1702,8 +1728,7 @@ public class PvmPerformancePlugin extends Plugin
 			// answers for all three.
 			if (combatCalc.usesConflictionGauntlets())
 			{
-				combatCalc.noteMagicResolved(current.getTargetIndex(),
-					!damageDealtTicks.contains(attackTick));
+				combatCalc.noteMagicResolved(current.getTargetIndex(), !dealtDamageOn(attackTick));
 			}
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
