@@ -628,7 +628,12 @@ class CombatCalc
 
 		void resolved(int npcIndex, boolean missed)
 		{
-			if (missed)
+			if (npcIndex < 0)
+			{
+				// Nothing to hold it against.
+				armedIndex = -1;
+			}
+			else if (missed)
 			{
 				// The last miss is what it is held against, and a second miss
 				// on the same enemy is the same charge: the effect does not
@@ -703,6 +708,22 @@ class CombatCalc
 	static boolean conflictionGauntletsWork(int glovesItemId, boolean twoHandedWeapon)
 	{
 		return glovesItemId == ItemID.CONFLICTION_GAUNTLETS && !twoHandedWeapon;
+	}
+
+	/**
+	 * Forgets any charge the gauntlets were holding, because the enemy it was
+	 * held against is gone or is no longer that enemy.
+	 *
+	 * <p>An attack whose damage was nulled — the target died while it was in the
+	 * air, or changed into its next form — pays no experience, and no experience
+	 * is how a miss is recognised. So it reads as a miss and arms, and on a boss
+	 * that transforms in place the NPC index does not change, so the charge is
+	 * still held against what looks like the same enemy and the doubled accuracy
+	 * stays on screen. It was not a miss; there was nothing to miss.
+	 */
+	void forgetConflictionCharge()
+	{
+		charge.resolved(-1, false);
 	}
 
 	/** Whether the gauntlets are in play at all, so the caller can skip the rest. */

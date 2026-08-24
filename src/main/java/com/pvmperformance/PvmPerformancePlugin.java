@@ -1388,6 +1388,13 @@ public class PvmPerformancePlugin extends Plugin
 		if (current.getTargetIndex() == npc.getIndex())
 		{
 			targetLiveId = npc.getId();
+			// The form it was is not the form it is. Anything of mine still in
+			// the air was nulled by the change, and a nulled attack pays no
+			// experience, which is exactly how a miss is recognised — so it
+			// would arm the gauntlets against an enemy that never dodged
+			// anything. The index does not change when a boss transforms in
+			// place, so nothing else would clear it.
+			combatCalc.forgetConflictionCharge();
 		}
 		// A boss that is never removed from the scene announces its defeat by
 		// changing into a beaten form. That is the kill, and it beats waiting
@@ -2256,8 +2263,11 @@ public class PvmPerformancePlugin extends Plugin
 		// read as underperformance.
 		dropPendingSamples();
 		// A cast still in the air when the target died is not a splash, and the
-		// fight it belonged to is over either way.
+		// fight it belonged to is over either way. The gauntlets go with it: an
+		// attack whose damage the kill nulled pays no experience and would
+		// otherwise read as a miss, and a respawn can reuse the same NPC index.
 		castsAwaiting.clear();
+		combatCalc.forgetConflictionCharge();
 		pendingMineHits.clear();
 		// Nothing is being fought, so no drain should be read against anything.
 		combatCalc.setTargetIndex(-1);

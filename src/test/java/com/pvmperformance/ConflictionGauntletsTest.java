@@ -98,4 +98,19 @@ public class ConflictionGauntletsTest
 		assertFalse(CombatCalc.conflictionArmedAgainst(charge.armedIndex(), 42));
 		assertTrue(CombatCalc.conflictionArmedAgainst(charge.armedIndex(), 43));
 	}
+
+	@Test
+	public void aChargeIsForgottenWhenThereIsNothingToHoldItAgainst()
+	{
+		// An attack whose damage was nulled - the target died in flight, or
+		// changed form - pays no experience, and no experience is how a miss is
+		// recognised. It armed against an enemy that never dodged anything, and
+		// on a boss that transforms in place the NPC index does not change, so
+		// nothing else cleared it and the doubled accuracy stayed on screen.
+		final CombatCalc.ConflictionCharge charge = new CombatCalc.ConflictionCharge();
+		charge.resolved(42, true);
+		assertTrue(CombatCalc.conflictionArmedAgainst(charge.armedIndex(), 42));
+		charge.resolved(-1, false);
+		assertFalse(CombatCalc.conflictionArmedAgainst(charge.armedIndex(), 42));
+	}
 }
