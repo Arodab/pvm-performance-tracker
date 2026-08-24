@@ -347,9 +347,12 @@ class CombatCalc
 			return -1;
 		}
 		final int cap = damageCap(npcId);
-		final double ordinary = cap == Integer.MAX_VALUE
+		final double perHit = cap == Integer.MAX_VALUE
 			? accuracy * (averageMax / 2.0)
 			: accuracy * cappedAverage((int) averageMax, cap);
+		// A scythe swing is several hits, each rolled on its own, so what one
+		// attack is expected to deal is their sum and not the first of them.
+		final double ordinary = perHit * scytheDamageShare(npcId);
 
 		final EnchantedBolt bolt = loadedBolt(npcId);
 		if (bolt == null)
@@ -451,6 +454,12 @@ class CombatCalc
 	}
 
 	/** The NPC the expected figures are being asked about, for the drain lookup. */
+	/** TRACE only: whether the gauntlets are armed against the current target. */
+	boolean conflictionArmed()
+	{
+		return conflictionArmedIndex >= 0 && conflictionArmedIndex == targetIndex;
+	}
+
 	void setTargetIndex(int npcIndex)
 	{
 		this.targetIndex = npcIndex;
@@ -507,7 +516,12 @@ class CombatCalc
 		//
 		// "Against the same enemy" is the wiki's wording and is why this is
 		// armed against an index rather than a flag: switching target drops it.
-		return conflictionArmedIndex == targetIndex
+		// Both have to name a real enemy. No fight means targetIndex is -1, and
+		// unarmed means conflictionArmedIndex is -1, so comparing them bare made
+		// the two nothings match and left the doubled roll showing for good once
+		// a boss died.
+		final boolean armed = conflictionArmedIndex >= 0 && conflictionArmedIndex == targetIndex;
+		return armed
 			? 1.0 - sharedDefenceMissChance(attRoll, defRoll)
 			: hitChanceFrom(attRoll, defRoll);
 	}
@@ -1056,6 +1070,51 @@ class CombatCalc
 	 * crush attack bonus is their highest, four otherwise, which is what makes
 	 * that phase drag for a team without a crush weapon.
 	 */
+	/**
+	 * How many times one attack lands on this target. A scythe swing hits twice
+	 * against a 2x2 and three times against anything 3x3 or larger, each hit
+	 * rolling its own accuracy and strength.
+	 *
+	 * <p>Only hits on the *same* target are counted here. A scythe also reaches
+	 * along a 1x3 arc into whatever stands beside the target, and those are
+	 * separate NPCs — that is the AoE gap listed under known-wrong, not this.
+	 */
+	int hitsPerAttack(int npcId)
+	{
+		if (!isScytheEquipped() || !attackStyle().getAttackType().isMelee())
+		{
+			return 1;
+		}
+		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		if (npc == null || npc.getSize() < 2)
+		{
+			return 1;
+		}
+		return npc.getSize() >= 3 ? 3 : 2;
+	}
+
+	// Each hit deals half the one before, so two hits are worth 1.5 of the
+	// first and three are worth 1.75. The wiki's odd-max-hit rounding is not
+	// modelled; it moves the total by well under a point.
+	private double scytheDamageShare(int npcId)
+	{
+		switch (hitsPerAttack(npcId))
+		{
+			case 3:
+				return 1.75;
+			case 2:
+				return 1.5;
+			default:
+				return 1.0;
+		}
+	}
+
+	private boolean isScytheEquipped()
+	{
+		final String name = weaponName();
+		return name != null && name.startsWith("Scythe of vitur");
+	}
+
 	private int damageCap(int npcId)
 	{
 		if (npcId != NpcID.HUEY_TAIL && npcId != NpcID.HUEY_TAIL_BROKEN)

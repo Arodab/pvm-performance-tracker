@@ -1024,15 +1024,21 @@ public class PvmPerformancePlugin extends Plugin
 		//
 		// A melee blow is booked by its own hitsplat, so it has already
 		// resolved and goes straight in.
+		// One attack can be several rolls. A scythe swing against a large target
+		// hits two or three times, each rolling its own accuracy, so the chances
+		// expected of it are that many — otherwise the measured side counts
+		// every hitsplat while the expected side counts one, and the ratio reads
+		// three to one against the player.
+		final double expectedChances = accuracy * combatCalc.hitsPerAttack(targetId);
 		if (attackObservedLag == MELEE_BOOKING_LAG)
 		{
-			fight.recordExpected(maxHit, accuracy, averageHit);
-			session.recordExpected(accuracy, averageHit);
+			fight.recordExpected(maxHit, expectedChances, averageHit);
+			session.recordExpected(expectedChances, averageHit);
 		}
 		else
 		{
 			pendingSamples.add(new PendingSample(
-				fight.getTargetIndex(), client.getTickCount(), maxHit, accuracy, averageHit));
+				fight.getTargetIndex(), client.getTickCount(), maxHit, expectedChances, averageHit));
 		}
 		// Spent: they describe one attack, not the next.
 		attackObservedNpcId = -1;
