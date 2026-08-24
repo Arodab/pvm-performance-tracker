@@ -38,6 +38,7 @@ import net.runelite.api.Hitsplat;
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
+import net.runelite.api.Skill;
 import net.runelite.api.Projectile;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.events.AnimationChanged;
@@ -46,8 +47,10 @@ import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GameObjectSpawned;
+import net.runelite.api.events.FakeXpDrop;
 import net.runelite.api.events.GraphicChanged;
 import net.runelite.api.events.HitsplatApplied;
+import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
@@ -166,6 +169,11 @@ public class PvmPerformancePlugin extends Plugin
 	private final List<PendingCast> castsAwaiting = new ArrayList<>();
 	// The last per-tick trace line printed, so an unchanged one is not repeated.
 	private String lastTraceLine;
+	// The ticks an attack of mine dealt damage on, from the hitpoints experience
+	// drop, real or fake. See onFakeXpDrop.
+	private final Set<Integer> damageDealtTicks = new HashSet<>();
+	// Hitpoints experience as last seen, so a level change is not read as damage.
+	private int hitpointsXp;
 
 
 	// The tick the worn items last changed on.
@@ -828,6 +836,54 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			olmPhase = phase;
 		}
+	}
+
+	/**
+	 * A hitpoints experience drop, which is the one thing that says an attack of
+	 * mine dealt damage on the tick it went out rather than when its damage
+	 * arrives.
+	 *
+	 * <p><b>Both events, and the fake one is not an edge case.</b> A skill at
+	 * 200,000,000 is granted no more experience, so on a maxed account
+	 * {@code StatChanged} never fires, the totals never move and the drop varps
+	 * never move — an entire session of killing things produced not one of any
+	 * of them. The server still sends the drop so the client can show it, and
+	 * RuneLite surfaces that as {@link FakeXpDrop}. It is how an xp drops plugin
+	 * keeps working at the cap, and taking only the real one is what made three
+	 * attempts at this read every attack as a miss.
+	 */
+	@Subscribe
+	public void onFakeXpDrop(FakeXpDrop event)
+	{
+		if (event.getSkill() == Skill.HITPOINTS && event.getXp() > 0)
+		{
+			noteDamageDealt();
+		}
+	}
+
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		if (event.getSkill() != Skill.HITPOINTS)
+		{
+			return;
+		}
+		// Only a rise in experience counts. This event also fires for a level
+		// change, and hitpoints has one every time the player regenerates,
+		// eats or is boosted — none of which is damage dealt to anything.
+		final int was = hitpointsXp;
+		hitpointsXp = event.getXp();
+		if (was > 0 && hitpointsXp > was)
+		{
+			noteDamageDealt();
+		}
+	}
+
+	private void noteDamageDealt()
+	{
+		log.debug("TRACE hp xp drop tick {}", client.getTickCount());
+		damageDealtTicks.add(client.getTickCount());
+		damageDealtTicks.removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
 	}
 
 	@Subscribe
@@ -1630,6 +1686,25 @@ public class PvmPerformancePlugin extends Plugin
 			// means the tick was never sampled, which is not evidence of a
 			// missed switch, so it reads as clean.
 			final boolean switched = !Boolean.FALSE.equals(switchedByTick.get(attackTick));
+			// Whether this attack dealt damage, read from the tick it went out
+			// on. This is what arms or spends the confliction gauntlets, and it
+			// is decided here because every style passes through this one place
+			// with the right tick already worked out: a barrage booked from its
+			// animation on the tick it was cast, a powered staff booked from its
+			// projectile two ticks later, a blow booked from its hitsplat one.
+			//
+			// A powered staff is the case that had nothing at all. It pays no
+			// base experience on a miss, so no drop marks that the attack
+			// resolved; it fires a projectile, so it never reached the cast
+			// path; and it leaves no hitsplat when it misses. Its misses were
+			// invisible and the gauntlets never armed for one. "Did the attack
+			// on that tick deal damage" needs no per-spell knowledge and
+			// answers for all three.
+			if (combatCalc.usesConflictionGauntlets())
+			{
+				combatCalc.noteMagicResolved(current.getTargetIndex(),
+					!damageDealtTicks.contains(attackTick));
+			}
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
