@@ -145,6 +145,8 @@ class CombatCalc
 	// worn and carried items and the target, none of which is a tick.
 	private int memoBestGearNpc = Integer.MIN_VALUE;
 	private Loadout memoBestGear;
+	// The equippable items carried when the search last ran.
+	private long lastCarriedSignature;
 
 	/** Drops everything held once the tick it was worked out for has passed. */
 	// Dropped when the worn items change as well as when the tick does. A tick
@@ -159,10 +161,45 @@ class CombatCalc
 		memoBestGear = null;
 	}
 
-	/** The carried items changed, so what could have been switched to has too. */
+	/**
+	 * The carried items changed. The search behind the best-gear figure is only
+	 * dropped if what changed could actually be worn.
+	 *
+	 * <p>This fires on every inventory change, which means every bite and every
+	 * sip — and a dose drunk changes the item's id, so comparing ids alone would
+	 * still throw the answer away. Only equippable ids go into the signature, so
+	 * food and potions fall out of it and a search survives a trip's worth of
+	 * eating.
+	 */
 	void invalidateInventory()
 	{
-		memoBestGear = null;
+		final long carried = carriedEquippableSignature();
+		if (carried != lastCarriedSignature)
+		{
+			lastCarriedSignature = carried;
+			memoBestGear = null;
+		}
+	}
+
+	// Order-independent, so items shuffled around the inventory are not a
+	// change. Cheap next to the search it avoids: one stats lookup an item
+	// against a search that evaluates hundreds of loadouts.
+	private long carriedEquippableSignature()
+	{
+		final ItemContainer inventory = client.getItemContainer(InventoryID.INV);
+		if (inventory == null)
+		{
+			return 0;
+		}
+		long signature = 0;
+		for (Item item : inventory.getItems())
+		{
+			if (equipmentStats(item.getId()) != null)
+			{
+				signature += (long) item.getId() * 2654435761L;
+			}
+		}
+		return signature;
 	}
 
 	private void expireMemo()
