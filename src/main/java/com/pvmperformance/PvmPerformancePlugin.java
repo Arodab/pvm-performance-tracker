@@ -494,12 +494,17 @@ public class PvmPerformancePlugin extends Plugin
 			// gets its expectation counted now, beside the damage it did.
 			resolvePendingSample(npc.getIndex());
 			// A cast waiting to be told whether it landed has its answer the
-			// moment one of my hitsplats reaches the NPC it was aimed at, and
-			// the wait is over there and then: nothing later can unsay that it
-			// connected. A zero counts, since a spell that rolls a hit for no
-			// damage still connected — and that is the case hitpoints xp cannot
-			// see, a hit for nothing paying none of it.
-			if (castAwaitingResolveIndex == npc.getIndex())
+			// moment one of my hitsplats DEALS DAMAGE to the NPC it was aimed
+			// at, and the wait is over there and then: nothing later can unsay
+			// that it connected.
+			//
+			// A hitsplat of zero is deliberately treated as a splash rather
+			// than as a hit that rolled no damage. It is not strictly true — a
+			// spell can roll a hit for nothing — but it is rare, it is the only
+			// case hitpoints xp cannot see, and taking it this way makes damage
+			// dealt the single question both witnesses answer. Worth revisiting
+			// if the gauntlets ever need to be exact.
+			if (castAwaitingResolveIndex == npc.getIndex() && hitsplat.getAmount() > 0)
 			{
 				castAwaitingResolve = Integer.MIN_VALUE;
 			}

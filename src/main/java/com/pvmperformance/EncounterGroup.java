@@ -225,6 +225,15 @@ final class EncounterGroup
 		// this the overlay resets every time the player hits a different part —
 		// eighteen fights in one trip, and never a kill, because each one ends
 		// by being replaced rather than by anything dying.
+		// Hespori and the flowers it summons are one fight. Killing a flower
+		// used to finalise the fight and open another, so the overlay reset
+		// mid-kill and the Hespori's own figures were split across as many
+		// fights as it grew flowers.
+		put(groups, "Hespori",
+			NpcID.HESPORI, NpcID.HESPORI_HEALER_ACTIVE, NpcID.HESPORI_HEALER_INACTIVE);
+		put(groups, "Hespori (A Night at the Theatre)",
+			NpcID.TOBQUEST_HESPORI, NpcID.TOBQUEST_HESPORI_HEALER_ACTIVE,
+			NpcID.TOBQUEST_HESPORI_HEALER_INACTIVE);
 		put(groups, "The Hueycoatl",
 			NpcID.HUEY_HEAD, NpcID.HUEY_HEAD_INVULNERABLE, NpcID.HUEY_HEAD_DEFEATED,
 			NpcID.HUEY_HEAD_ENRAGED, NpcID.HUEY_TAIL, NpcID.HUEY_TAIL_BROKEN,
@@ -298,6 +307,16 @@ final class EncounterGroup
 	private static Set<Integer> buildUnscored()
 	{
 		return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+			// Hespori's flowers heal it and die to one hit whatever is swung at
+			// them, so their accuracy is a formality and their damage is a
+			// fraction of a real hit. Scored, they drag a kill's figures down
+			// for doing the thing the fight asks of you. The ticks spent on
+			// them still count, which is the part that is genuinely on the
+			// player.
+			NpcID.HESPORI_HEALER_ACTIVE,
+			NpcID.HESPORI_HEALER_INACTIVE,
+			NpcID.TOBQUEST_HESPORI_HEALER_ACTIVE,
+			NpcID.TOBQUEST_HESPORI_HEALER_INACTIVE,
 			NpcID.TOA_KEPHRI_SHIELD_SCARAB,
 			// The Judge is Yama's own add. Grouped so killing it does not reset
 			// what is on screen, and unscored so it does not lend its figures to

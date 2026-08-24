@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -1268,8 +1269,23 @@ class CombatCalc
 
 	private boolean isScytheEquipped()
 	{
-		final String name = weaponName();
-		return name != null && name.startsWith("Scythe of vitur");
+		return isScythe(weaponName());
+	}
+
+	/**
+	 * Whether this weapon name is a scythe of vitur, in any of its forms.
+	 *
+	 * <p>Matched loosely on purpose, and both looseness are load-bearing. The
+	 * item's name comes back from the item composition as "Scythe of Vitur"
+	 * with a capital V, while the wiki writes it lowercase — a
+	 * {@code startsWith("Scythe of vitur")} therefore matched nothing at all,
+	 * and the extra hits silently stopped applying. And the ornament kits put a
+	 * word in front of it: a holy or sanguine scythe starts with neither
+	 * "Scythe" nor the same case, so anchoring at the start fails twice over.
+	 */
+	static boolean isScythe(String weaponName)
+	{
+		return weaponName != null && weaponName.toLowerCase(Locale.ROOT).contains("scythe of vitur");
 	}
 
 	private int damageCap(int npcId)
