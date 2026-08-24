@@ -958,13 +958,22 @@ public class PvmPerformancePlugin extends Plugin
 	 * compared at the resolve, so xp arriving on any tick between needs no
 	 * bookkeeping.
 	 */
-	// TRACE. Prints an experience change with the tick it arrived on.
+	// TRACE. Prints an experience change with the tick it arrived on, and the
+	// absolute the first time it is seen. The absolute matters as much as the
+	// changes: at 200,000,000 the game stops granting experience in that skill,
+	// so it can never move and every cast would read as a splash for a reason
+	// that has nothing to do with timing.
 	private void traceXpChange(Skill skill, int index)
 	{
 		final int xp = client.getSkillExperience(skill);
 		final int was = tracedXp[index];
 		tracedXp[index] = xp;
-		if (was > 0 && xp != was)
+		if (was == 0)
+		{
+			log.debug("TRACE xp {} starts at {}{}", skill, xp,
+				xp >= 200_000_000 ? " - MAXED, this skill can never move again" : "");
+		}
+		else if (xp != was)
 		{
 			log.debug("TRACE xp tick {} {} +{}", client.getTickCount(), skill, xp - was);
 		}
@@ -1440,9 +1449,18 @@ public class PvmPerformancePlugin extends Plugin
 		// that is what an xp drop plugin shows immediately. If it does, a splash
 		// is knowable at once and the wait goes away. It is being measured; see
 		// the xp trace in onGameTick.
-		castsAwaiting.add(new PendingCast(target.getIndex(),
-			client.getTickCount() + magicHitDelay(castDistance(target)),
-			hitpointsXpLastTick));
+		final int distance = castDistance(target);
+		final int due = client.getTickCount() + magicHitDelay(distance);
+		// TRACE. The tick the damage is expected on, beside the distance it came
+		// from. At the Hueycoatl the delay and the cast cadence are both five,
+		// so an xp drop for the PREVIOUS cast appears on the very tick the next
+		// one goes out — which looks exactly like an xp drop at the cast, and is
+		// the coincidence this has to be able to tell apart. Casting from close
+		// up separates them: the delay drops to three while the cadence stays
+		// five.
+		log.debug("TRACE cast queued tick {} npc {} distance {} due {}",
+			client.getTickCount(), target.getIndex(), distance, due);
+		castsAwaiting.add(new PendingCast(target.getIndex(), due, hitpointsXpLastTick));
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
 
