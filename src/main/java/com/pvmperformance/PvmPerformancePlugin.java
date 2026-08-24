@@ -169,8 +169,11 @@ public class PvmPerformancePlugin extends Plugin
 	private int castAwaitingResolve = Integer.MIN_VALUE;
 	private int castAwaitingResolveIndex = -1;
 	private int castAwaitingResolveXp;
-	// Whether a hitsplat of mine has landed on that NPC since the cast went out.
-	private boolean castAwaitingResolveConnected;
+	// The last per-tick trace line printed, so an unchanged one is not repeated.
+	private String lastTraceLine;
+	// The weapon's speed when it went out, which is how long the answer is
+	// worth waiting for. See castResolved.
+	private int castAwaitingResolveSpeed;
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -491,14 +494,14 @@ public class PvmPerformancePlugin extends Plugin
 			// gets its expectation counted now, beside the damage it did.
 			resolvePendingSample(npc.getIndex());
 			// A cast waiting to be told whether it landed has its answer the
-			// moment one of my hitsplats reaches the NPC it was aimed at. A
-			// zero counts: a spell that rolls a hit for no damage still
-			// connected, and that is the case hitpoints xp cannot see, since a
-			// hit for nothing pays none of it.
-			if (castAwaitingResolve != Integer.MIN_VALUE
-				&& castAwaitingResolveIndex == npc.getIndex())
+			// moment one of my hitsplats reaches the NPC it was aimed at, and
+			// the wait is over there and then: nothing later can unsay that it
+			// connected. A zero counts, since a spell that rolls a hit for no
+			// damage still connected — and that is the case hitpoints xp cannot
+			// see, a hit for nothing paying none of it.
+			if (castAwaitingResolveIndex == npc.getIndex())
 			{
-				castAwaitingResolveConnected = true;
+				castAwaitingResolve = Integer.MIN_VALUE;
 			}
 			// A zero is a miss, which is what arms the confliction gauntlets
 			// for the next cast against this same enemy.
@@ -948,19 +951,14 @@ public class PvmPerformancePlugin extends Plugin
 			castAwaitingResolve = Integer.MIN_VALUE;
 			return;
 		}
-		if (!castResolved(client.getTickCount(), castAwaitingResolve))
+		if (!castResolved(client.getTickCount(), castAwaitingResolve, castAwaitingResolveSpeed))
 		{
 			return;
 		}
 		final int index = castAwaitingResolveIndex;
-		final boolean connected = castAwaitingResolveConnected;
 		final boolean damagedSomething =
 			client.getSkillExperience(Skill.HITPOINTS) > castAwaitingResolveXp;
 		castAwaitingResolve = Integer.MIN_VALUE;
-		if (connected)
-		{
-			return; // the hitsplat has already booked everything it owes
-		}
 		log.debug("TRACE cast did not connect: npc {} tick {} hp xp moved {}", index,
 			client.getTickCount(), damagedSomething);
 		if (combatCalc.usesConflictionGauntlets())
@@ -1067,18 +1065,28 @@ public class PvmPerformancePlugin extends Plugin
 	 * apart depending on what will prove the next attack.
 	 */
 	/**
-	 * Whether a cast thrown on {@code castTick} has had long enough to land.
+	 * Whether a cast thrown on {@code castTick} has waited long enough to be
+	 * called a miss. Only reached when no hitsplat has arrived; one that has
+	 * ends the wait where it lands.
 	 *
-	 * <p>The gap is the measured cast-to-damage one that
-	 * {@code CAST_HITSPLAT_BOOKING_LAG} already holds: the barrage animation
-	 * fired on 21, 26 and 31 and the damage landed on 24, 29 and 34. Waiting
-	 * exactly that long and no longer is what matters — the answer arms the
-	 * gauntlets for the NEXT cast, and a five tick weapon leaves no room to be
-	 * late with it.
+	 * <p><b>The gap is not a constant, and treating it as one is what made this
+	 * wrong.</b> It was fixed at the three ticks measured once — the barrage
+	 * animation on 21, 26 and 31 with damage on 24, 29 and 34 — and a later
+	 * trace of the same spell at the same boss shows casts on 408, 413, 418 and
+	 * 428 landing on 413, 418, 423 and 433. Five ticks, not three. A spell's
+	 * damage is delayed by how far away the target is, so no single number
+	 * covers it, and judging at three armed the gauntlets on casts that landed
+	 * two ticks later. That is precisely the reported symptom: the accuracy
+	 * went up after a hit.
+	 *
+	 * <p>So the wait is the weapon's own speed instead, which is the tick the
+	 * next attack goes out on and therefore the last moment the answer can
+	 * still be of use. Floored at the old three so a fast weapon cannot judge a
+	 * cast before any spell could possibly have landed.
 	 */
-	static boolean castResolved(int now, int castTick)
+	static boolean castResolved(int now, int castTick, int weaponSpeedTicks)
 	{
-		return now - castTick >= CAST_HITSPLAT_BOOKING_LAG;
+		return now - castTick >= Math.max(CAST_HITSPLAT_BOOKING_LAG, weaponSpeedTicks);
 	}
 
 	static boolean attackOverdue(int now, int dueTick, int bookingLag)
@@ -1390,7 +1398,7 @@ public class PvmPerformancePlugin extends Plugin
 		castAwaitingResolve = client.getTickCount();
 		castAwaitingResolveIndex = target.getIndex();
 		castAwaitingResolveXp = client.getSkillExperience(Skill.HITPOINTS);
-		castAwaitingResolveConnected = false;
+		castAwaitingResolveSpeed = combatCalc.attackSpeedTicks();
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
 
@@ -1840,12 +1848,18 @@ public class PvmPerformancePlugin extends Plugin
 		final boolean upThisTick = combatCalc.hasOffensivePrayer();
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
 		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
-		// TRACE. Prints what the prayer and the gauntlets were read as on every
-		// tick of a fight, which is the tick a booking will later read back.
+		// TRACE. What the prayer and the gauntlets were read as, which is what a
+		// booking will later read back. Printed only when it CHANGES: one line
+		// a tick of every fight ran a log to 89MB in half an hour, and the
+		// interesting thing here is always the moment a value moves.
 		if (current != null && !current.isEnded())
 		{
-			log.debug("TRACE tick {} up={} {}", client.getTickCount(), upThisTick,
-				combatCalc.traceLine());
+			final String line = upThisTick + " " + combatCalc.traceLine();
+			if (!line.equals(lastTraceLine))
+			{
+				lastTraceLine = line;
+				log.debug("TRACE tick {} up={}", client.getTickCount(), line);
+			}
 		}
 		trackAttackCooldown();
 
