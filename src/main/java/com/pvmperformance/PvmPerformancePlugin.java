@@ -1712,24 +1712,17 @@ public class PvmPerformancePlugin extends Plugin
 			// means the tick was never sampled, which is not evidence of a
 			// missed switch, so it reads as clean.
 			final boolean switched = !Boolean.FALSE.equals(switchedByTick.get(attackTick));
-			// Whether this attack dealt damage, read from the tick it went out
-			// on. This is what arms or spends the confliction gauntlets, and it
-			// is decided here because every style passes through this one place
-			// with the right tick already worked out: a barrage booked from its
-			// animation on the tick it was cast, a powered staff booked from its
-			// projectile two ticks later, a blow booked from its hitsplat one.
-			//
-			// A powered staff is the case that had nothing at all. It pays no
-			// base experience on a miss, so no drop marks that the attack
-			// resolved; it fires a projectile, so it never reached the cast
-			// path; and it leaves no hitsplat when it misses. Its misses were
-			// invisible and the gauntlets never armed for one. "Did the attack
-			// on that tick deal damage" needs no per-spell knowledge and
-			// answers for all three.
-			if (combatCalc.usesConflictionGauntlets())
-			{
-				combatCalc.noteMagicResolved(current.getTargetIndex(), !dealtDamageOn(attackTick));
-			}
+			// TRACE, not a decision. Whether the experience drop lands on the
+			// tick an attack goes OUT or on the tick its damage arrives is
+			// still open, and it cannot be read off a Hueycoatl log: the cast
+			// cadence and the hit delay at that range are both five ticks, so
+			// the two land on the same tick and every sample fits both stories.
+			// Arming from it was tried and got the answer wrong in both
+			// directions, so it is only printed until a session cast from close
+			// range settles it — there the delay falls to one or two while the
+			// cadence stays five.
+			log.debug("TRACE arming would say tick {} attackTick {} dealt {} drops {}",
+				client.getTickCount(), attackTick, dealtDamageOn(attackTick), damageDealtTicks);
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
