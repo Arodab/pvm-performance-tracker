@@ -482,8 +482,8 @@ public class PvmPerformancePlugin extends Plugin
 			// A cast waiting to be told whether it landed has its answer the
 			// moment one of my hitsplats reaches the NPC it was aimed at. A
 			// zero counts: a spell that rolls a hit for no damage still
-			// connected, and telling that from a splash is the whole reason
-			// this is watched per NPC rather than read off the xp.
+			// connected, and that is the case hitpoints xp cannot see, since a
+			// hit for nothing pays none of it.
 			if (castAwaitingResolve != Integer.MIN_VALUE
 				&& castAwaitingResolveIndex == npc.getIndex())
 			{
@@ -908,13 +908,14 @@ public class PvmPerformancePlugin extends Plugin
 	 *
 	 * <p><b>A hitsplat of mine on the NPC it was aimed at</b> says the cast
 	 * connected <i>with that enemy</i>, which is what the confliction gauntlets
-	 * turn on — the wiki's wording is "against the same enemy". Hitpoints xp
-	 * cannot answer this one: a barrage is an area spell, so xp moves when any
-	 * NPC in the splash takes damage, and at a boss made of several NPCs — the
-	 * Hueycoatl, which is where this was reported — a body segment taking a hit
-	 * would report the cast as landed on a head it splashed on. A zero hitsplat
-	 * counts as connecting, because a spell that rolls a hit for no damage did
-	 * hit, and xp cannot tell that from a splash either.
+	 * turn on — the wiki's wording is "against the same enemy". Two things xp
+	 * cannot answer. A hit that rolls zero damage pays no hitpoints xp and is
+	 * still a hit, and the gauntlets care about the difference; a zero hitsplat
+	 * therefore counts as connecting. And where an area spell really does catch
+	 * several NPCs, xp moves when any of them takes damage, so a cast that
+	 * splashed on the target reads as landed. (Not at the Hueycoatl, where only
+	 * one target can be hit at a time — but this code is not written for one
+	 * boss.)
 	 *
 	 * <p><b>Hitpoints xp</b> says the cast dealt damage to <i>something</i>,
 	 * which is the right question for whether the attack was a splash at all.
