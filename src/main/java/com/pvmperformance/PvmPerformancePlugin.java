@@ -155,11 +155,6 @@ public class PvmPerformancePlugin extends Plugin
 	// measurement stands if that route is ever needed again, but the hitsplat
 	// cannot see a cast that misses and the animation can.
 	private static final int CAST_BOOKING_LAG = 0;
-	// And three when the cast is booked from its hitsplat instead, which is
-	// what happens when the animation is not one this knows. Measured: the
-	// barrage animation fired on 21, 26 and 31 and the damage landed on 24, 29
-	// and 34.
-	private static final int CAST_HITSPLAT_BOOKING_LAG = 3;
 	// The animations a projectile-less cast is thrown with. Only these spells
 	// reach the animation path, so this is a short list and not a table of every
 	// weapon. Extend it from the "cast UNKNOWN ANIM" trace rather than by guess.
@@ -176,6 +171,9 @@ public class PvmPerformancePlugin extends Plugin
 	// TRACE. Magic and hitpoints experience as last seen, so a change can be
 	// printed with the tick it arrived on. See onStatChanged.
 	private final int[] tracedXp = new int[2];
+	// Hitpoints experience as it stood at the end of the previous tick, which is
+	// what a cast thrown this tick is judged against. See resolveCasts.
+	private int hitpointsXpLastTick;
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -361,6 +359,9 @@ public class PvmPerformancePlugin extends Plugin
 	// up to. Both are views over the fights rather than separate counters, so
 	// the three widths cannot disagree.
 	private Encounter currentEncounter;
+	// The last room with something in it, kept so a finished kill stays readable
+	// while the next room is still empty. See getDisplayEncounter.
+	private Encounter lastFinishedEncounter;
 	private Raid currentRaid;
 	private RaidType raidType;
 	private int raidCounter;
@@ -550,14 +551,23 @@ public class PvmPerformancePlugin extends Plugin
 			// recognise. That route sees misses and this one cannot, so it is
 			// the better of the two and books first; this is only here so an
 			// unknown cast animation costs the misses rather than everything.
+			// How far behind the cast this hitsplat is, which is the hit delay
+			// and therefore distance, not a constant. Only this path needs it:
+			// a cast booked from its animation and a shot booked from its
+			// projectile are both seen on their way out, so how long the damage
+			// takes to arrive cannot date them. This one books from the landing
+			// itself, so it is exactly as late as the spell was slow — and read
+			// at a fixed three, a cast from range had its prayer and its gear
+			// taken from two ticks after it was thrown.
+			final int castLag = magicHitDelay(castDistance(npc));
 			final boolean unbookedCast = combatCalc.castLandsWithoutProjectile()
-				&& client.getTickCount() - lastCastBookedTick > CAST_HITSPLAT_BOOKING_LAG;
+				&& client.getTickCount() - lastCastBookedTick > castLag;
 			final boolean melee = combatCalc.isMeleeEquipped() || unbookedCast;
 			final boolean firstOfBurst = !burstBooked.contains(npc.getIndex());
 			if (!arrivedFromFlight && melee && burstBooked.add(npc.getIndex()))
 			{
 				recordAttackObserved(false, npc.getId(), combatCalc.isMeleeEquipped()
-					? MELEE_BOOKING_LAG : CAST_HITSPLAT_BOOKING_LAG);
+					? MELEE_BOOKING_LAG : castLag);
 			}
 		}
 		else if (actor == client.getLocalPlayer() && current != null && !current.isEnded())
@@ -1441,9 +1451,18 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(target, now);
 		}
 		lastCastBookedTick = client.getTickCount();
-		castsAwaiting.add(new PendingCast(target.getIndex(),
-			client.getTickCount() + magicHitDelay(castDistance(target)),
-			client.getSkillExperience(Skill.HITPOINTS)));
+		// Due at the END OF THIS TICK, not when the damage lands. Experience is
+		// granted when the spell is cast — confirmed in game, and it is how the
+		// customizable xp drops plugin reports a cast the moment it goes out —
+		// so hitpoints xp has already moved by now if this one connected. The
+		// hit delay no longer gates the answer at all.
+		//
+		// The xp to compare against is last tick's, never a value read now: the
+		// animation event and the xp event both arrive inside this tick and
+		// nothing fixes their order, so reading it here could already include
+		// this cast's own drop and report every cast as a splash.
+		castsAwaiting.add(new PendingCast(target.getIndex(), client.getTickCount(),
+			hitpointsXpLastTick));
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
 
@@ -1894,12 +1913,6 @@ public class PvmPerformancePlugin extends Plugin
 		// where the expected figures are sampled, and they have to describe the
 		// loadout that threw it, reading a cache filled at the end of the last
 		// tick would date every sample by one tick and misattribute any switch.
-		// Before the figures are refreshed, not after. The armed accuracy is
-		// worth showing on the tick the miss becomes known — three ticks after
-		// the cast, which is two before the next one goes out — and refreshing
-		// first put it a further tick behind, close enough to the next attack
-		// to be unreadable.
-		resolveCasts(System.currentTimeMillis());
 		refreshExpected();
 		// The server's copy, which is the only one that answers the question
 		// being asked: did the server resolve this tick with the prayer up.
@@ -1940,6 +1953,13 @@ public class PvmPerformancePlugin extends Plugin
 			}
 		}
 		trackAttackCooldown();
+		// AFTER the booking, and that ordering is the whole of it. A cast is
+		// judged on the tick it goes out now, so arming before the booking would
+		// hand the doubled roll to the very attack whose miss armed it. Judged
+		// here, the overlay carries it from the next tick — four ticks clear of
+		// the next cast on a five tick weapon, where it used to arrive with it.
+		resolveCasts(System.currentTimeMillis());
+		hitpointsXpLastTick = client.getSkillExperience(Skill.HITPOINTS);
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
@@ -2078,9 +2098,16 @@ public class PvmPerformancePlugin extends Plugin
 		if (currentEncounter == null || currentEncounter.isEnded()
 			|| fight.getGroupName() == null || !currentEncounter.accepts(name))
 		{
-			if (currentEncounter != null && !currentEncounter.isEnded())
+			if (currentEncounter != null)
 			{
-				currentEncounter.end(now);
+				if (!currentEncounter.isEnded())
+				{
+					currentEncounter.end(now);
+				}
+				if (currentEncounter.hasAttempts())
+				{
+					lastFinishedEncounter = currentEncounter;
+				}
 			}
 			currentEncounter = new Encounter(name, raidType, now);
 			if (currentRaid != null)
@@ -2308,10 +2335,23 @@ public class PvmPerformancePlugin extends Plugin
 		return current != null ? current : lastFinished;
 	}
 
-	/** The room the overlay should display, or null if nothing has been fought. */
+	/**
+	 * The room the overlay should display, or null if nothing has been fought.
+	 *
+	 * <p>A room that has been opened but not yet fought in does not replace the
+	 * one before it. With the trip totals off the overlay is the room, so the
+	 * kill just made vanished the instant anything opened a new one — and a
+	 * fight opens on merely looking at an NPC, which after a kill is
+	 * immediate. The player could never read how the kill went. The finished
+	 * room stays up until the first attack of the next one.
+	 */
 	Encounter getDisplayEncounter()
 	{
-		return currentEncounter;
+		if (currentEncounter != null && currentEncounter.hasAttempts())
+		{
+			return currentEncounter;
+		}
+		return lastFinishedEncounter != null ? lastFinishedEncounter : currentEncounter;
 	}
 
 	/** The raid in progress, or null outside one. */

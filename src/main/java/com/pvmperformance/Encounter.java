@@ -62,6 +62,23 @@ class Encounter
 		return endMillis > 0;
 	}
 
+	/**
+	 * Whether anything has actually been thrown in this room yet. A room opens
+	 * as soon as a fight does, and a fight opens on looking at something, so a
+	 * room with no attempts in it is one nothing has happened in.
+	 */
+	boolean hasAttempts()
+	{
+		for (Fight fight : fights)
+		{
+			if (fight.getAttempts() > 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** Whether any of this encounter's targets died. */
 	boolean isKilled()
 	{
