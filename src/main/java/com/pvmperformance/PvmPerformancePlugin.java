@@ -64,6 +64,7 @@ import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.SpotanimID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
@@ -176,6 +177,8 @@ public class PvmPerformancePlugin extends Plugin
 	// superior look like a greater.
 	private Thrall thrall;
 	private int thrallIndex = -1;
+	// The last follower line printed, so an unchanged one is not repeated.
+	private String lastThrallTrace;
 	// The resurrect cast the local player last made, which is what identifies
 	// the thrall that appears next as theirs. See trackThrall.
 	private AttackType summonedType;
@@ -1503,6 +1506,42 @@ public class PvmPerformancePlugin extends Plugin
 			npc.getIndex(), justSummoned);
 	}
 
+	/**
+	 * The player's own thrall, from the follower slot.
+	 *
+	 * <p>This is the ownership the NPC list cannot give. {@code getFollower} is
+	 * the LOCAL player's follower, so whatever it returns is theirs by
+	 * definition — no proximity, no matching a cast, no guessing in a crowd.
+	 *
+	 * <p>Whether a thrall actually occupies that slot is the open question, and
+	 * it is traced rather than assumed. If it does, this settles ownership
+	 * outright; if it does not, the summon route below still names the thrall
+	 * and nothing is lost. The resurrection varbits are printed beside it —
+	 * the game's own word for a thrall is "resurrection", which is why a search
+	 * for "thrall" found nothing — in case one of them carries the tier and
+	 * makes even the summon route unnecessary.
+	 */
+	private void trackThrallFromFollower()
+	{
+		final NPC follower = client.getFollower();
+		final Thrall found = follower == null ? null : Thrall.forNpc(follower.getId());
+		final String seen = found + "/" + client.getVarbitValue(VarbitID.ARCEUUS_RESURRECTION_ACTIVE)
+			+ "/" + client.getVarbitValue(VarbitID.ARCEUUS_RESURRECTION_COOLDOWN);
+		if (!seen.equals(lastThrallTrace))
+		{
+			lastThrallTrace = seen;
+			log.debug("TRACE follower {} resurrectionActive {} cooldown {} tracked {}",
+				follower == null ? null : follower.getId(),
+				client.getVarbitValue(VarbitID.ARCEUUS_RESURRECTION_ACTIVE),
+				client.getVarbitValue(VarbitID.ARCEUUS_RESURRECTION_COOLDOWN), thrall);
+		}
+		if (found != null)
+		{
+			thrall = found;
+			thrallIndex = follower.getIndex();
+		}
+	}
+
 	private boolean adjacentToMe(NPC npc)
 	{
 		final Player me = client.getLocalPlayer();
@@ -2200,6 +2239,7 @@ public class PvmPerformancePlugin extends Plugin
 			}
 		}
 		trackAttackCooldown();
+		trackThrallFromFollower();
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
