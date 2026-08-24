@@ -38,7 +38,6 @@ import net.runelite.api.Hitsplat;
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
-import net.runelite.api.Skill;
 import net.runelite.api.Projectile;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.events.AnimationChanged;
@@ -61,7 +60,6 @@ import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.SpotanimID;
-import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
@@ -168,16 +166,8 @@ public class PvmPerformancePlugin extends Plugin
 	private final List<PendingCast> castsAwaiting = new ArrayList<>();
 	// The last per-tick trace line printed, so an unchanged one is not repeated.
 	private String lastTraceLine;
-	// TRACE. Magic and hitpoints experience as last seen, so a change can be
-	// printed with the tick it arrived on. See onStatChanged.
-	private final int[] tracedXp = new int[2];
-	// Hitpoints experience as it stood at the end of the previous tick, which is
-	// what a cast thrown this tick is judged against. See resolveCasts.
-	private int hitpointsXpLastTick;
-	// The hitpoints experience-drop varp as last sampled, and whether it moved on
-	// each recent tick. See sampleDamageDealt.
-	private int hitpointsDropVarp;
-	private final Map<Integer, Boolean> damageDealtByTick = new HashMap<>();
+
+
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -963,27 +953,6 @@ public class PvmPerformancePlugin extends Plugin
 	 * compared at the resolve, so xp arriving on any tick between needs no
 	 * bookkeeping.
 	 */
-	// TRACE. Prints an experience change with the tick it arrived on, and the
-	// absolute the first time it is seen. The absolute matters as much as the
-	// changes: at 200,000,000 the game stops granting experience in that skill,
-	// so it can never move and every cast would read as a splash for a reason
-	// that has nothing to do with timing.
-	private void traceXpChange(Skill skill, int index)
-	{
-		final int xp = client.getSkillExperience(skill);
-		final int was = tracedXp[index];
-		tracedXp[index] = xp;
-		if (was == 0)
-		{
-			log.debug("TRACE xp {} starts at {}{}", skill, xp,
-				xp >= 200_000_000 ? " - MAXED, this skill can never move again" : "");
-		}
-		else if (xp != was)
-		{
-			log.debug("TRACE xp tick {} {} +{}", client.getTickCount(), skill, xp - was);
-		}
-	}
-
 	private void resolveCasts(long now)
 	{
 		final Iterator<PendingCast> waiting = castsAwaiting.iterator();
@@ -999,54 +968,19 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				continue;
 			}
-			final boolean damagedSomething =
-				client.getSkillExperience(Skill.HITPOINTS) > cast.xpBefore;
-			log.debug("TRACE cast did not connect: npc {} tick {} hp xp moved {}", cast.npcIndex,
-				client.getTickCount(), damagedSomething);
-			splashed(cast, !damagedSomething, now);
+			log.debug("TRACE cast splashed: npc {} tick {}", cast.npcIndex, client.getTickCount());
+			splashed(cast, now);
 		}
 	}
 
-	/**
-	 * A cast that missed this enemy, and whether it hit nothing at all. The
-	 * gauntlets are not armed from here — that is decided at the booking, where
-	 * every style passes and the answer is already known.
-	 */
-	private void splashed(PendingCast cast, boolean hitNothing, long now)
+	/** A cast of mine that reached the enemy it was aimed at and did nothing. */
+	private void splashed(PendingCast cast, long now)
 	{
-		if (hitNothing)
+		if (combatCalc.usesConflictionGauntlets())
 		{
-			recordSplash(cast.npcIndex, now);
+			combatCalc.noteMagicResolved(cast.npcIndex, true);
 		}
-	}
-
-	/**
-	 * Whether an attack thrown on this tick dealt damage, taken from the
-	 * hitpoints experience-drop varp.
-	 *
-	 * <p>This is the varp the drop interface runs on, and it moves on the tick
-	 * the attack is made, for every style. The experience TOTAL does not — that
-	 * was measured, a cast booked on tick 20 reading no change while its
-	 * hitsplat arrived on tick 25 for 28 damage — and taking the total for the
-	 * drop is what made every cast read as a splash. The varp also keeps working
-	 * where the total cannot: a skill sitting at 200,000,000 is granted no more
-	 * experience, so its total can never move again.
-	 *
-	 * <p>Sampled per tick and read back at the tick the attack went out, for the
-	 * same reason the prayer is, and written before the booking reads it.
-	 */
-	private void sampleDamageDealt()
-	{
-		final int value = client.getVarpValue(VarPlayerID.XPDROPS_HITPOINTS_START);
-		final int was = hitpointsDropVarp;
-		hitpointsDropVarp = value;
-		final boolean dealt = was != 0 && value != was;
-		if (dealt)
-		{
-			log.debug("TRACE hp xp drop tick {} {} -> {}", client.getTickCount(), was, value);
-		}
-		damageDealtByTick.put(client.getTickCount(), dealt);
-		damageDealtByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
+		recordSplash(cast.npcIndex, now);
 	}
 
 	/**
@@ -1490,17 +1424,9 @@ public class PvmPerformancePlugin extends Plugin
 		// the xp trace in onGameTick.
 		final int distance = castDistance(target);
 		final int due = client.getTickCount() + magicHitDelay(distance);
-		// TRACE. The tick the damage is expected on, beside the distance it came
-		// from. At the Hueycoatl the delay and the cast cadence are both five,
-		// so an xp drop for the PREVIOUS cast appears on the very tick the next
-		// one goes out — which looks exactly like an xp drop at the cast, and is
-		// the coincidence this has to be able to tell apart. Casting from close
-		// up separates them: the delay drops to three while the cadence stays
-		// five.
 		log.debug("TRACE cast queued tick {} npc {} distance {} due {}",
 			client.getTickCount(), target.getIndex(), distance, due);
-		castsAwaiting.add(new PendingCast(target.getIndex(), client.getTickCount(), due,
-			hitpointsXpLastTick));
+		castsAwaiting.add(new PendingCast(target.getIndex(), due));
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
 
@@ -1525,17 +1451,13 @@ public class PvmPerformancePlugin extends Plugin
 	private static final class PendingCast
 	{
 		private final int npcIndex;
-		private final int castTick;
 		private final int resolveTick;
-		private final int xpBefore;
 		private boolean connected;
 
-		PendingCast(int npcIndex, int castTick, int resolveTick, int xpBefore)
+		PendingCast(int npcIndex, int resolveTick)
 		{
 			this.npcIndex = npcIndex;
-			this.castTick = castTick;
 			this.resolveTick = resolveTick;
-			this.xpBefore = xpBefore;
 		}
 	}
 
@@ -1708,25 +1630,6 @@ public class PvmPerformancePlugin extends Plugin
 			// means the tick was never sampled, which is not evidence of a
 			// missed switch, so it reads as clean.
 			final boolean switched = !Boolean.FALSE.equals(switchedByTick.get(attackTick));
-			// Whether this attack dealt damage, read from the tick it went out
-			// on rather than asked now. This is what arms or spends the
-			// confliction gauntlets, and it is decided here because every style
-			// passes through this one place: a barrage booked from its
-			// animation on the tick it was cast, a powered staff booked from
-			// its projectile two ticks later, a blow booked from its hitsplat.
-			//
-			// A powered staff was the case that had nothing at all. It pays no
-			// base experience on a miss, so there is no drop to mark that the
-			// attack resolved, and it fires a projectile so it never reached
-			// the cast path either — its misses were invisible and the
-			// gauntlets never armed for one. Asking "did the attack on that
-			// tick deal damage" needs no per-spell knowledge and answers for
-			// all three.
-			final Boolean dealt = damageDealtByTick.get(attackTick);
-			if (dealt != null && combatCalc.usesConflictionGauntlets())
-			{
-				combatCalc.noteMagicResolved(current.getTargetIndex(), !dealt);
-			}
 			// The pause an eat caused is over the moment an attack goes out.
 			lastConsumeTick = 0;
 			consumeDelay = 0;
@@ -1978,18 +1881,6 @@ public class PvmPerformancePlugin extends Plugin
 		// one — so this can only arm for an attack thrown later, which is the
 		// attack the bonus really does apply to.
 		resolveCasts(System.currentTimeMillis());
-		// TRACE. Sampled here rather than from StatChanged, which was subscribed
-		// and registered and never once printed across a whole session. Whatever
-		// the reason, a tick loop that is known to run is the better instrument,
-		// and the question it has to answer is narrow: does MAGIC xp move on the
-		// tick a spell is cast, or on the tick its damage lands? Read it against
-		// the "booked" and "hitsplat" lines. Hitpoints xp is in there beside it
-		// as the control — that one is already known to arrive with the damage.
-		if (current != null && !current.isEnded())
-		{
-			traceXpChange(Skill.MAGIC, 0);
-			traceXpChange(Skill.HITPOINTS, 1);
-		}
 		refreshExpected();
 		// The server's copy, which is the only one that answers the question
 		// being asked: did the server resolve this tick with the prayer up.
@@ -2013,9 +1904,6 @@ public class PvmPerformancePlugin extends Plugin
 		// one, found nothing, and counted every barrage as unprayed however
 		// long augury had been up. Writing first is safe for the other two:
 		// they read keys this never touches.
-		// Written before the booking reads it, for the same reason and after the
-		// same bug as the prayer below.
-		sampleDamageDealt();
 		final boolean upThisTick = combatCalc.hasOffensivePrayer();
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
 		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
@@ -2033,7 +1921,6 @@ public class PvmPerformancePlugin extends Plugin
 			}
 		}
 		trackAttackCooldown();
-		hitpointsXpLastTick = client.getSkillExperience(Skill.HITPOINTS);
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
