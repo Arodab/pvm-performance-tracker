@@ -61,6 +61,7 @@ import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.SpotanimID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
@@ -173,6 +174,9 @@ public class PvmPerformancePlugin extends Plugin
 	// Hitpoints experience as it stood at the end of the previous tick, which is
 	// what a cast thrown this tick is judged against. See resolveCasts.
 	private int hitpointsXpLastTick;
+	// The magic and hitpoints experience-drop varps as last sampled. See
+	// resolveCastsFromXpDrop.
+	private final int[] xpDropVarps = new int[2];
 	// The tick the worn items last changed on.
 	private static final int CYCLES_PER_TICK = 30;
 	// How far either side of its due tick a projectile may land and still be
@@ -985,7 +989,10 @@ public class PvmPerformancePlugin extends Plugin
 		while (waiting.hasNext())
 		{
 			final PendingCast cast = waiting.next();
-			if (client.getTickCount() < cast.resolveTick)
+			// Never on its own tick. That case is judged after the attack is
+			// booked, by resolveCastsFromXpDrop, because arming here would hand
+			// the doubled roll to the very attack whose miss armed it.
+			if (cast.castTick == client.getTickCount() || client.getTickCount() < cast.resolveTick)
 			{
 				continue;
 			}
@@ -998,16 +1005,87 @@ public class PvmPerformancePlugin extends Plugin
 				client.getSkillExperience(Skill.HITPOINTS) > cast.xpBefore;
 			log.debug("TRACE cast did not connect: npc {} tick {} hp xp moved {}", cast.npcIndex,
 				client.getTickCount(), damagedSomething);
-			if (combatCalc.usesConflictionGauntlets())
-			{
-				// Missed this enemy, whatever it did to anything else beside it.
-				combatCalc.noteMagicResolved(cast.npcIndex, true);
-			}
-			if (!damagedSomething)
-			{
-				recordSplash(cast.npcIndex, now);
-			}
+			splashed(cast, !damagedSomething, now);
 		}
+	}
+
+	/**
+	 * Judges a cast on the tick it went out, from the experience-drop varps
+	 * rather than from the experience totals.
+	 *
+	 * <p>These are the varps the drop interface itself runs on, which is why a
+	 * drop is seen on the attack tick for every style while
+	 * {@code getSkillExperience} does not move until the damage lands — the
+	 * totals were measured doing exactly that, and taking them for the drop is
+	 * what made every cast read as a splash. They also keep working where the
+	 * totals cannot: a skill sitting at 200,000,000 is granted no more
+	 * experience, so its total can never move again.
+	 *
+	 * <p><b>It only ever acts on positive evidence, and that is deliberate.</b>
+	 * A splash needs the magic drop to have moved while the hitpoints drop did
+	 * not: the cast resolved, and it dealt no damage. If neither moved — the
+	 * varps not behaving as expected, drops switched off, whatever the reason —
+	 * nothing is concluded and the cast falls through to being judged when its
+	 * damage should have landed, exactly as before. The failure mode of the last
+	 * attempt, where an absence of evidence was read as a miss and every cast
+	 * became a splash, cannot happen here.
+	 */
+	private void resolveCastsFromXpDrop(long now)
+	{
+		final boolean magicDropped = xpDropChanged(VarPlayerID.XPDROPS_MAGIC_START, 0);
+		final boolean hitpointsDropped = xpDropChanged(VarPlayerID.XPDROPS_HITPOINTS_START, 1);
+		if (!magicDropped || hitpointsDropped)
+		{
+			return;
+		}
+		final Iterator<PendingCast> waiting = castsAwaiting.iterator();
+		while (waiting.hasNext())
+		{
+			final PendingCast cast = waiting.next();
+			if (cast.castTick != client.getTickCount())
+			{
+				continue;
+			}
+			waiting.remove();
+			if (current == null || current.isEnded())
+			{
+				continue;
+			}
+			log.debug("TRACE cast splashed on the xp drop: npc {} tick {}", cast.npcIndex,
+				client.getTickCount());
+			splashed(cast, true, now);
+		}
+	}
+
+	/** A cast that missed this enemy, and whether it hit nothing at all. */
+	private void splashed(PendingCast cast, boolean hitNothing, long now)
+	{
+		if (combatCalc.usesConflictionGauntlets())
+		{
+			// Missed this enemy, whatever it did to anything else beside it.
+			combatCalc.noteMagicResolved(cast.npcIndex, true);
+		}
+		if (hitNothing)
+		{
+			recordSplash(cast.npcIndex, now);
+		}
+	}
+
+	// Whether an experience-drop varp moved this tick. Sampled rather than
+	// watched: these are ordinary varps and a tick loop that is known to run
+	// beats an event that turned out not to fire.
+	private boolean xpDropChanged(int varPlayer, int index)
+	{
+		final int value = client.getVarpValue(varPlayer);
+		final int was = xpDropVarps[index];
+		xpDropVarps[index] = value;
+		if (was != 0 && value != was)
+		{
+			log.debug("TRACE xp drop tick {} varp {} {} -> {}", client.getTickCount(), varPlayer,
+				was, value);
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -1460,7 +1538,8 @@ public class PvmPerformancePlugin extends Plugin
 		// five.
 		log.debug("TRACE cast queued tick {} npc {} distance {} due {}",
 			client.getTickCount(), target.getIndex(), distance, due);
-		castsAwaiting.add(new PendingCast(target.getIndex(), due, hitpointsXpLastTick));
+		castsAwaiting.add(new PendingCast(target.getIndex(), client.getTickCount(), due,
+			hitpointsXpLastTick));
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
 
@@ -1485,13 +1564,15 @@ public class PvmPerformancePlugin extends Plugin
 	private static final class PendingCast
 	{
 		private final int npcIndex;
+		private final int castTick;
 		private final int resolveTick;
 		private final int xpBefore;
 		private boolean connected;
 
-		PendingCast(int npcIndex, int resolveTick, int xpBefore)
+		PendingCast(int npcIndex, int castTick, int resolveTick, int xpBefore)
 		{
 			this.npcIndex = npcIndex;
+			this.castTick = castTick;
 			this.resolveTick = resolveTick;
 			this.xpBefore = xpBefore;
 		}
@@ -1969,6 +2050,9 @@ public class PvmPerformancePlugin extends Plugin
 			}
 		}
 		trackAttackCooldown();
+		// After the booking, so a cast judged on its own tick cannot hand the
+		// doubled roll to itself.
+		resolveCastsFromXpDrop(System.currentTimeMillis());
 		hitpointsXpLastTick = client.getSkillExperience(Skill.HITPOINTS);
 
 		final Player me = client.getLocalPlayer();
