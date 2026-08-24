@@ -469,6 +469,10 @@ public class PvmPerformancePlugin extends Plugin
 			// This is the attack landing, so whatever was waiting on this NPC
 			// gets its expectation counted now, beside the damage it did.
 			resolvePendingSample(npc.getIndex());
+			// TRACE. A miss that produces a zero hitsplat and a miss that
+			// produces nothing at all are the two cases to tell apart.
+			log.debug("TRACE hitsplat tick {} npc {} amount {} gauntlets {}", tick, npc.getIndex(),
+				hitsplat.getAmount(), combatCalc.usesConflictionGauntlets());
 			// A zero is a miss, which is what arms the confliction gauntlets
 			// for the next cast against this same enemy.
 			if (combatCalc.usesConflictionGauntlets())
@@ -799,6 +803,10 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final int index = ((NPC) actor).getIndex();
+		// TRACE. Whether a splashed barrage produces this graphic at all is the
+		// whole question for the gauntlets: nothing else sees a missed cast.
+		log.debug("TRACE splash graphic tick {} npc {} target {}", client.getTickCount(), index,
+			current.getTargetIndex());
 		if (current.getTargetIndex() != index)
 		{
 			return;
@@ -1268,15 +1276,41 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onNpcLootReceived(NpcLootReceived event)
 	{
-		if (current == null || current.isEnded())
-		{
-			return;
-		}
 		final NPC npc = event.getNpc();
-		if (current.getTargetIndex() == npc.getIndex()
-			|| EncounterGroup.sameGroup(npc.getId(), current.getTargetId()))
+		final long now = System.currentTimeMillis();
+		if (current != null && !current.isEnded()
+			&& (current.getTargetIndex() == npc.getIndex()
+			|| EncounterGroup.sameGroup(npc.getId(), current.getTargetId())))
 		{
-			finalizeFight(true, System.currentTimeMillis());
+			finalizeFight(true, now);
+		}
+		// The room ends with the kill that closed it, so the next kill opens a
+		// fresh one. Without this a grouped boss kept every kill of a trip in
+		// the room the first one opened: the Hueycoatl's head, tail and body are
+		// deliberately one room, so the name always matched and the room always
+		// accepted. The overlay then read as a running total of the trip with
+		// the trip totals switched off — which is the failure openEncounterFor
+		// already guards against, but only for an NPC that is not grouped.
+		//
+		// A loot drop is the one event that says a KILL happened here rather
+		// than a part of the boss dying, which is why the room cannot simply
+		// close on a fight that ended in a death: several of those belong to one
+		// Hueycoatl. Inside a raid no loot drop fires and rooms there really do
+		// span several fights, so Olm and the Nylocas are untouched.
+		//
+		// Ended rather than dropped, so the kill just made stays on the overlay
+		// to be read. openEncounterFor will not continue an ended room.
+		if (currentEncounter != null && !currentEncounter.isEnded() && currentEncounter.holds(npc.getId()))
+		{
+			currentEncounter.end(now);
+			// The export rebuilds its rooms from the fights alone and would
+			// otherwise group a trip's kills exactly as the overlay used to, so
+			// the fight the kill closed on carries the boundary into the file.
+			final List<Fight> held = currentEncounter.getFights();
+			if (!held.isEmpty())
+			{
+				held.get(held.size() - 1).closeRoom();
+			}
 		}
 	}
 
@@ -1364,6 +1398,10 @@ public class PvmPerformancePlugin extends Plugin
 			// attack and its booking is not constant.
 			final int attackTick = client.getTickCount() - attackObservedLag;
 			final boolean prayed = Boolean.TRUE.equals(prayerUpByTick.get(attackTick));
+			// TRACE. Which tick the booking read, and what was stored there.
+			log.debug("TRACE booked tick {} lag {} -> attackTick {} prayed {} stored {}",
+				client.getTickCount(), attackObservedLag, attackTick, prayed,
+				prayerUpByTick.get(attackTick));
 			final boolean potted = attackObservedPotted;
 			// Worked out both ways now, while the loadout and boost are the ones
 			// that threw the attack. Which of the two applies is decided by the
@@ -1622,7 +1660,6 @@ public class PvmPerformancePlugin extends Plugin
 		// loadout that threw it, reading a cache filled at the end of the last
 		// tick would date every sample by one tick and misattribute any switch.
 		refreshExpected();
-		trackAttackCooldown();
 		// The server's copy, which is the only one that answers the question
 		// being asked: did the server resolve this tick with the prayer up.
 		// Clicking a prayer off flips the client's copy at once so the orb
@@ -1635,12 +1672,27 @@ public class PvmPerformancePlugin extends Plugin
 		// one flick satisfied two bookings. It also earned nothing: on every
 		// pulse traced, the reading below was already true on its own.
 		//
-		// Placed after trackAttackCooldown on purpose. An attack booked this
-		// tick went out on an earlier one and reads that tick's stored answer,
-		// so this write must not land before the read.
+		// Taken BEFORE the attack is booked, beside the rest of the tick's
+		// samples. It sat after the booking on the reasoning that an attack
+		// booked this tick went out on an earlier one and so reads an earlier
+		// tick's answer — true of melee at one tick's lag and of a projectile
+		// at two, and false of the one attack that is booked on the tick it
+		// goes out. An ancient area spell is booked from the cast animation at
+		// no lag at all, so it read this tick's answer before this tick had
+		// one, found nothing, and counted every barrage as unprayed however
+		// long augury had been up. Writing first is safe for the other two:
+		// they read keys this never touches.
 		final boolean upThisTick = combatCalc.hasOffensivePrayer();
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
 		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
+		// TRACE. Prints what the prayer and the gauntlets were read as on every
+		// tick of a fight, which is the tick a booking will later read back.
+		if (current != null && !current.isEnded())
+		{
+			log.debug("TRACE tick {} up={} {}", client.getTickCount(), upThisTick,
+				combatCalc.traceLine());
+		}
+		trackAttackCooldown();
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
@@ -1774,9 +1826,12 @@ public class PvmPerformancePlugin extends Plugin
 		// would join the first, same name, so the same room, and the overlay
 		// would quietly turn into a running total of the trip.
 		final String name = fight.encounterName();
-		if (currentEncounter == null || fight.getGroupName() == null || !currentEncounter.accepts(name))
+		// An ended room takes nothing more. It is left on show so the kill can
+		// be read, and this is what stops the fight after it being added to it.
+		if (currentEncounter == null || currentEncounter.isEnded()
+			|| fight.getGroupName() == null || !currentEncounter.accepts(name))
 		{
-			if (currentEncounter != null)
+			if (currentEncounter != null && !currentEncounter.isEnded())
 			{
 				currentEncounter.end(now);
 			}
@@ -2187,6 +2242,7 @@ public class PvmPerformancePlugin extends Plugin
 		int raidRun = 0;
 		String raidName = null;
 
+		boolean closesRoom = false;
 		for (Fight fight : ordered)
 		{
 			final boolean newRaid = fight.getRaidId() != raidRun;
@@ -2195,7 +2251,11 @@ public class PvmPerformancePlugin extends Plugin
 				writer.write(csvRaidRow(raidName, raidRun, raidRooms));
 				raidRooms = new ArrayList<>();
 			}
-			if (room == null || newRaid || fight.getGroupName() == null
+			// A room also ends at the fight that closed it, so a trip's kills
+			// are one room row each rather than one row for the lot. Only that
+			// fight breaks it: a boss made of several NPCs sets targetDied on
+			// the way down and would otherwise split a single kill.
+			if (room == null || newRaid || closesRoom || fight.getGroupName() == null
 				|| !room.accepts(fight.encounterName()))
 			{
 				writeRoomRow(writer, raidName, raidRun, room);
@@ -2208,6 +2268,7 @@ public class PvmPerformancePlugin extends Plugin
 			raidRun = fight.getRaidId();
 			raidName = fight.getRaidName();
 			room.add(fight);
+			closesRoom = fight.isClosedRoom();
 			writer.write(csvFightRow(raidName, raidRun, fight));
 		}
 		writeRoomRow(writer, raidName, raidRun, room);

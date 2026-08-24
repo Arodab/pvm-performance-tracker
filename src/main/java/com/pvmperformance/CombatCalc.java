@@ -593,7 +593,45 @@ class CombatCalc
 	 */
 	void noteMagicResolved(int npcIndex, boolean missed)
 	{
+		log.debug("TRACE gauntlets resolved npc={} missed={} armed {} -> {}", npcIndex, missed,
+			conflictionArmedIndex, missed ? npcIndex : -1);
 		conflictionArmedIndex = missed ? npcIndex : -1;
+	}
+
+	// TRACE. Two symptoms to settle: augury reading as some weaker magic prayer,
+	// and the gauntlets never arming on an autocast barrage. Both come down to
+	// values nothing prints, so both are printed here, once a tick, from the
+	// tick loop rather than from the figures - hitChance is evaluated hundreds
+	// of times a tick by the gear search and would flood the log.
+	String traceLine()
+	{
+		final StringBuilder b = new StringBuilder();
+		b.append("style=").append(attackStyle().getAttackType())
+			.append(" goal=").append(prayerGoal())
+			.append(" up=").append(hasOffensivePrayer());
+		if (attackStyle().getAttackType() == AttackType.MAGIC)
+		{
+			b.append(" acc=").append(String.format("%.3f", magicAccuracyPrayer()))
+				.append(" dmg=").append(String.format("%.1f", magicDamagePrayerPercent()));
+			appendPrayer(b, "augury", Prayer.AUGURY);
+			appendPrayer(b, "vigour", Prayer.MYSTIC_VIGOUR);
+			appendPrayer(b, "might", Prayer.MYSTIC_MIGHT);
+			appendPrayer(b, "lore", Prayer.MYSTIC_LORE);
+			appendPrayer(b, "will", Prayer.MYSTIC_WILL);
+		}
+		b.append(" gauntlets=").append(hasConflictionGauntlets())
+			.append(" armed=").append(conflictionArmedIndex)
+			.append(" target=").append(targetIndex);
+		return b.toString();
+	}
+
+	// Server copy beside client copy. The whole prayer read goes through the
+	// server one, so if the two disagree that is the answer on its own.
+	private void appendPrayer(StringBuilder b, String name, Prayer prayer)
+	{
+		b.append(' ').append(name).append('=')
+			.append(client.getServerVarbitValue(prayer.getVarbit()))
+			.append('/').append(client.getVarbitValue(prayer.getVarbit()));
 	}
 
 	/** Whether the gauntlets are in play at all, so the caller can skip the rest. */

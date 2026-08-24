@@ -38,6 +38,25 @@ class Encounter
 		endMillis = now;
 	}
 
+	/**
+	 * Whether killing this NPC is killing what this room is about, as opposed to
+	 * something dying beside it. Asked of the group rather than the id, because
+	 * a boss made of several NPCs is killed at whichever part happens to be
+	 * last: the Hueycoatl drops its loot from a head while the room is full of
+	 * fights against body segments.
+	 */
+	boolean holds(int npcId)
+	{
+		for (Fight fight : fights)
+		{
+			if (fight.getTargetId() == npcId || EncounterGroup.sameGroup(npcId, fight.getTargetId()))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	boolean isEnded()
 	{
 		return endMillis > 0;

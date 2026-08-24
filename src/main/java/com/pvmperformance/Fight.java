@@ -46,6 +46,10 @@ class Fight
 	private int hits;
 	private boolean ended;
 	private boolean targetDied;
+	// Whether this fight is the last of its room: the one the boss's loot
+	// dropped on. Not the same as targetDied, which a Hueycoatl sets several
+	// times over on the way to one kill as its parts fall.
+	private boolean closedRoom;
 	private long endMillis;
 
 	// The expected figures, sampled once per attack made rather than snapshotted
@@ -182,6 +186,11 @@ class Fight
 		{
 			lastActivityMillis = now;
 		}
+	}
+
+	void closeRoom()
+	{
+		closedRoom = true;
 	}
 
 	void end(boolean died, long now)
