@@ -29,6 +29,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
+import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -783,12 +784,16 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
-		// Kept for the case it was written for, but it no longer carries the
-		// weight it was given: a splash DOES produce a hitsplat now, a zero one,
-		// and the trace shows this handler firing not once across a whole kill
-		// while four zero hitsplats arrived and booked normally. So splashes are
-		// counted on the hitsplat path like everything else, and this is a
-		// belt-and-braces second route rather than the only one.
+		// This is the ONLY route that can see a splash. A splash produces no
+		// hitsplat — confirmed by the user, and it is worth being blunt about
+		// because the opposite was written here for two sessions and cost both
+		// of them. The zero hitsplats that were seen arriving during a kill,
+		// and read at the time as splashes booking normally, were not splashes.
+		//
+		// Everything downstream follows from that. A missed cast leaves no
+		// hitsplat and no projectile, so nothing but this graphic says it
+		// happened, and the confliction gauntlets — which are armed by a miss —
+		// can only be armed from here.
 		//
 		// It only counts if it resolves one of my own casts, which excludes
 		// other players' splashes.
@@ -797,20 +802,42 @@ public class PvmPerformancePlugin extends Plugin
 			return;
 		}
 		final Actor actor = event.getActor();
+		// TRACE. A splash produces no hitsplat, confirmed by the user, so this
+		// handler is the only thing that can see a barrage miss and arm the
+		// gauntlets. Logged BEFORE the spotanim check rather than after it: if
+		// the id being matched on is the wrong one, a trace behind the check
+		// prints nothing and says only that it did not fire. This prints every
+		// spotanim that lands on an NPC during a fight, so the splash names
+		// itself whatever its id turns out to be.
+		if (actor instanceof NPC)
+		{
+			final StringBuilder ids = new StringBuilder();
+			for (ActorSpotAnim spotAnim : actor.getSpotAnims())
+			{
+				ids.append(ids.length() == 0 ? "" : ",").append(spotAnim.getId());
+			}
+			log.debug("TRACE graphic tick {} npc {} spotanims [{}] splash85 {} target {}",
+				client.getTickCount(), ((NPC) actor).getIndex(), ids,
+				actor.hasSpotAnim(SpotanimID.FAILEDSPELL_IMPACT), current.getTargetIndex());
+		}
 		// gameval's name for the splash graphic shown when a spell misses.
 		if (!(actor instanceof NPC) || !actor.hasSpotAnim(SpotanimID.FAILEDSPELL_IMPACT))
 		{
 			return;
 		}
 		final int index = ((NPC) actor).getIndex();
-		// TRACE. Whether a splashed barrage produces this graphic at all is the
-		// whole question for the gauntlets: nothing else sees a missed cast.
-		log.debug("TRACE splash graphic tick {} npc {} target {}", client.getTickCount(), index,
-			current.getTargetIndex());
 		if (current.getTargetIndex() != index)
 		{
+			// TRACE. A barrage is an area spell, so a splash on a segment the
+			// fight is not open on is a real possibility and would be dropped
+			// here without a word.
+			log.debug("TRACE splash on a different npc: splashed {} fighting {}", index,
+				current.getTargetIndex());
 			return;
 		}
+		log.debug("TRACE splash accepted tick {} npc {} noProjectile {} gauntlets {}",
+			client.getTickCount(), index, combatCalc.castLandsWithoutProjectile(),
+			combatCalc.usesConflictionGauntlets());
 		// A splash names no caster, so ordinarily it only counts as mine when it
 		// resolves a projectile I fired.
 		//
