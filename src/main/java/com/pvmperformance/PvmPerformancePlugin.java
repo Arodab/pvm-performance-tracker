@@ -35,7 +35,6 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Hitsplat;
-import net.runelite.api.HitsplatID;
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
@@ -177,12 +176,13 @@ public class PvmPerformancePlugin extends Plugin
 	// superior look like a greater.
 	private Thrall thrall;
 	private int thrallIndex = -1;
-	// The last follower line printed, so an unchanged one is not repeated.
-	private String lastThrallTrace;
 	// The resurrect cast the local player last made, which is what identifies
 	// the thrall that appears next as theirs. See trackThrall.
 	private AttackType summonedType;
 	private int summonedTick = Integer.MIN_VALUE;
+	// The NPC the thrall's hit is on its way to, and the tick it lands on.
+	private int thrallHitTarget = -1;
+	private int thrallHitTick = Integer.MIN_VALUE;
 	// How long after a resurrect cast the thrall it summoned may take to appear.
 	private static final int THRALL_SUMMON_TICKS = 2;
 	// The ticks an attack of mine dealt damage on, from the hitpoints experience
@@ -474,8 +474,9 @@ public class PvmPerformancePlugin extends Plugin
 		if (actor instanceof NPC && hitsplat.isMine() && !EncounterGroup.isIgnored(((NPC) actor).getId()))
 		{
 			final NPC npc = (NPC) actor;
-			if (isThrallDamage(hitsplat))
+			if (isThrallHit(npc.getIndex()))
 			{
+				thrallHitTarget = -1;
 				recordThrallHit(npc, hitsplat.getAmount(), now);
 				return;
 			}
@@ -666,6 +667,14 @@ public class PvmPerformancePlugin extends Plugin
 		final Player me = client.getLocalPlayer();
 		final Actor target = projectile.getTargetActor();
 		if (me == null || !(target instanceof NPC))
+		{
+			return;
+		}
+		// A thrall's own projectile, which is the one thing that names its damage.
+		// Its hitsplat is DAMAGE_ME like the player's — traced, and the colour
+		// theory died there — so nothing on the splat can separate them. The
+		// projectile can: getSourceActor is the thrall NPC itself.
+		if (noteThrallProjectile(projectile, (NPC) target))
 		{
 			return;
 		}
@@ -1081,25 +1090,6 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
-	 * Whether this hitsplat is the thrall's rather than the player's own.
-	 *
-	 * <p>The colour is the only thing that separates them — a hitsplat carries
-	 * its type, its amount and nothing else, and the game credits both to the
-	 * player. Damage from a summon is drawn in the cyan family, which is why a
-	 * fight with a thrall out shows small hits of a different colour arriving on
-	 * their own four tick beat between the player's own.
-	 *
-	 * <p>Traced rather than assumed: if these turn out to carry something else
-	 * as well, the log names the type of every hitsplat beside the thrall that
-	 * was in the scene.
-	 */
-	private static boolean isThrallDamage(Hitsplat hitsplat)
-	{
-		final int type = hitsplat.getHitsplatType();
-		return type == HitsplatID.DAMAGE_ME_CYAN || type == HitsplatID.DAMAGE_MAX_ME_CYAN;
-	}
-
-	/**
 	 * The thrall's damage, kept out of the player's totals entirely.
 	 *
 	 * <p>What was expected of it is settled here rather than sampled at an
@@ -1507,44 +1497,50 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
-	 * The player's own thrall, from the follower slot.
+	 * Notes a hit on its way in from the player's thrall, so the hitsplat it
+	 * produces can be told from the player's own.
 	 *
-	 * <p>This is the ownership the NPC list cannot give. {@code getFollower} is
-	 * the LOCAL player's follower, so whatever it returns is theirs by
-	 * definition — no proximity, no matching a cast, no guessing in a crowd.
+	 * <p>Nothing on the hitsplat separates them. The trace settled that: with a
+	 * greater ghost out, every splat on the target came back
+	 * {@code type 16}, plain {@code DAMAGE_ME}, the player's 13s and 10s
+	 * alongside the thrall's 1s and 2s. The game credits both to the player and
+	 * draws both the same.
 	 *
-	 * <p><b>That slot is the pet slot</b>, and a player with a pet out has it
-	 * filled already — so a thrall may well never appear here at all. Nothing is
-	 * mistaken either way: the id is looked up in the thrall table, and a pet is
-	 * not in it, so a pet reads as no thrall rather than as the wrong one. But
-	 * if the trace shows the slot only ever holding a pet, this route never
-	 * fires and should be deleted rather than left looking like it works.
+	 * <p>The projectile does separate them. {@code getSourceActor} is the thrall
+	 * NPC, and {@code getEndCycle} says which tick it lands on, so the hit is
+	 * known before it arrives rather than guessed after.
 	 *
-	 * <p>The resurrection varbits are printed beside it — the game's own word
-	 * for a thrall is "resurrection", which is why a search for "thrall" found
-	 * nothing — because one of them carrying the tier would beat both routes:
-	 * a varbit is the local player's own state, so there is no ownership
-	 * question left to ask.
+	 * @return whether this projectile was the thrall's, and so is not the
+	 *         player's own attack
 	 */
-	private void trackThrallFromFollower()
+	private boolean noteThrallProjectile(Projectile projectile, NPC target)
 	{
-		final NPC follower = client.getFollower();
-		final Thrall found = follower == null ? null : Thrall.forNpc(follower.getId());
-		final String seen = found + "/" + client.getVarbitValue(VarbitID.ARCEUUS_RESURRECTION_ACTIVE)
-			+ "/" + client.getVarbitValue(VarbitID.ARCEUUS_RESURRECTION_COOLDOWN);
-		if (!seen.equals(lastThrallTrace))
+		final Actor source = projectile.getSourceActor();
+		if (thrallIndex < 0 || !(source instanceof NPC) || ((NPC) source).getIndex() != thrallIndex)
 		{
-			lastThrallTrace = seen;
-			log.debug("TRACE follower {} resurrectionActive {} cooldown {} tracked {}",
-				follower == null ? null : follower.getId(),
-				client.getVarbitValue(VarbitID.ARCEUUS_RESURRECTION_ACTIVE),
-				client.getVarbitValue(VarbitID.ARCEUUS_RESURRECTION_COOLDOWN), thrall);
+			return false;
 		}
-		if (found != null)
-		{
-			thrall = found;
-			thrallIndex = follower.getIndex();
-		}
+		final int lands = client.getTickCount()
+			+ Math.max(0, (projectile.getEndCycle() - client.getGameCycle()) / CYCLES_PER_TICK);
+		thrallHitTarget = target.getIndex();
+		thrallHitTick = lands;
+		log.debug("TRACE thrall projectile {} npc {} lands {}", projectile.getId(),
+			target.getIndex(), lands);
+		return true;
+	}
+
+	/**
+	 * Whether the hitsplat landing on this NPC now is the thrall's.
+	 *
+	 * <p>Within a tick of when the projectile said it would land, for the same
+	 * reason the experience drop is read within a tick of the attack: the cycle
+	 * arithmetic rounds, and being a tick out here would hand the thrall's chip
+	 * damage to the player's weapon. A thrall swings every four ticks, so the
+	 * window cannot reach its own next hit.
+	 */
+	private boolean isThrallHit(int npcIndex)
+	{
+		return npcIndex == thrallHitTarget && Math.abs(client.getTickCount() - thrallHitTick) <= 1;
 	}
 
 	private boolean adjacentToMe(NPC npc)
@@ -2244,7 +2240,6 @@ public class PvmPerformancePlugin extends Plugin
 			}
 		}
 		trackAttackCooldown();
-		trackThrallFromFollower();
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
