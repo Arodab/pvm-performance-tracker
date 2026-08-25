@@ -63,7 +63,6 @@ import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.SpotanimID;
-import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
@@ -170,21 +169,11 @@ public class PvmPerformancePlugin extends Plugin
 	private final List<PendingCast> castsAwaiting = new ArrayList<>();
 	// The last per-tick trace line printed, so an unchanged one is not repeated.
 	private String lastTraceLine;
-	// The player's thrall, while one is out. Read from the scene rather than
-	// guessed from the damage: the tier decides what a hit is worth, and a
-	// target that takes double from the thrall's style would otherwise make a
-	// superior look like a greater.
-	private Thrall thrall;
-	private int thrallIndex = -1;
-	// The resurrect cast the local player last made, which is what identifies
-	// the thrall that appears next as theirs. See trackThrall.
-	private AttackType summonedType;
-	private int summonedTick = Integer.MIN_VALUE;
-	// The NPC the thrall's hit is on its way to, and the tick it lands on.
+	// The thrall's hit on its way in: which thrall threw it, what it is aimed at
+	// and the tick it lands on. All three come off the projectile.
 	private int thrallHitTarget = -1;
 	private int thrallHitTick = Integer.MIN_VALUE;
-	// How long after a resurrect cast the thrall it summoned may take to appear.
-	private static final int THRALL_SUMMON_TICKS = 2;
+	private Thrall thrallHitFrom;
 	// The ticks an attack of mine dealt damage on, from the hitpoints experience
 	// drop, real or fake. See onFakeXpDrop.
 	private final Set<Integer> damageDealtTicks = new HashSet<>();
@@ -945,10 +934,6 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
-		// Ahead of the fight guard below, because a thrall is summoned BEFORE
-		// engaging rather than during a fight. Behind it, the cast that names
-		// the thrall as the player's own was never seen in the ordinary case.
-		noteResurrectCast(event.getActor());
 		// A splash produces no hitsplat — confirmed by the user, and worth
 		// being blunt about because the opposite was written here for two
 		// sessions and cost both of them. The zero hitsplats seen arriving
@@ -1101,16 +1086,16 @@ public class PvmPerformancePlugin extends Plugin
 	 */
 	private void recordThrallHit(NPC npc, int amount, long now)
 	{
-		log.debug("TRACE thrall hit npc {} amount {} thrall {}", npc.getIndex(), amount, thrall);
-		if (current == null || current.isEnded() || thrall == null || !current.isScored())
+		log.debug("TRACE thrall hit npc {} amount {} from {}", npc.getIndex(), amount, thrallHitFrom);
+		if (current == null || current.isEnded() || thrallHitFrom == null || !current.isScored())
 		{
 			return;
 		}
 		// A target that takes more or less from the thrall's style moves what a
 		// hit is worth, and it is the only thing that does. The Nightmare's
 		// pillars taking double from magic are the case to keep in mind.
-		final double expected = thrall.expectedDamage()
-			* RaidScaling.damageTaken(npc.getId(), thrall.getAttackType());
+		final double expected = thrallHitFrom.expectedDamage()
+			* RaidScaling.damageTaken(npc.getId(), thrallHitFrom.getAttackType());
 		current.recordThrallDamage(amount, expected, now);
 		session.recordThrallDamage(amount, expected);
 	}
@@ -1434,7 +1419,6 @@ public class PvmPerformancePlugin extends Plugin
 	public void onNpcSpawned(NpcSpawned event)
 	{
 		final NPC npc = event.getNpc();
-		trackThrall(npc);
 		final OlmPhase phase = OlmPhase.forNpc(npc.getId());
 		if (phase != null)
 		{
@@ -1456,47 +1440,6 @@ public class PvmPerformancePlugin extends Plugin
 	 * fought at all, Sotetseg wears a separate one for the maze.
 	 */
 	/**
-	 * Notices the player's own thrall arriving.
-	 *
-	 * <p><b>Nothing on an NPC says who owns it.</b> There is no owner on
-	 * {@code NPC}, no varbit for the thrall or its duration, and its
-	 * {@code getInteracting} points at whatever is being fought rather than at
-	 * whoever summoned it. So the summon has to be caught instead of the summon
-	 * being asked.
-	 *
-	 * <p>Casting a resurrect spell puts a spotanim on the CASTER, one per
-	 * family, and that is the local player only when it is the local player's
-	 * cast. A thrall of the matching family appearing within a tick or two of it
-	 * is the one just summoned. Another player's arrives on their tick, not
-	 * this one.
-	 *
-	 * <p>Adjacency is kept only as a fallback for when no cast was seen at all —
-	 * logging in with a thrall already out, or the plugin being switched on
-	 * mid-fight — and only while nothing better is known. That is the case this
-	 * can still get wrong, and what it costs is the tier and nothing else: the
-	 * damage itself is credited by the game, so the measured side is right
-	 * either way and only the expectation shifts by half a point a hit.
-	 */
-	private void trackThrall(NPC npc)
-	{
-		final Thrall spawned = Thrall.forNpc(npc.getId());
-		if (spawned == null)
-		{
-			return;
-		}
-		final boolean justSummoned = summonedType == spawned.getAttackType()
-			&& client.getTickCount() - summonedTick <= THRALL_SUMMON_TICKS;
-		if (!justSummoned && (thrall != null || !adjacentToMe(npc)))
-		{
-			return;
-		}
-		thrall = spawned;
-		thrallIndex = npc.getIndex();
-		log.debug("TRACE thrall {} max {} npc {} fromCast {}", spawned, spawned.getMaxHit(),
-			npc.getIndex(), justSummoned);
-	}
-
-	/**
 	 * Notes a hit on its way in from the player's thrall, so the hitsplat it
 	 * produces can be told from the player's own.
 	 *
@@ -1506,9 +1449,21 @@ public class PvmPerformancePlugin extends Plugin
 	 * alongside the thrall's 1s and 2s. The game credits both to the player and
 	 * draws both the same.
 	 *
-	 * <p>The projectile does separate them. {@code getSourceActor} is the thrall
-	 * NPC, and {@code getEndCycle} says which tick it lands on, so the hit is
-	 * known before it arrives rather than guessed after.
+	 * <p>The projectile does separate them, and it settles three questions at
+	 * once. {@code getSourceActor} is the thrall NPC itself, so its id gives the
+	 * TIER — no summon to catch, no cosmetic override to decode. It gives
+	 * OWNERSHIP for free too: another player's thrall throws a projectile like
+	 * this one, but its damage is not {@code isMine()} and never reaches the
+	 * hitsplat path at all, so there is no-one else to confuse it with. And
+	 * {@code getEndCycle} says which tick it lands on, so the hit is known
+	 * before it arrives rather than guessed after.
+	 *
+	 * <p>Nothing here matches on a projectile id or an animation id, which is
+	 * what makes it survive a reskin: a cosmetic override changes what a thrall
+	 * looks like and what it throws, not the fact that it threw it. The one
+	 * thing a reskin can still break is the NPC id, which is why every reskin
+	 * is listed in {@link Thrall} — one missing is not a wrong figure but no
+	 * figure, the damage falling back into the player's column silently.
 	 *
 	 * @return whether this projectile was the thrall's, and so is not the
 	 *         player's own attack
@@ -1516,16 +1471,17 @@ public class PvmPerformancePlugin extends Plugin
 	private boolean noteThrallProjectile(Projectile projectile, NPC target)
 	{
 		final Actor source = projectile.getSourceActor();
-		if (thrallIndex < 0 || !(source instanceof NPC) || ((NPC) source).getIndex() != thrallIndex)
+		final Thrall from = source instanceof NPC ? Thrall.forNpc(((NPC) source).getId()) : null;
+		if (from == null)
 		{
 			return false;
 		}
 		final int lands = client.getTickCount()
 			+ Math.max(0, (projectile.getEndCycle() - client.getGameCycle()) / CYCLES_PER_TICK);
+		thrallHitFrom = from;
 		thrallHitTarget = target.getIndex();
 		thrallHitTick = lands;
-		log.debug("TRACE thrall projectile {} npc {} lands {}", projectile.getId(),
-			target.getIndex(), lands);
+		log.debug("TRACE thrall projectile from {} npc {} lands {}", from, target.getIndex(), lands);
 		return true;
 	}
 
@@ -1541,40 +1497,6 @@ public class PvmPerformancePlugin extends Plugin
 	private boolean isThrallHit(int npcIndex)
 	{
 		return npcIndex == thrallHitTarget && Math.abs(client.getTickCount() - thrallHitTick) <= 1;
-	}
-
-	private boolean adjacentToMe(NPC npc)
-	{
-		final Player me = client.getLocalPlayer();
-		return me != null && me.getWorldLocation() != null && npc.getWorldLocation() != null
-			&& npc.getWorldLocation().distanceTo(me.getWorldLocation()) <= 2;
-	}
-
-	/**
-	 * The resurrect cast the local player just made, which is what says a thrall
-	 * about to appear is theirs. One spotanim per family, drawn on the caster.
-	 */
-	private void noteResurrectCast(Actor actor)
-	{
-		if (actor != client.getLocalPlayer())
-		{
-			return;
-		}
-		final AttackType summoned =
-			actor.hasSpotAnim(SpotanimID.RESURRECT_GHOST_CAST_SPOTANIM) ? AttackType.MAGIC
-				: actor.hasSpotAnim(SpotanimID.RESURRECT_SKELETON_CAST_SPOTANIM) ? AttackType.RANGED
-				: actor.hasSpotAnim(SpotanimID.RESURRECT_ZOMBIE_CAST_SPOTANIM) ? AttackType.CRUSH
-				: null;
-		if (summoned == null)
-		{
-			return;
-		}
-		summonedType = summoned;
-		summonedTick = client.getTickCount();
-		// The one that is out has been replaced, whatever it was.
-		thrall = null;
-		thrallIndex = -1;
-		log.debug("TRACE resurrect cast tick {} {}", summonedTick, summoned);
 	}
 
 	@Subscribe
@@ -1829,11 +1751,6 @@ public class PvmPerformancePlugin extends Plugin
 		final NPC npc = event.getNpc();
 		// The drain dies with the NPC, as its stats do.
 		drain.forget(npc.getIndex());
-		if (npc.getIndex() == thrallIndex)
-		{
-			thrall = null;
-			thrallIndex = -1;
-		}
 		if (current == null || current.isEnded())
 		{
 			return;
