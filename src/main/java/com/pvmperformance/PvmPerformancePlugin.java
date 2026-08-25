@@ -169,6 +169,11 @@ public class PvmPerformancePlugin extends Plugin
 	private final List<PendingCast> castsAwaiting = new ArrayList<>();
 	// The last per-tick trace line printed, so an unchanged one is not repeated.
 	private String lastTraceLine;
+	// Thralls in the scene and the tick each appeared on, which is the anchor a
+	// cadence has to be measured against. Kept for every thrall, not just the
+	// player's: whose it is only matters once damage is credited, and the
+	// hitsplat settles that on its own.
+	private final Map<Integer, Integer> thrallSpawnTick = new HashMap<>();
 	// The thrall's hit on its way in: which thrall threw it, what it is aimed at
 	// and the tick it lands on. All three come off the projectile.
 	private int thrallHitTarget = -1;
@@ -1419,6 +1424,10 @@ public class PvmPerformancePlugin extends Plugin
 	public void onNpcSpawned(NpcSpawned event)
 	{
 		final NPC npc = event.getNpc();
+		if (Thrall.forNpc(npc.getId()) != null)
+		{
+			thrallSpawnTick.put(npc.getIndex(), client.getTickCount());
+		}
 		final OlmPhase phase = OlmPhase.forNpc(npc.getId());
 		if (phase != null)
 		{
@@ -1481,7 +1490,24 @@ public class PvmPerformancePlugin extends Plugin
 		thrallHitFrom = from;
 		thrallHitTarget = target.getIndex();
 		thrallHitTick = lands;
-		log.debug("TRACE thrall projectile from {} npc {} lands {}", from, target.getIndex(), lands);
+		// TRACE. The tick this lands on, counted from the thrall's spawn.
+		//
+		// A ZOMBIE thrall throws no projectile, so nothing names its damage and
+		// its hits sit in the player's column. Neither an animation nor a
+		// projectile id can fix that — a reskin changes both, and every player's
+		// thrall plays the same animation anyway. What cannot be reskinned is
+		// the CADENCE: every tier attacks every 4 ticks, on a beat that starts
+		// when the thrall appears.
+		//
+		// So the beat is being measured on the two styles that CAN be attributed
+		// outright, where the projectile is ground truth, rather than guessed at
+		// on the one that cannot. If these land on a fixed offset from the spawn
+		// and then every 4 ticks, melee is the same arithmetic with no new
+		// assumption. If they do not, this says so before anything is built on
+		// it.
+		final Integer spawned = thrallSpawnTick.get(((NPC) source).getIndex());
+		log.debug("TRACE thrall projectile from {} npc {} lands {} sinceSpawn {}", from,
+			target.getIndex(), lands, spawned == null ? null : lands - spawned);
 		return true;
 	}
 
@@ -1751,6 +1777,7 @@ public class PvmPerformancePlugin extends Plugin
 		final NPC npc = event.getNpc();
 		// The drain dies with the NPC, as its stats do.
 		drain.forget(npc.getIndex());
+		thrallSpawnTick.remove(npc.getIndex());
 		if (current == null || current.isEnded())
 		{
 			return;
