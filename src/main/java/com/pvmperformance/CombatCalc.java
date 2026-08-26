@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -64,6 +66,18 @@ class CombatCalc
 	private static final int MAX_PENDING_CASTS = 3;
 	// Slot index back to the slot, for reading the slot an inventory item goes
 	// in off its equipment stats. Not every index is a real slot.
+	/**
+	 * Verzik's first phase, in all three difficulties. The seated form counts:
+	 * it is the same phase and the same cap, and the fight opens on it.
+	 */
+	private static final Set<Integer> VERZIK_FIRST_PHASE = Collections.unmodifiableSet(
+		new HashSet<>(Arrays.asList(
+			NpcID.VERZIK_INITIAL, NpcID.VERZIK_PHASE1,
+			NpcID.VERZIK_INITIAL_STORY, NpcID.VERZIK_PHASE1_STORY,
+			NpcID.VERZIK_INITIAL_HARD, NpcID.VERZIK_PHASE1_HARD,
+			NpcID.VERZIK_INITIAL_BASE, NpcID.VERZIK_INITIAL_QUICKSTART,
+			NpcID.VERZIK_INITIAL_HARD_BASE, NpcID.VERZIK_INITIAL_HARD_QUICKSTART)));
+
 	private static final Map<Integer, EquipmentInventorySlot> SLOT_BY_INDEX = new HashMap<>();
 
 	static
@@ -378,7 +392,53 @@ class CombatCalc
 	/** How much of a hit the target keeps, for the few that shrug most of it off. */
 	private double mitigation(int npcId)
 	{
-		return RaidScaling.damageTaken(npcId, attackStyle().getAttackType());
+		return RaidScaling.damageTaken(npcId, attackStyle().getAttackType())
+			* corporealBeastMitigation(npcId);
+	}
+
+	/**
+	 * The Corporeal Beast halves everything but a corpbane weapon on stab.
+	 *
+	 * <p>Wiki: "50% damage reduction against any melee and ranged weapon that is
+	 * not a Corpbane weapon. These weapons must also be on the stab attack
+	 * style." Magic is exempt outright, as are recoil and Retribution, neither
+	 * of which this counts as the player's attack anyway.
+	 *
+	 * <p>Ranged therefore always halves: there is no ranged weapon that attacks
+	 * on stab, so the exemption cannot be reached from it. That is the rule as
+	 * written rather than an assumption about ranged.
+	 */
+	private double corporealBeastMitigation(int npcId)
+	{
+		if (npcId != NpcID.CORP_BEAST)
+		{
+			return 1.0;
+		}
+		final AttackType type = attackStyle().getAttackType();
+		if (type == AttackType.MAGIC)
+		{
+			return 1.0;
+		}
+		return type == AttackType.STAB && isCorpbaneWeapon(weaponName()) ? 1.0 : 0.5;
+	}
+
+	/**
+	 * Wiki (Corpbane weapons): every spear, every halberd, Osmumten's fang, the
+	 * thunder khopesh and King's barrage. Matched on name because the spears and
+	 * halberds run to thirty-odd items across every metal, and a list of ids
+	 * would be a table where a missing entry silently halves the figure.
+	 */
+	static boolean isCorpbaneWeapon(String weaponName)
+	{
+		if (weaponName == null)
+		{
+			return false;
+		}
+		final String name = weaponName.toLowerCase(Locale.ROOT);
+		return name.contains("spear")
+			|| name.contains("halberd")
+			|| name.contains("osmumten's fang")
+			|| name.contains("thunder khopesh");
 	}
 
 	double averageHit(int npcId)
@@ -387,7 +447,7 @@ class CombatCalc
 		// Averages, not best cases: a keris crit or an ahrim's proc raises the max
 		// hit but only lifts sustained damage by a few percent.
 		final double averageMax = (baseMaxHit() * gearBonus(npcId).getExpectedDamage()
-			+ colossalBladeBonus(npcId)) * mitigation(npcId);
+			+ colossalBladeBonus(npcId) + elementalWeaknessBonus(npcId)) * mitigation(npcId);
 		if (accuracy < 0 || averageMax <= 0)
 		{
 			return -1;
@@ -538,7 +598,10 @@ class CombatCalc
 	{
 		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
-		final int attRoll = attackRoll(effMagic, attackBonus(AttackType.MAGIC), gear);
+		// Elemental weakness is worth as much accuracy as it is damage, a point
+		// each, and multiplies the roll as the gear effects do.
+		final int attRoll = attackRoll(effMagic, attackBonus(AttackType.MAGIC),
+			gear * (1.0 + elementalWeakness(npcId) / 100.0));
 		final int magic = RaidScaling.magic(client, npcId, npc.getMagicLevel(), npc.getName(),
 			partyHitpoints.highest());
 		final int defRoll = (magic + 9) * (npc.getDefMagic() + 64);
@@ -1205,11 +1268,30 @@ class CombatCalc
 
 	private int damageCap(int npcId)
 	{
-		if (npcId != NpcID.HUEY_TAIL && npcId != NpcID.HUEY_TAIL_BROKEN)
+		if (npcId == NpcID.HUEY_TAIL || npcId == NpcID.HUEY_TAIL_BROKEN)
+		{
+			return crushIsHighestAttackBonus() ? 9 : 4;
+		}
+		return verzikFirstPhaseCap(npcId);
+	}
+
+	/**
+	 * Verzik's first phase caps every hitsplat but the Dawnbringer's special:
+	 * ten for melee, three for ranged and magic. The cap is per hitsplat, which
+	 * is what {@link #cappedAverage} already models.
+	 *
+	 * <p>The Dawnbringer is not exempted here because the special is not the
+	 * ordinary attack this figure describes, and its expected damage is the
+	 * spec's own. Anything else read at its unrestricted max would say a player
+	 * was throwing away twenty damage a hit when the phase allows three.
+	 */
+	private int verzikFirstPhaseCap(int npcId)
+	{
+		if (!VERZIK_FIRST_PHASE.contains(npcId))
 		{
 			return Integer.MAX_VALUE;
 		}
-		return crushIsHighestAttackBonus() ? 9 : 4;
+		return attackStyle().getAttackType().isMelee() ? 10 : 3;
 	}
 
 	private boolean crushIsHighestAttackBonus()
@@ -1268,7 +1350,8 @@ class CombatCalc
 	/** The max hit before the fang narrows its roll, which is what its spec reaches. */
 	private int unnarrowedMaxHit(int npcId)
 	{
-		final int hit = (int) (baseMaxHit() * gearBonus(npcId).getDamage()) + colossalBladeBonus(npcId);
+		final int hit = (int) (baseMaxHit() * gearBonus(npcId).getDamage())
+			+ colossalBladeBonus(npcId) + elementalWeaknessBonus(npcId);
 		final EnchantedBolt bolt = loadedBolt(npcId);
 		if (bolt == null)
 		{
@@ -1385,6 +1468,68 @@ class CombatCalc
 
 	// Magic max hit: the autocast spell's base hit, or the staff's own attack
 	// for a powered staff, scaled by the worn magic damage bonus.
+	/**
+	 * The spell's own base max hit, before any magic damage bonus. Elemental
+	 * weakness is a share of THIS rather than of the finished figure, so it has
+	 * to be reachable on its own.
+	 */
+	private int spellBaseMaxHit()
+	{
+		final Spell manual = activeManualCast();
+		if (manual != null)
+		{
+			return manual.maxHitAt(boostedLevel(Skill.MAGIC));
+		}
+		if (poweredStaffMaxHit() > 0)
+		{
+			return 0;
+		}
+		final WeaponCategory category = weaponCategory();
+		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
+		{
+			return 0;
+		}
+		final Spell spell = autocastSpell();
+		return spell == null ? 0 : spell.maxHitAt(boostedLevel(Skill.MAGIC));
+	}
+
+	/**
+	 * How many points of elemental weakness this attack gets to use, or 0.
+	 *
+	 * <p>Wiki (Elemental weakness): each point is worth 1% magic damage AND 1%
+	 * magic accuracy. It applies only to the elemental spells of the standard
+	 * spellbook - strike, bolt, blast, wave and surge - and explicitly not to
+	 * the ancient spellbook, so a barrage gets none of it however weak the
+	 * target is to the element.
+	 */
+	private int elementalWeakness(int npcId)
+	{
+		final Spell spell = activeSpell();
+		if (spell == null || attackStyle().getAttackType() != AttackType.MAGIC)
+		{
+			return 0;
+		}
+		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		if (npc == null || npc.getWeaknessElement() == null || npc.getWeaknessSeverity() <= 0)
+		{
+			return 0;
+		}
+		return spell.isElement(npc.getWeaknessElement()) ? npc.getWeaknessSeverity() : 0;
+	}
+
+	/**
+	 * The flat damage elemental weakness adds. Wiki:
+	 * {@code floor(BaseMax x (1 + MagicDamage%)) x (1 + Slayer/Salve%) + floor(BaseMax x Weakness%)}
+	 * - so it is a share of the SPELL'S BASE max, added after the multipliers
+	 * rather than folded in with them. Folded in it would compound with salve
+	 * and the slayer helm, which the formula keeps it apart from.
+	 */
+	private int elementalWeaknessBonus(int npcId)
+	{
+		final int severity = elementalWeakness(npcId);
+		return severity <= 0 ? 0 : (int) Math.floor(spellBaseMaxHit() * severity / 100.0);
+	}
+
 	private int magicMaxHit()
 	{
 		// A manual cast is what the player is actually doing, whatever is held,
@@ -1569,6 +1714,13 @@ class CombatCalc
 			lines.add(String.format("Gear multipliers: accuracy x%.3f, damage x%.3f, mark of darkness %s",
 				bonus.getAccuracy(), bonus.getDamage(),
 				gearBonuses.hasMarkOfDarkness() ? "UP" : "down"));
+			// Named even when it is nought, so "this target has none" reads
+			// differently from "the spell is the wrong element for it".
+			final MonsterStatsProvider.MonsterStats weak = monsters.get(npcId);
+			lines.add(String.format("Elemental weakness: target %s, this spell gets %d%% (+%d max)",
+				weak == null || weak.getWeaknessElement() == null ? "none"
+					: weak.getWeaknessElement() + " " + weak.getWeaknessSeverity() + "%",
+				elementalWeakness(npcId), elementalWeaknessBonus(npcId)));
 		}
 
 		// Which prayers are actually up, by name. "prayed 0/n" with augury held all

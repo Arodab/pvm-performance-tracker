@@ -1,6 +1,7 @@
 package com.pvmperformance;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -81,6 +82,25 @@ enum Spell
 	private static final int[] WAVE_HITS = {17, 18, 19, 20};
 	private static final int[] SURGE_LEVELS = {81, 85, 90, 95};
 	private static final int[] SURGE_HITS = {21, 22, 23, 24};
+
+	/**
+	 * Whether this is an elemental spell of the given element, which is what
+	 * elemental weakness turns on. Only the standard spellbook's ladders count -
+	 * strike, bolt, blast, wave, surge - and the name carries both halves, so no
+	 * second table is needed. The ancient spells share none of these endings,
+	 * which is what keeps a barrage out of it.
+	 */
+	boolean isElement(String element)
+	{
+		if (element == null)
+		{
+			return false;
+		}
+		final String name = displayName.toLowerCase(Locale.ROOT);
+		return name.startsWith(element.toLowerCase(Locale.ROOT) + " ")
+			&& (name.endsWith(" strike") || name.endsWith(" bolt") || name.endsWith(" blast")
+			|| name.endsWith(" wave") || name.endsWith(" surge"));
+	}
 
 	/** The max hit at this magic level. Only the elemental spells move. */
 	int maxHitAt(int magicLevel)

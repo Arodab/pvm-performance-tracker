@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
@@ -182,6 +183,9 @@ class MonsterStatsProvider
 					m.offensive == null ? 0 : m.offensive.magic,
 					m.defensive.stab, m.defensive.slash, m.defensive.crush,
 					m.defensive.magic, m.defensive.standard,
+					m.weakness == null || m.weakness.element == null
+						? null : m.weakness.element.toLowerCase(Locale.ROOT).trim(),
+					m.weakness == null ? 0 : m.weakness.severity,
 					m.attributes == null
 						? Collections.emptySet()
 						: new HashSet<>(Arrays.asList(m.attributes))));
@@ -215,10 +219,21 @@ class MonsterStatsProvider
 		private final int defRanged;
 		/** Wiki attribute tags ("undead", "dragon", "demon", ...) driving gear bonuses. */
 		private final Set<String> attributes;
+		/**
+		 * The element this monster is weak to, lower-cased, or null. Wiki
+		 * (Elemental weakness): each point is worth 1% magic damage and 1% magic
+		 * accuracy to a spell of that element.
+		 */
+		private final String weaknessElement;
+		/** How many points of it, 0 when there is none. */
+		private final int weaknessSeverity;
 
 		MonsterStats(String name, int size, int defenceLevel, int magicLevel, int offensiveMagic, int defStab,
-			int defSlash, int defCrush, int defMagic, int defRanged, Set<String> attributes)
+			int defSlash, int defCrush, int defMagic, int defRanged, String weaknessElement,
+			int weaknessSeverity, Set<String> attributes)
 		{
+			this.weaknessElement = weaknessElement;
+			this.weaknessSeverity = weaknessSeverity;
 			this.name = name;
 			this.size = size;
 			this.defenceLevel = defenceLevel;
@@ -247,6 +262,13 @@ class MonsterStatsProvider
 		Offensive offensive;
 		Defensive defensive;
 		String[] attributes;
+		Weakness weakness;
+
+		static class Weakness
+		{
+			String element;
+			int severity;
+		}
 
 		static class Skills
 		{
