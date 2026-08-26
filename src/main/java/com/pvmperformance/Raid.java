@@ -64,26 +64,6 @@ class Raid
 		return total;
 	}
 
-	int getThrallDamageDealt()
-	{
-		int total = 0;
-		for (Encounter room : encounters)
-		{
-			total += room.getThrallDamageDealt();
-		}
-		return total;
-	}
-
-	double sumExpectedThrallDamage()
-	{
-		double total = 0;
-		for (Encounter room : encounters)
-		{
-			total += room.sumExpectedThrallDamage();
-		}
-		return total;
-	}
-
 	double accuracy()
 	{
 		final int attempts = getAttempts();

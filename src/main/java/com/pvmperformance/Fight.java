@@ -44,12 +44,6 @@ class Fight
 	// anything. accuracy = hits / attempts.
 	private int attempts;
 	private int hits;
-	// The thrall's share, kept apart from the player's on both sides of the sum.
-	// Folding it in flatters the loadout - chip damage landing in the same
-	// column as a scythe swing - and is why a fight could show more damage than
-	// the weapon could possibly have dealt.
-	private int thrallDamageDealt;
-	private double sumExpectedThrallDamage;
 	// Attacks that went out and never resolved, because the target died or
 	// changed form while they were still in the air. See recordAttackNulled.
 	private int nulled;
@@ -172,18 +166,6 @@ class Fight
 	 * two, and those are one attack apiece, so only the first to do damage
 	 * credits a hit.
 	 */
-	/**
-	 * Damage from one of the thrall's hits. It always lands, so what was
-	 * expected of it is settled here too rather than sampled at an attack: one
-	 * hit is worth half the thrall's maximum, and there is no accuracy term.
-	 */
-	void recordThrallDamage(int amount, double expected, long now)
-	{
-		thrallDamageDealt += amount;
-		sumExpectedThrallDamage += expected;
-		lastActivityMillis = now;
-	}
-
 	void recordDamageDealt(int amount, long now, boolean landedAttack)
 	{
 		damageDealt += amount;

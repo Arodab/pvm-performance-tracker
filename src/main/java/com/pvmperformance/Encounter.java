@@ -134,32 +134,6 @@ class Encounter
 		return total;
 	}
 
-	int getThrallDamageDealt()
-	{
-		int total = 0;
-		for (Fight fight : fights)
-		{
-			if (fight.isScored())
-			{
-				total += fight.getThrallDamageDealt();
-			}
-		}
-		return total;
-	}
-
-	double sumExpectedThrallDamage()
-	{
-		double total = 0;
-		for (Fight fight : fights)
-		{
-			if (fight.isScored())
-			{
-				total += fight.getSumExpectedThrallDamage();
-			}
-		}
-		return total;
-	}
-
 	int getHits()
 	{
 		int total = 0;

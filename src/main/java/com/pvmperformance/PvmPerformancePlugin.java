@@ -169,16 +169,6 @@ public class PvmPerformancePlugin extends Plugin
 	private final List<PendingCast> castsAwaiting = new ArrayList<>();
 	// The last per-tick trace line printed, so an unchanged one is not repeated.
 	private String lastTraceLine;
-	// Thralls in the scene and the tick each appeared on, which is the anchor a
-	// cadence has to be measured against. Kept for every thrall, not just the
-	// player's: whose it is only matters once damage is credited, and the
-	// hitsplat settles that on its own.
-	private final Map<Integer, Integer> thrallSpawnTick = new HashMap<>();
-	// The thrall's hit on its way in: which thrall threw it, what it is aimed at
-	// and the tick it lands on. All three come off the projectile.
-	private int thrallHitTarget = -1;
-	private int thrallHitTick = Integer.MIN_VALUE;
-	private Thrall thrallHitFrom;
 	// The ticks an attack of mine dealt damage on, from the hitpoints experience
 	// drop, real or fake. See onFakeXpDrop.
 	private final Set<Integer> damageDealtTicks = new HashSet<>();
@@ -468,12 +458,6 @@ public class PvmPerformancePlugin extends Plugin
 		if (actor instanceof NPC && hitsplat.isMine() && !EncounterGroup.isIgnored(((NPC) actor).getId()))
 		{
 			final NPC npc = (NPC) actor;
-			if (isThrallHit(npc.getIndex()))
-			{
-				thrallHitTarget = -1;
-				recordThrallHit(npc, hitsplat.getAmount(), now);
-				return;
-			}
 			if (current == null || current.isEnded() || current.getTargetIndex() != npc.getIndex())
 			{
 				startFight(npc, now);
@@ -502,8 +486,8 @@ public class PvmPerformancePlugin extends Plugin
 			// attack landing twice. Everything that decides it is printed,
 			// read before the add below, because which input is wrong is
 			// exactly what is not known. Hitsplat type is in there too — a
-			// thrall's or a familiar's damage counting as mine would land on
-			// the tick after my own and be grouped into it.
+			// a second source of damage credited to me would land on the tick
+			// after my own and be grouped into it.
 			log.debug("TRACE hitsplat tick {} npc {} amount {} type {} lastSeen {} newBurst {} "
 					+ "alreadyLanded {} -> landed {}", tick, npc.getIndex(), hitsplat.getAmount(),
 				hitsplat.getHitsplatType(), seen, newBurst, alreadyLanded, landedAttack);
@@ -661,14 +645,6 @@ public class PvmPerformancePlugin extends Plugin
 		final Player me = client.getLocalPlayer();
 		final Actor target = projectile.getTargetActor();
 		if (me == null || !(target instanceof NPC))
-		{
-			return;
-		}
-		// A thrall's own projectile, which is the one thing that names its damage.
-		// Its hitsplat is DAMAGE_ME like the player's — traced, and the colour
-		// theory died there — so nothing on the splat can separate them. The
-		// projectile can: getSourceActor is the thrall NPC itself.
-		if (noteThrallProjectile(projectile, (NPC) target))
 		{
 			return;
 		}
@@ -1079,32 +1055,6 @@ public class PvmPerformancePlugin extends Plugin
 		}
 	}
 
-	/**
-	 * The thrall's damage, kept out of the player's totals entirely.
-	 *
-	 * <p>What was expected of it is settled here rather than sampled at an
-	 * attack, because a thrall has no accuracy to model: the wiki is explicit
-	 * that they always land, so one hit is worth half the tier's maximum. That
-	 * also means a hit is the only evidence of an attack worth counting — one
-	 * nulled by the target dying leaves no hitsplat and so falls out of both
-	 * sides on its own, the same way a nulled attack of the player's does.
-	 */
-	private void recordThrallHit(NPC npc, int amount, long now)
-	{
-		log.debug("TRACE thrall hit npc {} amount {} from {}", npc.getIndex(), amount, thrallHitFrom);
-		if (current == null || current.isEnded() || thrallHitFrom == null || !current.isScored())
-		{
-			return;
-		}
-		// A target that takes more or less from the thrall's style moves what a
-		// hit is worth, and it is the only thing that does. The Nightmare's
-		// pillars taking double from magic are the case to keep in mind.
-		final double expected = thrallHitFrom.expectedDamage()
-			* RaidScaling.damageTaken(npc.getId(), thrallHitFrom.getAttackType());
-		current.recordThrallDamage(amount, expected, now);
-		session.recordThrallDamage(amount, expected);
-	}
-
 	/** A cast of mine that reached the enemy it was aimed at and did nothing. */
 	private void splashed(PendingCast cast, long now)
 	{
@@ -1424,10 +1374,6 @@ public class PvmPerformancePlugin extends Plugin
 	public void onNpcSpawned(NpcSpawned event)
 	{
 		final NPC npc = event.getNpc();
-		if (Thrall.forNpc(npc.getId()) != null)
-		{
-			thrallSpawnTick.put(npc.getIndex(), client.getTickCount());
-		}
 		final OlmPhase phase = OlmPhase.forNpc(npc.getId());
 		if (phase != null)
 		{
@@ -1448,83 +1394,6 @@ public class PvmPerformancePlugin extends Plugin
 	 * index and changes its id, and the new id is what says whether it can be
 	 * fought at all, Sotetseg wears a separate one for the maze.
 	 */
-	/**
-	 * Notes a hit on its way in from the player's thrall, so the hitsplat it
-	 * produces can be told from the player's own.
-	 *
-	 * <p>Nothing on the hitsplat separates them. The trace settled that: with a
-	 * greater ghost out, every splat on the target came back
-	 * {@code type 16}, plain {@code DAMAGE_ME}, the player's 13s and 10s
-	 * alongside the thrall's 1s and 2s. The game credits both to the player and
-	 * draws both the same.
-	 *
-	 * <p>The projectile does separate them, and it settles three questions at
-	 * once. {@code getSourceActor} is the thrall NPC itself, so its id gives the
-	 * TIER — no summon to catch, no cosmetic override to decode. It gives
-	 * OWNERSHIP for free too: another player's thrall throws a projectile like
-	 * this one, but its damage is not {@code isMine()} and never reaches the
-	 * hitsplat path at all, so there is no-one else to confuse it with. And
-	 * {@code getEndCycle} says which tick it lands on, so the hit is known
-	 * before it arrives rather than guessed after.
-	 *
-	 * <p>Nothing here matches on a projectile id or an animation id, which is
-	 * what makes it survive a reskin: a cosmetic override changes what a thrall
-	 * looks like and what it throws, not the fact that it threw it. The one
-	 * thing a reskin can still break is the NPC id, which is why every reskin
-	 * is listed in {@link Thrall} — one missing is not a wrong figure but no
-	 * figure, the damage falling back into the player's column silently.
-	 *
-	 * @return whether this projectile was the thrall's, and so is not the
-	 *         player's own attack
-	 */
-	private boolean noteThrallProjectile(Projectile projectile, NPC target)
-	{
-		final Actor source = projectile.getSourceActor();
-		final Thrall from = source instanceof NPC ? Thrall.forNpc(((NPC) source).getId()) : null;
-		if (from == null)
-		{
-			return false;
-		}
-		final int lands = client.getTickCount()
-			+ Math.max(0, (projectile.getEndCycle() - client.getGameCycle()) / CYCLES_PER_TICK);
-		thrallHitFrom = from;
-		thrallHitTarget = target.getIndex();
-		thrallHitTick = lands;
-		// TRACE. The tick this lands on, counted from the thrall's spawn.
-		//
-		// A ZOMBIE thrall throws no projectile, so nothing names its damage and
-		// its hits sit in the player's column. Neither an animation nor a
-		// projectile id can fix that — a reskin changes both, and every player's
-		// thrall plays the same animation anyway. What cannot be reskinned is
-		// the CADENCE: every tier attacks every 4 ticks, on a beat that starts
-		// when the thrall appears.
-		//
-		// So the beat is being measured on the two styles that CAN be attributed
-		// outright, where the projectile is ground truth, rather than guessed at
-		// on the one that cannot. If these land on a fixed offset from the spawn
-		// and then every 4 ticks, melee is the same arithmetic with no new
-		// assumption. If they do not, this says so before anything is built on
-		// it.
-		final Integer spawned = thrallSpawnTick.get(((NPC) source).getIndex());
-		log.debug("TRACE thrall projectile from {} npc {} lands {} sinceSpawn {}", from,
-			target.getIndex(), lands, spawned == null ? null : lands - spawned);
-		return true;
-	}
-
-	/**
-	 * Whether the hitsplat landing on this NPC now is the thrall's.
-	 *
-	 * <p>Within a tick of when the projectile said it would land, for the same
-	 * reason the experience drop is read within a tick of the attack: the cycle
-	 * arithmetic rounds, and being a tick out here would hand the thrall's chip
-	 * damage to the player's weapon. A thrall swings every four ticks, so the
-	 * window cannot reach its own next hit.
-	 */
-	private boolean isThrallHit(int npcIndex)
-	{
-		return npcIndex == thrallHitTarget && Math.abs(client.getTickCount() - thrallHitTick) <= 1;
-	}
-
 	@Subscribe
 	public void onNpcChanged(NpcChanged event)
 	{
@@ -1777,7 +1646,6 @@ public class PvmPerformancePlugin extends Plugin
 		final NPC npc = event.getNpc();
 		// The drain dies with the NPC, as its stats do.
 		drain.forget(npc.getIndex());
-		thrallSpawnTick.remove(npc.getIndex());
 		if (current == null || current.isEnded())
 		{
 			return;
