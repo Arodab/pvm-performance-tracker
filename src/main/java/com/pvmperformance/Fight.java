@@ -276,11 +276,6 @@ class Fight
 		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
 	}
 
-	/**
-	 * Marks that an attack was made this tick, recording how well it was set up.
-	 * Sampled here rather than where the damage lands, because that is the tick
-	 * the prayers and boosts actually applied to the attack.
-	 */
 	// The prayer-dependent half of an attack: whether the goal prayer was up,
 	// and how the attack was set up given that. Kept apart from recordAttackMade
 	// because a projectile's prayer is only known when it resolves, and the flag
@@ -305,17 +300,6 @@ class Fight
 	/**
 	 * An attack that went out and never got an answer: the target died or
 	 * changed form while it was in the air, so the damage was nulled.
-	 *
-	 * <p>It still happened — it cost a tick, it was thrown with whatever prayer
-	 * and gear were up, and {@code attacksMade} keeps it. What it has no claim
-	 * to is an <i>outcome</i>. Left in the denominator it counts as a miss that
-	 * dealt nothing, which drags accuracy and average hit down for a kill that
-	 * went perfectly: a boss that dies to the blow before last hands the last
-	 * one back as a failure.
-	 *
-	 * <p>The expected side already drops these — the pending sample is thrown
-	 * away rather than counted against a measured nought — so this is the
-	 * measured side being denominated the same way.
 	 */
 	void recordAttackNulled()
 	{

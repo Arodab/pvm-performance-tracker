@@ -219,16 +219,11 @@ final class EncounterGroup
 			NpcID.TOA_BABA, NpcID.TOA_BABA_DIGGING, NpcID.TOA_BABA_BABOON, NpcID.TOA_BABA_BOULDER,
 			NpcID.TOA_BABA_BOULDER_WEAK);
 
-		// The Hueycoatl is one snake in many pieces: a head that changes id as
+		// The Hueycoatl is one snake in many pieces - a head that changes id as
 		// it is broken, enraged and defeated, a tail that breaks, and the body
-		// segments between them. All of it is attacked as one fight, so without
-		// this the overlay resets every time the player hits a different part —
-		// eighteen fights in one trip, and never a kill, because each one ends
-		// by being replaced rather than by anything dying.
-		// Hespori and the flowers it summons are one fight. Killing a flower
-		// used to finalise the fight and open another, so the overlay reset
-		// mid-kill and the Hespori's own figures were split across as many
-		// fights as it grew flowers.
+		// segments between - all attacked as one fight. Without this the overlay
+		// reset on every part hit: eighteen fights in a trip and never a kill.
+		// Hespori and its flowers are one fight for the same reason.
 		put(groups, "Hespori",
 			NpcID.HESPORI, NpcID.HESPORI_HEALER_ACTIVE, NpcID.HESPORI_HEALER_INACTIVE);
 		put(groups, "Hespori (A Night at the Theatre)",
@@ -337,11 +332,6 @@ final class EncounterGroup
 	 * Whether wearing this id means the boss has been beaten. A transform to it
 	 * is a kill, which matters for a boss whose NPCs are never removed from the
 	 * scene: the Hueycoatl's are not, so nothing despawns to end the fight.
-	 *
-	 * <p>Kept apart from {@link #isUnattackable(int)} even though the ids
-	 * overlap. Plenty of forms cannot be attacked without the fight being over —
-	 * Verzik between phases, the Wardens while they charge — so "cannot be hit"
-	 * must not be read as "dead".
 	 */
 	static boolean isDefeated(int npcId)
 	{

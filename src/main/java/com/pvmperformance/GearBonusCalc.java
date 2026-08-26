@@ -762,15 +762,11 @@ class GearBonusCalc
 	}
 
 	/**
-	 * Whether the player is in a Tombs of Amascut raid, read from the raid level
-	 * varbit. This also reads set in the lobby, which is harmless: nothing is
-	 * being fought there, so no multiplier is applied anyway.
+	 * Whether the player is in a Tombs of Amascut raid, from the party status
+	 * varbit rather than the raid level: the level is never cleared on leaving,
+	 * so reading it scaled every NPC in the game once a raid had been done. This
+	 * also reads set in the lobby, which is harmless.
 	 */
-	// The party status, not the raid level. The level is the raid's difficulty
-	// and is never cleared on leaving, so reading it scaled every NPC in the
-	// game once a raid had been done - a Guard in a POH read 128 defence
-	// against a base of 80. The status is 1 while in the raid and 0 everywhere
-	// else, measured in the open world before and after a raid and in a house.
 	void updateRaidState()
 	{
 		// Nothing to latch: the party status answers directly.
@@ -778,18 +774,6 @@ class GearBonusCalc
 
 	/**
 	 * Whether Mark of Darkness is up, which no varbit says.
-	 *
-	 * <p>The only thing carrying the name is
-	 * {@code BUFF_MARK_OF_DARKNESS_DISABLED}, and that is one of a contiguous
-	 * block of buff bar display toggles sitting beside {@code BUFF_BAR_HIDDEN} —
-	 * it says whether the buff is shown, not whether it is held. The Arceuus
-	 * spells that do have a state varbit (death charge, resurrection, shadow
-	 * veil) have an {@code _ACTIVE} one; Mark of Darkness has none.
-	 *
-	 * <p>So it is tracked from the game's own messages, which are exact, rather
-	 * than from a duration computed off the magic level and the staff. The one
-	 * gap is starting the plugin while the Mark is already up: it reads as down
-	 * until the next cast, which understates rather than overstates.
 	 */
 	void setMarkOfDarkness(boolean up)
 	{

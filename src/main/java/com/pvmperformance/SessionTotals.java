@@ -203,10 +203,6 @@ class SessionTotals
 	/**
 	 * How long the trip has been running, from its first attack rather than
 	 * from when the plugin started.
-	 *
-	 * <p>It used to run from construction, which is login, so everything before
-	 * the first fight — the walk out, the bank trip, the stand-around — was in
-	 * the total and the figure read higher than the time actually spent.
 	 */
 	long durationMillis()
 	{

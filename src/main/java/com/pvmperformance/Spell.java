@@ -168,10 +168,6 @@ enum Spell
 	 * shows us. The ancient area spells — the burst and barrage families — land
 	 * on the tick they are cast and give no projectile to book an attack from,
 	 * so their attacks have to be taken from the hitsplat instead.
-	 *
-	 * <p>Found in a trace: blood barrage damage arrived every five ticks with
-	 * no projectile event anywhere near it, while other people's projectiles in
-	 * the same fight were seen and rejected normally.
 	 */
 	boolean landsWithoutProjectile()
 	{

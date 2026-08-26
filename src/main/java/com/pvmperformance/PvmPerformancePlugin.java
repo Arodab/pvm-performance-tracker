@@ -145,16 +145,8 @@ public class PvmPerformancePlugin extends Plugin
 	// equals the game cycle at the event, so it carries no history.
 	private static final int MELEE_BOOKING_LAG = 1;
 	private static final int PROJECTILE_BOOKING_LAG = 2;
-	// And three for a cast that has no projectile. Measured, like the other two:
-	// the barrage cast animation started on 21, 26 and 31 and its damage landed
-	// on 24, 29 and 34. Borrowing melee's one left the prayer being read two
-	// ticks after the cast, which counted a prayer raised well after the spell
-	// had gone out.
 	// None at all for a cast with no projectile, which is booked from the
-	// caster's animation and so is seen on the tick it goes out. It was briefly
-	// booked from its hitsplat at three ticks, measured — kept here because the
-	// measurement stands if that route is ever needed again, but the hitsplat
-	// cannot see a cast that misses and the animation can.
+	// caster's animation and so is seen on the tick it goes out.
 	private static final int CAST_BOOKING_LAG = 0;
 	// The animations a projectile-less cast is thrown with. Only these spells
 	// reach the animation path, so this is a short list and not a table of every
@@ -167,8 +159,6 @@ public class PvmPerformancePlugin extends Plugin
 	// cast overwrote the old one's verdict before it could be given — at range
 	// the two coincide exactly, so every splash from far off was lost.
 	private final List<PendingCast> castsAwaiting = new ArrayList<>();
-	// The last per-tick trace line printed, so an unchanged one is not repeated.
-	private String lastTraceLine;
 	// The ticks an attack of mine dealt damage on, from the hitpoints experience
 	// drop, real or fake. See onFakeXpDrop.
 	private final Set<Integer> damageDealtTicks = new HashSet<>();
@@ -480,17 +470,6 @@ public class PvmPerformancePlugin extends Plugin
 			// zero and then connects still landed once.
 			final boolean alreadyLanded = burstLanded.contains(npc.getIndex());
 			final boolean landedAttack = hitsplat.getAmount() > 0 && !alreadyLanded;
-			// TRACE. Some hits count their damage but not the hit itself, and
-			// the only thing that can swallow one is this grouping: a hitsplat
-			// within a tick of the last on the same NPC is read as the same
-			// attack landing twice. Everything that decides it is printed,
-			// read before the add below, because which input is wrong is
-			// exactly what is not known. Hitsplat type is in there too — a
-			// a second source of damage credited to me would land on the tick
-			// after my own and be grouped into it.
-			log.debug("TRACE hitsplat tick {} npc {} amount {} type {} lastSeen {} newBurst {} "
-					+ "alreadyLanded {} -> landed {}", tick, npc.getIndex(), hitsplat.getAmount(),
-				hitsplat.getHitsplatType(), seen, newBurst, alreadyLanded, landedAttack);
 			if (landedAttack)
 			{
 				burstLanded.add(npc.getIndex());
@@ -498,17 +477,11 @@ public class PvmPerformancePlugin extends Plugin
 			// This is the attack landing, so whatever was waiting on this NPC
 			// gets its expectation counted now, beside the damage it did.
 			resolvePendingSample(npc.getIndex());
-			// A cast waiting to be told whether it landed has its answer the
-			// moment one of my hitsplats DEALS DAMAGE to the NPC it was aimed
-			// at, and the wait is over there and then: nothing later can unsay
-			// that it connected.
-			//
-			// A hitsplat of zero is deliberately treated as a splash rather
-			// than as a hit that rolled no damage. It is not strictly true — a
-			// spell can roll a hit for nothing — but it is rare, it is the only
-			// case hitpoints xp cannot see, and taking it this way makes damage
-			// dealt the single question both witnesses answer. Worth revisiting
-			// if the gauntlets ever need to be exact.
+			// A cast waiting on an answer has it the moment one of my hitsplats
+			// DEALS DAMAGE to the NPC it was aimed at; nothing later can unsay
+			// that. A zero is deliberately taken as a splash rather than a hit
+			// that rolled nothing - not strictly true, but rare, and it makes
+			// damage dealt the single question both witnesses answer.
 			if (hitsplat.getAmount() > 0)
 			{
 				for (PendingCast cast : castsAwaiting)
@@ -540,27 +513,12 @@ public class PvmPerformancePlugin extends Plugin
 			// be mistaken for another player's splash. Whether it did is also
 			// what says where this hitsplat came from.
 			final boolean arrivedFromFlight = consumePending(npc.getIndex());
-			// Only melee lands on the tick it was thrown; a ranged or magic hit
-			// arrives late, so its tick comes from the projectile. Which weapon
-			// is held cannot decide this alone: a spell cast from a melee weapon
-			// lands a hitsplat like any other, and one that resolves something
-			// already in flight was booked when it was fired.
-			// Melee lands on the tick it is thrown, and so do the ancient area
-			// spells: a barrage gives no projectile to book from, so its
-			// hitsplat is the only thing that says an attack happened. Both are
-			// booked here; everything else is booked from its projectile.
 			// Melee, plus a projectile-less cast the animation route did not
-			// recognise. That route sees misses and this one cannot, so it is
-			// the better of the two and books first; this is only here so an
-			// unknown cast animation costs the misses rather than everything.
-			// How far behind the cast this hitsplat is, which is the hit delay
-			// and therefore distance, not a constant. Only this path needs it:
-			// a cast booked from its animation and a shot booked from its
-			// projectile are both seen on their way out, so how long the damage
-			// takes to arrive cannot date them. This one books from the landing
-			// itself, so it is exactly as late as the spell was slow — and read
-			// at a fixed three, a cast from range had its prayer and its gear
-			// taken from two ticks after it was thrown.
+			// recognise; everything else is booked from its projectile. That
+			// route sees misses and this one cannot, so it books first and this
+			// is only here so an unknown cast animation costs the misses rather
+			// than everything. Its lag is the hit delay, since it books from the
+			// landing and so is exactly as late as the spell was slow.
 			final int castLag = magicHitDelay(castDistance(npc));
 			final boolean unbookedCast = combatCalc.castLandsWithoutProjectile()
 				&& client.getTickCount() - lastCastBookedTick > castLag;
@@ -656,19 +614,13 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
-		// One attack a tick, because a player cannot throw two. Two people
-		// stacked on a tile casting on the same tick get one projectile each,
-		// and where they cast the same spell the key above already collapses
-		// them — but different spells key differently and both would land here.
-		//
-		// The booking was already capped, since it turns on a single tick stamp.
-		// What was not capped is everything this sets up: the figures the attack
-		// is scored against and the pending hit that decides where its hitsplat
-		// came from, both of which a neighbour's projectile could overwrite.
-		//
-		// First one wins. There is nothing to choose between them — that is the
-		// whole problem — and taking the first at least means the same one is
-		// used for the figures and for the hit.
+		// One attack a tick, because a player cannot throw two. The booking was
+		// already capped on a tick stamp; what was not is everything this sets
+		// up - the figures the attack is scored against and the pending hit that
+		// says where its hitsplat came from - which a neighbour's projectile
+		// could overwrite. First one wins: there is nothing to choose between
+		// them, and taking the first at least keeps the figures and the hit
+		// consistent with each other.
 		if (acceptedProjectileTick == client.getTickCount())
 		{
 			return;
@@ -726,57 +678,32 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return source == me;
 		}
-		// Spell projectiles name no source, so the tile it left from is all
-		// there is. Requiring the target to match whatever the player was
-		// interacting with as well is what dropped casts: that lapses between
-		// the cast going out and the projectile appearing, and every cast it
-		// dropped took its splash with it.
-		// What the projectile is aimed at decides this, not where it set off
-		// from. A slow projectile is in the air for several ticks and players
-		// move while it flies, deliberately so at Olm, so the firing tile is
-		// often nowhere near the player by the time the event is handled. Inside
-		// an instance it is worse than useless: the source point and the
-		// player's location are not in the same coordinate space at all, and the
-		// two were seen forty tiles apart with everything else matching.
-		// Where it set off from is the only thing here that identifies a caster,
-		// so it is required rather than consulted last. What it is aimed at
-		// cannot stand in for it: in company, every other player casting at the
-		// boss is casting at what I am fighting too, and each of their spells
-		// was being counted as mine and added to my expected damage.
-		//
-		// Compared in scene coordinates, which an instance does not translate,
-		// against where I stood on the tick it set off. A projectile is counted
-		// once, on first sight, which is the tick it was created — so this is
-		// asked while the firing tile still means something.
+		// The firing tile is the only thing that identifies a caster, so it is
+		// required rather than consulted last: in company, everyone else is
+		// casting at what I am fighting too. Compared in scene coordinates,
+		// which an instance does not translate, against where I stood on the
+		// tick it set off - a projectile is counted once, on first sight.
 		if (!firedFromWhereIWas(projectile, me))
 		{
 			return false;
 		}
-		// And I have to have been able to fire it. Two players stand on one
-		// tile as a matter of course, and their spells leave from the same
-		// point as mine, so position alone cannot separate them — but a weapon
-		// on cooldown cannot have thrown anything, whoever was standing there.
-		//
-		// The live speed rather than the one that threw the last attack, which
-		// errs towards accepting: swapping to something faster shortens the
-		// wait, and letting one of my own attacks through wrongly is better
-		// than dropping it.
+		// And I have to have been able to fire it. Two players stand on one tile
+		// as a matter of course and their spells leave from the same point, so
+		// position alone cannot separate them - but a weapon on cooldown cannot
+		// have thrown anything. The live speed rather than the last attack's,
+		// which errs towards accepting: letting one of mine through wrongly is
+		// better than dropping it.
 		if (client.getTickCount() < lastAttackSeenTick + combatCalc.attackSpeedTicks())
 		{
 			return false;
 		}
-		// And I have to have been doing something. An attack animates, so a
-		// player with nothing playing did not throw this — which closes the
-		// last gap, a neighbour casting while I stand still with nothing on
-		// cooldown.
-		//
-		// The only thing asked of the animation, and only ever a rejection.
-		// Naming the animation of every spell and staff would be a table to
-		// maintain where a missing entry silently drops attacks, and that is
-		// what sank two earlier designs. This needs no table: it does not care
-		// what the animation is, only that there is one. It is also why eating
-		// cannot cost an attack either way — an eat is an animation, so this
-		// accepts and moves on, whatever the eat does to the attack animation.
+		// And I have to have been doing something: an attack animates, so a
+		// player with nothing playing did not throw this. The only thing asked
+		// of the animation, and only ever a rejection - naming the animation of
+		// every spell and staff would be a table where a missing entry silently
+		// drops attacks, which sank two earlier designs. It does not care what
+		// the animation is, only that there is one, which is also why eating
+		// cannot cost an attack either way.
 		if (me.getAnimation() == IDLE_ANIMATION)
 		{
 			return false;
@@ -842,15 +769,6 @@ public class PvmPerformancePlugin extends Plugin
 	 * A hitpoints experience drop, which is the one thing that says an attack of
 	 * mine dealt damage on the tick it went out rather than when its damage
 	 * arrives.
-	 *
-	 * <p><b>Both events, and the fake one is not an edge case.</b> A skill at
-	 * 200,000,000 is granted no more experience, so on a maxed account
-	 * {@code StatChanged} never fires, the totals never move and the drop varps
-	 * never move — an entire session of killing things produced not one of any
-	 * of them. The server still sends the drop so the client can show it, and
-	 * RuneLite surfaces that as {@link FakeXpDrop}. It is how an xp drops plugin
-	 * keeps working at the cap, and taking only the real one is what made three
-	 * attempts at this read every attack as a miss.
 	 */
 	@Subscribe
 	public void onFakeXpDrop(FakeXpDrop event)
@@ -881,22 +799,6 @@ public class PvmPerformancePlugin extends Plugin
 
 	/**
 	 * Whether the attack that went out on this tick dealt damage.
-	 *
-	 * <p><b>Within a tick of it, and that is not a fudge.</b> The drop lands on
-	 * the tick the attack goes out — confirmed against the log: casts on 56, 61,
-	 * 66 and 71 each produced a drop on that same tick, with the damage arriving
-	 * five ticks later each time. But only an attack booked from its ANIMATION
-	 * knows its own tick exactly. The other two work back from a lag, and both
-	 * of those lags are estimates that were seen to be a tick out: a cast booked
-	 * from its hitsplat worked back to 72 for an attack thrown on 71, because
-	 * the hit delay is taken from the distance NOW and the player has moved
-	 * since casting; and a projectile booked at a flat two ticks worked back to
-	 * 129 for a drop on 128.
-	 *
-	 * <p>Reading the estimate literally found no drop and armed the confliction
-	 * gauntlets on attacks that had plainly connected — accuracy climbing
-	 * through a fight with no splash in it. Nothing swings faster than two
-	 * ticks, so a one tick window cannot reach a neighbouring attack's drop.
 	 */
 	private boolean dealtDamageOn(int attackTick)
 	{
@@ -907,7 +809,6 @@ public class PvmPerformancePlugin extends Plugin
 
 	private void noteDamageDealt()
 	{
-		log.debug("TRACE hp xp drop tick {}", client.getTickCount());
 		damageDealtTicks.add(client.getTickCount());
 		damageDealtTicks.removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
 	}
@@ -915,45 +816,17 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGraphicChanged(GraphicChanged event)
 	{
-		// A splash produces no hitsplat — confirmed by the user, and worth
-		// being blunt about because the opposite was written here for two
-		// sessions and cost both of them. The zero hitsplats seen arriving
-		// during a kill, and read at the time as splashes booking normally,
-		// were not splashes.
-		//
-		// This used to be the only thing that could see a missed cast, which
-		// made the whole of it hang on one spotanim id being right and on the
-		// splash landing on the NPC the fight happened to be open on. Neither
-		// holds for an area spell. Hitpoints xp answers the same question
-		// without either assumption — see resolveCasts — and this
-		// is now the fast route rather than the only one: it fires the tick the
-		// splash is drawn instead of waiting out the cast's resolve window.
-		//
-		// It only counts if it resolves one of my own casts, which excludes
-		// other players' splashes.
+		// A splash produces no hitsplat, so this is what sees a missed cast -
+		// but only the fast route, not the only one: it needs the spotanim id to
+		// be right and the splash to land on the NPC the fight is open on,
+		// neither of which holds for an area spell. resolveCasts answers the
+		// same question without either assumption. Counts only when it resolves
+		// one of my own casts, which excludes other players' splashes.
 		if (current == null || current.isEnded())
 		{
 			return;
 		}
 		final Actor actor = event.getActor();
-		// TRACE. A splash produces no hitsplat, confirmed by the user, so this
-		// handler is the only thing that can see a barrage miss and arm the
-		// gauntlets. Logged BEFORE the spotanim check rather than after it: if
-		// the id being matched on is the wrong one, a trace behind the check
-		// prints nothing and says only that it did not fire. This prints every
-		// spotanim that lands on an NPC during a fight, so the splash names
-		// itself whatever its id turns out to be.
-		if (actor instanceof NPC)
-		{
-			final StringBuilder ids = new StringBuilder();
-			for (ActorSpotAnim spotAnim : actor.getSpotAnims())
-			{
-				ids.append(ids.length() == 0 ? "" : ",").append(spotAnim.getId());
-			}
-			log.debug("TRACE graphic tick {} npc {} spotanims [{}] splash85 {} target {}",
-				client.getTickCount(), ((NPC) actor).getIndex(), ids,
-				actor.hasSpotAnim(SpotanimID.FAILEDSPELL_IMPACT), current.getTargetIndex());
-		}
 		// gameval's name for the splash graphic shown when a spell misses.
 		if (!(actor instanceof NPC) || !actor.hasSpotAnim(SpotanimID.FAILEDSPELL_IMPACT))
 		{
@@ -962,11 +835,6 @@ public class PvmPerformancePlugin extends Plugin
 		final int index = ((NPC) actor).getIndex();
 		if (current.getTargetIndex() != index)
 		{
-			// TRACE. A barrage is an area spell, so a splash on a segment the
-			// fight is not open on is a real possibility and would be dropped
-			// here without a word.
-			log.debug("TRACE splash on a different npc: splashed {} fighting {}", index,
-				current.getTargetIndex());
 			return;
 		}
 		// A splash names no caster, so ordinarily it only counts as mine when it
@@ -1016,24 +884,6 @@ public class PvmPerformancePlugin extends Plugin
 
 	/**
 	 * Judges the casts whose damage should have landed by now.
-	 *
-	 * <p>A cast with no projectile is the one attack whose failure nothing
-	 * reports: no projectile to go unresolved, no hitsplat, and no splash of the
-	 * hitsplat kind. So the question is turned around and asked as "did it
-	 * land", which two things witness, and they answer different questions.
-	 *
-	 * <p><b>A hitsplat of mine on the NPC it was aimed at</b> says the cast
-	 * connected <i>with that enemy</i>, which is what the confliction gauntlets
-	 * turn on — the wiki's wording is "against the same enemy". It ends that
-	 * cast's wait where it lands; nothing later can unsay it.
-	 *
-	 * <p><b>Hitpoints experience</b> says the cast damaged <i>something</i>,
-	 * which is the right question for whether it was a splash at all, and needs
-	 * no table of per-spell xp: damage of mine always pays it and a splash never
-	 * does, a standard spell paying its base magic xp and no hitpoints xp, a
-	 * powered staff paying nothing. Read as a total taken at the cast and
-	 * compared at the resolve, so xp arriving on any tick between needs no
-	 * bookkeeping.
 	 */
 	private void resolveCasts(long now)
 	{
@@ -1050,7 +900,6 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				continue;
 			}
-			log.debug("TRACE cast splashed: npc {} tick {}", cast.npcIndex, client.getTickCount());
 			splashed(cast, now);
 		}
 	}
@@ -1066,36 +915,21 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
-	 * Records what the model expected of the attack that just resolved. Sampling
-	 * per attack rather than once per fight keeps the figures honest when a spec
-	 * weapon is swapped in partway: the mean then reflects the blend actually
-	 * wielded instead of whichever weapon happened to be held at one instant.
-	 */
-	/**
 	 * Recomputes the tick's expected figures for the fight on show. Everything
-	 * that reads them, the overlay, the attack-tick sample, {@code ::loadout} -
-	 * takes this one snapshot, so they cannot disagree with each other within a
-	 * tick, and {@code CombatCalc}'s per-tick memo makes the whole set one
-	 * evaluation however many callers ask.
+	 * that reads them - the overlay, the attack-tick sample, {@code ::loadout} -
+	 * takes this one snapshot, so they cannot disagree within a tick, and
+	 * {@code CombatCalc}'s per-tick memo makes the whole set one evaluation
+	 * however many callers ask.
 	 */
 	private void refreshExpected()
 	{
 		final Fight shown = getDisplayFight();
 		specialAttack = combatCalc.specialAttack();
-		// Sampled every tick and read back at the tick the attack went out on,
-		// for the same reason the prayer is. Booking happens a tick or two
-		// later, and a trident attack judged at its booking was being judged
-		// against the whip the player had switched to by then — the whole point
-		// of the question is what was worn when the attack was thrown.
-		//
-		// Asking it here rather than reconstructing it later also keeps the
-		// weapon and the combat style honest: both are read live off the combat
-		// tab, so they only describe this attack while this tick is current.
-		//
-		// Cheap despite appearances. The search behind it is held until the
-		// weapon, the combat style, the target, or what the player has on them
-		// changes — putting the answer on is none of those — so a fight fought
-		// in one set searches once and every tick after costs a comparison.
+		// for the same reason the prayer is: booking happens a tick or two later,
+		// and a trident attack judged at its booking was judged against the whip
+		// switched to by then. Asking here also keeps the weapon and the style
+		// honest, both being read live off the combat tab. Cheap: the search is
+		// held until the weapon, style, target or carried items change.
 		switchedByTick.put(client.getTickCount(),
 			!combatCalc.missedGearSwitch(shown != null ? shown.getTargetId() : -1));
 		switchedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
@@ -1141,10 +975,6 @@ public class PvmPerformancePlugin extends Plugin
 	 * cannot be attacked. Those ticks belong with the unattackable ones: no
 	 * attack was possible, so neither counting them lost nor counting them spent
 	 * says anything about how the fight was played.
-	 *
-	 * <p>Reported as a lost tick on a kill finished with a dart and followed by
-	 * a switch, which is simply the longest gap the booking lag allows before
-	 * the corpse disappears.
 	 */
 	private boolean targetIsDying()
 	{
@@ -1152,30 +982,10 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/**
-	 * Whether an attack that has not been booked by now is late. Static and
-	 * separate because the whole of a bug lived in it: dueTick counts in attack
-	 * ticks and {@code now} is a booking tick, and the two are a tick or two
-	 * apart depending on what will prove the next attack.
-	 */
-	/**
-	 * Ticks between an area spell going out and its damage landing.
-	 *
-	 * <p>Built on the wiki's Hit delay formula,
-	 * {@code MagicDelay = 1 + floor((1 + Distance) / 3)}, <b>plus one tick,
-	 * which is measured and not a fudge.</b> Two casts logged with their
-	 * distances came in a tick later than the formula every time: distance 2,
-	 * due on 552, hitsplat on 553; distance 6, due on 454, hitsplat on 455. The
-	 * wiki describes when the server applies the hit; this has to describe when
-	 * the client sees the hitsplat, and that is a tick behind it.
-	 *
-	 * <p>Being a tick short is not harmless. The cast at distance 2 was declared
-	 * a splash and its hitsplat then arrived for 58 damage — a splash counted
-	 * that never happened, and the gauntlets armed on a hit.
-	 *
-	 * <p>Distance is Chebyshev, and for these spells it is measured <i>from the
-	 * player to the NPC's south-west tile</i> rather than edge to edge — the
-	 * wiki calls barrage out as the exception. That is why standing against
-	 * something the size of the Hueycoatl still reads as a dozen tiles.
+	 * Ticks between an area spell going out and its damage landing. The wiki's
+	 * Hit delay formula plus one, measured: the wiki says when the SERVER
+	 * applies the hit, this needs when the CLIENT sees the hitsplat. Distance is
+	 * Chebyshev to the NPC's south-west tile, barrage's documented exception.
 	 */
 	static int magicHitDelay(int distance)
 	{
@@ -1190,16 +1000,6 @@ public class PvmPerformancePlugin extends Plugin
 	/**
 	 * How long a booking might still take to arrive: the longer of what the
 	 * last attack needs and what the weapon in hand would need.
-	 *
-	 * <p>Two attacks can be outstanding across a switch. The one already thrown
-	 * carries the old weapon's lag — a dart fired before the swap is booked two
-	 * ticks later whatever is held by then — while the next one will carry the
-	 * new weapon's. Nothing can be called late until the longer of the two has
-	 * had time to arrive, and taking only the weapon in hand booked a lost tick
-	 * on every switch out of a projectile weapon into melee.
-	 *
-	 * <p>Self-limiting rather than merely lenient: once the deadline has passed
-	 * by the longer lag, nothing can still be in flight.
 	 */
 	static int pendingBookingLag(boolean lastAttackWasProjectile, boolean meleeEquippedNow)
 	{
@@ -1247,22 +1047,16 @@ public class PvmPerformancePlugin extends Plugin
 			accuracy = combatCalc.hitChance(targetId);
 			averageHit = combatCalc.averageHit(targetId);
 		}
-		// Held rather than added, unless the attack has already resolved. What
-		// an attack was expected to deal only belongs beside what it did deal
-		// if it got the chance to deal it: a cast still in the air when someone
-		// else lands the kill deals nothing, and counting its expectation
-		// against a measured nought reads as the player having underperformed.
-		// In a group that is most of the last cast on every kill.
+		// Held rather than added, unless the attack has already resolved: an
+		// expectation only belongs beside a measured figure if the attack got
+		// the chance to deal it, and a cast still in the air when someone else
+		// lands the kill reads as underperformance. A melee blow is booked by
+		// its own hitsplat, so it has already resolved and goes straight in.
 		//
-		// A melee blow is booked by its own hitsplat, so it has already
-		// resolved and goes straight in.
 		// One attack can be several rolls, and the measured side counts the
-		// ATTACK, not the rolls: three scythe hitsplats land on one tick and the
-		// burst grouping books them as one landed attack. So the expectation
-		// beside it is the chance that AT LEAST ONE of the rolls connected, not
-		// the sum of them. Summing read three chances against one measured hit
-		// and marked the player down by that ratio — masked until now only
-		// because the scythe was never being recognised in the first place.
+		// ATTACK: three scythe hitsplats land on one tick and book as one
+		// landed attack. So the expectation is the chance at least one roll
+		// connected, not the sum of them.
 		final double expectedChances =
 			CombatCalc.landChance(accuracy, combatCalc.hitsPerAttack(targetId));
 		if (attackObservedLag == MELEE_BOOKING_LAG)
@@ -1406,16 +1200,11 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			targetLiveId = npc.getId();
 			// Anything of mine still in the air was nulled by the change, and a
-			// cast waiting on damage that will never arrive is not a splash.
-			// Left in place it resolves as one when its due tick comes, which
-			// counts a splash that did not happen and arms the gauntlets
-			// against an enemy that never dodged anything.
-			//
-			// Note what this is NOT. The experience is paid on the tick the
-			// attack goes out whether the damage lands or is nulled, so the
-			// drop still reports it correctly and nothing is wrong with the
-			// charge itself. It is only the pending cast, which judges by
-			// whether a hitsplat turned up, that is fooled.
+			// cast waiting on damage that will never arrive is not a splash:
+			// left in place it resolves as one and arms the gauntlets against an
+			// enemy that never dodged anything. The charge itself is fine - the
+			// experience is paid whether the damage lands or is nulled - it is
+			// only the pending cast, which waits on a hitsplat, that is fooled.
 			castsAwaiting.removeIf(cast -> cast.npcIndex == npc.getIndex());
 		}
 		// A boss that is never removed from the scene announces its defeat by
@@ -1463,23 +1252,6 @@ public class PvmPerformancePlugin extends Plugin
 
 	/**
 	 * A cast with no projectile is only visible as the caster's own animation.
-	 *
-	 * <p>A barrage that misses produces nothing else at all: no projectile, no
-	 * hitsplat, and no splash graphic — traced across a whole kill. Booking such
-	 * a cast from its hitsplat therefore counts only the ones that hit, which
-	 * quietly drove accuracy towards a hundred per cent, because every miss
-	 * vanished from both halves of the sum rather than from one.
-	 *
-	 * <p>So these are booked here instead, and not from the hitsplat. The
-	 * animation fires on the tick the cast goes out, which makes this the most
-	 * exact of the four routes rather than the least: no booking lag at all,
-	 * where the hitsplat needed three.
-	 *
-	 * <p>What the animation *is* does not matter and is deliberately not
-	 * checked — that would be the per-spell table that sank two earlier designs.
-	 * What carries the weight is that a no-projectile spell is the attack in
-	 * hand and the weapon is off cooldown, so an eat between casts cannot book
-	 * one.
 	 */
 	@Subscribe
 	public void onAnimationChanged(AnimationChanged event)
@@ -1494,15 +1266,12 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			return;
 		}
-		// Any animation at all was too generous: being hit plays one, and so
-		// does eating, and both booked an attack once the weapon was off
-		// cooldown. Traced over one trip, 1156 fired fifty-eight times and 829
-		// nine, against the cast's own 10092.
-		//
-		// So the cast animation is named. A short list rather than a table of
-		// every weapon and spell, because only the projectile-less spells come
-		// through here — and an id missing from it costs the misses but not the
-		// hits, since the hitsplat still books what lands.
+		// Any animation at all was too generous: being hit plays one and so does
+		// eating, and both booked an attack once the weapon was off cooldown -
+		// 1156 fired fifty-eight times in one trip against the cast's own 10092.
+		// So the cast animation is named, a short list rather than a table,
+		// because only projectile-less spells come through here and a missing id
+		// costs the misses but not the hits.
 		if (!CAST_ANIMATIONS.contains(me.getAnimation()))
 		{
 			log.debug("TRACE cast UNKNOWN ANIM tick={} id={} spell={}",
@@ -1520,22 +1289,13 @@ public class PvmPerformancePlugin extends Plugin
 			startFight(target, now);
 		}
 		lastCastBookedTick = client.getTickCount();
-		// Due when the damage would land, and HITPOINTS xp cannot make it any
-		// sooner. Judging on the cast tick was tried and the log threw it out:
-		// a cast booked on tick 20 read "hp xp moved false" while its hitsplat
-		// arrived on tick 25 for 28 damage, and the same on ticks 30, 52, 82 and
-		// 97. Hitpoints xp arrives WITH THE DAMAGE. Every cast therefore read as
-		// a splash, which armed the gauntlets on hits and counted the expected
-		// damage on the cast instead of on the landing.
-		//
-		// What is still open is MAGIC xp, which may well arrive at the cast —
-		// that is what an xp drop plugin shows immediately. If it does, a splash
-		// is knowable at once and the wait goes away. It is being measured; see
-		// the xp trace in onGameTick.
+		// Due when the damage would land: hitpoints xp arrives WITH THE DAMAGE,
+		// not at the cast. Judging on the cast tick was tried and the log threw
+		// it out - a cast booked on 20 read no xp while its hitsplat arrived on
+		// 25 for 28 damage - and every cast then read as a splash, arming the
+		// gauntlets on hits and counting expected damage at the cast.
 		final int distance = castDistance(target);
 		final int due = client.getTickCount() + magicHitDelay(distance);
-		log.debug("TRACE cast queued tick {} npc {} distance {} due {}",
-			client.getTickCount(), target.getIndex(), distance, due);
 		castsAwaiting.add(new PendingCast(target.getIndex(), due));
 		recordAttackObserved(false, target.getId(), CAST_BOOKING_LAG);
 	}
@@ -1588,16 +1348,6 @@ public class PvmPerformancePlugin extends Plugin
 	/**
 	 * A boss that never despawns still drops loot, and that is what says it
 	 * died.
-	 *
-	 * <p>The Hueycoatl's combat NPCs are never removed — a whole kill produced
-	 * despawns for lobby and victory workers and nothing else, all reading
-	 * dead=false — so the despawn path could not see the kill however the
-	 * grouping was arranged, and kills stayed at zero while damage counted.
-	 *
-	 * <p>Fired by the client's own loot manager rather than by a plugin, and it
-	 * names the NPC, so a death inside the group ends the fight as a kill on the
-	 * same terms as a despawn would. Anything that dies without dropping is
-	 * still covered by the despawn.
 	 */
 	@Subscribe
 	public void onNpcLootReceived(NpcLootReceived event)
@@ -1610,22 +1360,15 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			finalizeFight(true, now);
 		}
-		// The room ends with the kill that closed it, so the next kill opens a
-		// fresh one. Without this a grouped boss kept every kill of a trip in
-		// the room the first one opened: the Hueycoatl's head, tail and body are
-		// deliberately one room, so the name always matched and the room always
-		// accepted. The overlay then read as a running total of the trip with
-		// the trip totals switched off — which is the failure openEncounterFor
-		// already guards against, but only for an NPC that is not grouped.
-		//
-		// A loot drop is the one event that says a KILL happened here rather
-		// than a part of the boss dying, which is why the room cannot simply
-		// close on a fight that ended in a death: several of those belong to one
-		// Hueycoatl. Inside a raid no loot drop fires and rooms there really do
-		// span several fights, so Olm and the Nylocas are untouched.
-		//
-		// Ended rather than dropped, so the kill just made stays on the overlay
-		// to be read. openEncounterFor will not continue an ended room.
+		// A room ends with the kill that closed it, so the next kill opens a
+		// fresh one. Without it a grouped boss kept a whole trip in the room the
+		// first kill opened - head, tail and body are deliberately one room, so
+		// the name always matched - and the overlay read as a running total with
+		// the trip totals off. The loot drop is the one event that says a KILL
+		// happened rather than a part of the boss dying, which is why a fight
+		// ending in a death cannot close it: several of those are one Hueycoatl.
+		// No loot fires inside a raid, so Olm and the Nylocas are untouched.
+		// Ended rather than dropped, so the kill stays on the overlay to read.
 		if (currentEncounter != null && !currentEncounter.isEnded() && currentEncounter.holds(npc.getId()))
 		{
 			currentEncounter.end(now);
@@ -1700,34 +1443,13 @@ public class PvmPerformancePlugin extends Plugin
 					session.recordEngaged(engaged);
 				}
 			}
-			// The two are read at different moments on purpose. A prayer counts if
-			// it was up at any point in the tick, which is what makes flicking
-			// work, and one flicked on after the swing is still processed before
-			// the server resolves the tick. A potion is not: drinking after the
-			// attack cannot have boosted it, so the boost is taken as it stood
-			// when the attack went out.
-			// The carried flag alone, and deliberately not the live varbits. An
-			// attack is booked the tick after the one it went out on, so what was
-			// up at the end of the previous tick is what the server resolved it
-			// with. Reading the varbits here instead counts a prayer switched on
-			// after the swing, which is the whole of the bug: a flick showed
-			// upTick one below the booking tick, a late prayer showed it equal.
-			// Which tick the attack went out on depends on what proved it. A
-			// hitsplat lands the tick the blow is thrown, so a melee attack is
-			// booked on time and this tick's answer is the right one. A
-			// projectile surfaces a tick after it is fired, so a magic or ranged
-			// attack is booked late and the previous tick's answer is.
-			// The tick the attack actually went out on. Taken from the event that
-			// proved it rather than from a fixed offset: a projectile carries the
-			// cycle it was fired on, and a hitsplat lands the tick of the blow.
-			// Guessed offsets could not work here, because the gap between an
-			// attack and its booking is not constant.
+			// The tick the attack went out on, which is the lag of whatever
+			// proved it and not a fixed offset. The prayer is read back from
+			// there, never live: read live it counts one switched on after the
+			// swing. The potion is taken as it stood when the attack went out,
+			// since drinking after it cannot have boosted it.
 			final int attackTick = client.getTickCount() - attackObservedLag;
 			final boolean prayed = Boolean.TRUE.equals(prayerUpByTick.get(attackTick));
-			// TRACE. Which tick the booking read, and what was stored there.
-			log.debug("TRACE booked tick {} lag {} -> attackTick {} prayed {} stored {}",
-				client.getTickCount(), attackObservedLag, attackTick, prayed,
-				prayerUpByTick.get(attackTick));
 			final boolean potted = attackObservedPotted;
 			// Worked out both ways now, while the loadout and boost are the ones
 			// that threw the attack. Which of the two applies is decided by the
@@ -1740,23 +1462,11 @@ public class PvmPerformancePlugin extends Plugin
 			// means the tick was never sampled, which is not evidence of a
 			// missed switch, so it reads as clean.
 			final boolean switched = !Boolean.FALSE.equals(switchedByTick.get(attackTick));
-			// Whether this attack dealt damage, read from the tick it went out.
-			// This arms or spends the confliction gauntlets, and it is decided
-			// here because every style passes through this one place with its
-			// attack tick already worked out.
-			//
-			// The drop lands on the tick the attack GOES OUT, measured at last
-			// rather than assumed. A Hueycoatl log could not show it: there the
-			// cast cadence and the hit delay are both five ticks, so a drop and
-			// the previous cast's damage share a tick and every sample fits
-			// either story. Cast from close range they separate, and they did —
-			// a cast queued on 550 at distance 2 dropped on 550 with its damage
-			// landing on 553, and one queued on 451 at distance 6 dropped on
-			// 451 and landed on 455.
-			//
-			// A powered staff is the case that had nothing at all: no base
-			// experience on a miss, a projectile so it never reached the cast
-			// path, and no hitsplat when it misses. Its misses were invisible.
+			// Whether this attack dealt damage, read from the tick it went out,
+			// which is where the gauntlets are armed or spent: every style
+			// passes through this one place with its attack tick worked out.
+			// The drop lands on the tick the attack GOES OUT - measured from
+			// close range, where the cast cadence and the hit delay separate.
 			if (combatCalc.usesConflictionGauntlets())
 			{
 				combatCalc.noteMagicResolved(current.getTargetIndex(), !dealtDamageOn(attackTick));
@@ -2002,55 +1712,20 @@ public class PvmPerformancePlugin extends Plugin
 		RaidScaling.setTombsRaidLevel(gearBonuses.tombsRaidLevel());
 		trackRaid(System.currentTimeMillis());
 		startFightOnTarget();
-		// Refreshed before the attack is booked, not after. The attack tick is
-		// where the expected figures are sampled, and they have to describe the
-		// loadout that threw it, reading a cache filled at the end of the last
-		// tick would date every sample by one tick and misattribute any switch.
-		// Before the figures are refreshed, so the armed accuracy is on screen
-		// the moment the miss is known. Safe ahead of the booking below because
-		// a cast is never judged on its own tick — the hit delay is at least
-		// one — so this can only arm for an attack thrown later, which is the
-		// attack the bonus really does apply to.
+		// Both before the attack is booked. The expected figures have to describe
+		// the loadout that threw it, and the cast verdict has to be on screen
+		// the moment the miss is known - safe ahead of the booking because a
+		// cast is never judged on its own tick, so it can only arm for an attack
+		// thrown later, which is the one the bonus applies to.
 		resolveCasts(System.currentTimeMillis());
 		refreshExpected();
-		// The server's copy, which is the only one that answers the question
-		// being asked: did the server resolve this tick with the prayer up.
-		// Clicking a prayer off flips the client's copy at once so the orb
-		// responds without waiting for a reply, which is exactly what a flick
-		// does at the end of a tick — the client reads off while the server
-		// still resolved the attack with it up. That is the undercount.
-		//
-		// A flag fed from the varbit event was tried here and removed. It could
-		// only add trues, and it added them a tick late as well as on time, so
-		// one flick satisfied two bookings. It also earned nothing: on every
-		// pulse traced, the reading below was already true on its own.
-		//
-		// Taken BEFORE the attack is booked, beside the rest of the tick's
-		// samples. It sat after the booking on the reasoning that an attack
-		// booked this tick went out on an earlier one and so reads an earlier
-		// tick's answer — true of melee at one tick's lag and of a projectile
-		// at two, and false of the one attack that is booked on the tick it
-		// goes out. An ancient area spell is booked from the cast animation at
-		// no lag at all, so it read this tick's answer before this tick had
-		// one, found nothing, and counted every barrage as unprayed however
-		// long augury had been up. Writing first is safe for the other two:
-		// they read keys this never touches.
+		// Sampled BEFORE the booking below reads it back: a cast booked from its
+		// animation has no lag at all, so it asks for this tick's answer, and
+		// written afterwards there was none. hasOffensivePrayer reads the
+		// server's copy, which is what a flick relies on.
 		final boolean upThisTick = combatCalc.hasOffensivePrayer();
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
 		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
-		// TRACE. What the prayer and the gauntlets were read as, which is what a
-		// booking will later read back. Printed only when it CHANGES: one line
-		// a tick of every fight ran a log to 89MB in half an hour, and the
-		// interesting thing here is always the moment a value moves.
-		if (current != null && !current.isEnded())
-		{
-			final String line = upThisTick + " " + combatCalc.traceLine();
-			if (!line.equals(lastTraceLine))
-			{
-				lastTraceLine = line;
-				log.debug("TRACE tick {} up={}", client.getTickCount(), line);
-			}
-		}
 		trackAttackCooldown();
 
 		final Player me = client.getLocalPlayer();
@@ -2432,13 +2107,6 @@ public class PvmPerformancePlugin extends Plugin
 
 	/**
 	 * The room the overlay should display, or null if nothing has been fought.
-	 *
-	 * <p>A room that has been opened but not yet fought in does not replace the
-	 * one before it. With the trip totals off the overlay is the room, so the
-	 * kill just made vanished the instant anything opened a new one — and a
-	 * fight opens on merely looking at an NPC, which after a kill is
-	 * immediate. The player could never read how the kill went. The finished
-	 * room stays up until the first attack of the next one.
 	 */
 	Encounter getDisplayEncounter()
 	{

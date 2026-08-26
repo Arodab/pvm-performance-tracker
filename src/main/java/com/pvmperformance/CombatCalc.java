@@ -188,12 +188,6 @@ class CombatCalc
 	 * together. A switch leaves this alone, which is the point: an item on the
 	 * arm is an item no longer in the bag, and the search's answer holds until
 	 * the player actually gains or loses one.
-	 *
-	 * <p>Recounted at most once a tick and only after a container said
-	 * something moved, so eating a trip's worth of food costs one count each
-	 * rather than one search. It is asked off the game tick, by which point
-	 * both containers have reported; a switch counted while only one of them
-	 * had would cost the one extra search the tick after, and no more.
 	 */
 	private long availableEquippableSignature()
 	{
@@ -573,21 +567,15 @@ class CombatCalc
 			return hitChanceFrom(attRoll, defRoll);
 		}
 		// The real chance for the attack about to be thrown, not the long-run
-		// average of them. The gauntlets roll accuracy twice after a miss, so
-		// every attack is at one of exactly two chances, and which one is known:
-		// the previous attack either missed this enemy or it did not.
+		// average: the gauntlets roll twice after a miss, so every attack is at
+		// one of exactly two chances and which one is known. The steady state
+		// was right in aggregate and wrong for every individual attack, which is
+		// what expected damage is summed from.
 		//
-		// This used to return the steady state, the share of attacks that would
-		// carry the bonus over a long fight, which is right in aggregate and
-		// wrong for every individual attack — and it is individual attacks that
-		// the expected damage and expected hits are summed from.
-		//
-		// "Against the same enemy" is the wiki's wording and is why this is
-		// armed against an index rather than a flag: switching target drops it.
-		// Both have to name a real enemy. No fight means targetIndex is -1, and
-		// unarmed means the armed index is -1, so comparing them bare made
-		// the two nothings match and left the doubled roll showing for good once
-		// a boss died.
+		// Armed against an index rather than a flag because the wiki's wording
+		// is "against the same enemy", and both sides have to name a real one:
+		// no fight is -1 and unarmed is -1, and comparing them bare made the two
+		// nothings match.
 		final boolean armed = conflictionArmedAgainst(charge.armedIndex(), targetIndex);
 		return armed
 			? 1.0 - sharedDefenceMissChance(attRoll, defRoll)
@@ -599,13 +587,6 @@ class CombatCalc
 	 * next one against that enemy rolls twice. A miss arms the gauntlets and a
 	 * hit spends them; the effect does not stack across consecutive misses, so
 	 * arming twice is the same as arming once.
-	 *
-	 * <p>Only a hit on the enemy the charge is held against spends it. It used
-	 * to clear on any hit of mine, and this fires for every NPC I damage, so a
-	 * blow landing on anything else disarmed the gauntlets against the enemy
-	 * being fought — traced at the Hueycoatl, where the charge was armed on one
-	 * tick and gone on the next while the target had not changed. The charge is
-	 * held against an enemy on both sides of the question or on neither.
 	 */
 	void noteMagicResolved(int npcIndex, boolean missed)
 	{
@@ -648,52 +629,11 @@ class CombatCalc
 		}
 	}
 
-	// TRACE. Two symptoms to settle: augury reading as some weaker magic prayer,
-	// and the gauntlets never arming on an autocast barrage. Both come down to
-	// values nothing prints, so both are printed here, once a tick, from the
-	// tick loop rather than from the figures - hitChance is evaluated hundreds
-	// of times a tick by the gear search and would flood the log.
-	String traceLine()
-	{
-		final StringBuilder b = new StringBuilder();
-		b.append("style=").append(attackStyle().getAttackType())
-			.append(" goal=").append(prayerGoal())
-			.append(" up=").append(hasOffensivePrayer());
-		if (attackStyle().getAttackType() == AttackType.MAGIC)
-		{
-			b.append(" acc=").append(String.format("%.3f", magicAccuracyPrayer()))
-				.append(" dmg=").append(String.format("%.1f", magicDamagePrayerPercent()));
-			appendPrayer(b, "augury", Prayer.AUGURY);
-			appendPrayer(b, "vigour", Prayer.MYSTIC_VIGOUR);
-			appendPrayer(b, "might", Prayer.MYSTIC_MIGHT);
-			appendPrayer(b, "lore", Prayer.MYSTIC_LORE);
-			appendPrayer(b, "will", Prayer.MYSTIC_WILL);
-		}
-		b.append(" gauntlets=").append(hasConflictionGauntlets())
-			.append(" armed=").append(charge.armedIndex())
-			.append(" target=").append(targetIndex);
-		return b.toString();
-	}
-
-	// Server copy beside client copy. The whole prayer read goes through the
-	// server one, so if the two disagree that is the answer on its own.
-	private void appendPrayer(StringBuilder b, String name, Prayer prayer)
-	{
-		b.append(' ').append(name).append('=')
-			.append(client.getServerVarbitValue(prayer.getVarbit()))
-			.append('/').append(client.getVarbitValue(prayer.getVarbit()));
-	}
-
 	/**
 	 * Whether the doubled accuracy roll applies to the attack about to be
 	 * thrown: the gauntlets were armed by a miss, and the attack is against the
 	 * enemy that miss was against. The wiki's wording is "against the same
 	 * enemy", so switching target drops it.
-	 *
-	 * <p>Both have to name a real enemy. No fight means the target is -1 and
-	 * unarmed means the armed index is -1, so comparing the two bare made the
-	 * two nothings match and left the doubled roll showing for good once a boss
-	 * died. That is a regression this has already had once.
 	 */
 	static boolean conflictionArmedAgainst(int armedIndex, int targetIndex)
 	{
@@ -713,10 +653,6 @@ class CombatCalc
 	/**
 	 * Forgets any charge the gauntlets were holding, because the fight it
 	 * belonged to is over.
-	 *
-	 * <p>Worth clearing rather than leaving to expire: the charge is held
-	 * against an NPC index, and the server reuses indices, so a respawn can
-	 * arrive wearing the index the last charge was held against.
 	 */
 	void forgetConflictionCharge()
 	{
@@ -863,16 +799,12 @@ class CombatCalc
 	{
 		final String heading = combatTabCategory();
 		final int weapon = weaponItemId();
-		// The combat tab lags the equipment by a tick. On the tick a weapon is
+		// The combat tab lags the equipment by a tick, so on the tick a weapon is
 		// swapped the heading still names the old one, and pairing it with the
-		// new weapon's bonuses gives a figure belonging to neither: a whip read
-		// through a warhammer's crush category has no attack bonus at all, and
-		// accuracy halved for one tick in the middle of every switch.
-		//
-		// A heading that has not changed while the weapon has is therefore stale
-		// rather than wrong, and is dropped. What answers instead is the
-		// weapon's own dominant attack bonus, by way of fallbackStyle, which is
-		// right for the weapon actually in hand.
+		// new weapon's bonuses gives a figure belonging to neither - accuracy
+		// halved for a tick in the middle of every switch. A heading that has
+		// not changed while the weapon has is stale rather than wrong, and is
+		// dropped for the weapon's own dominant attack bonus.
 		final boolean stale = weapon != headingWeapon && heading != null && heading.equals(headingText);
 		if (!stale)
 		{
@@ -1259,11 +1191,6 @@ class CombatCalc
 	 * down. Wiki (Scythe of Vitur): "each hit will deal 50% less damage,
 	 * (rounded down), than the preceding hit", with a base of 47 giving 47-23-11
 	 * and a base of 48 giving 48-24-12.
-	 *
-	 * <p>Halving the first hit's *average* instead — treating three hits as 1.75
-	 * of the first — is what this replaced. It is close, within about a point,
-	 * but it is not what the game does and the difference is visible beside a
-	 * measured total.
 	 */
 	// The parts behind a scythe's total, which is otherwise one number with
 	// nothing behind it — the same reason the magic max hit is broken out.
@@ -1313,25 +1240,10 @@ class CombatCalc
 	}
 
 	/**
-	 * The most a single hit may deal against this target, whatever the roll.
-	 *
-	 * <p>A cap is not a smaller max hit and must not be modelled as one: rolling
-	 * nought to sixty and capping at nine averages a little over eight, where
-	 * half of nine is four and a half. {@link #cappedAverage} is what the
-	 * expected damage uses.
-	 *
-	 * <p>The Hueycoatl's tail is the only one known: nine while the player's
-	 * crush attack bonus is their highest, four otherwise, which is what makes
-	 * that phase drag for a team without a crush weapon.
-	 */
-	/**
 	 * How many times one attack lands on this target. A scythe swing hits twice
 	 * against a 2x2 and three times against anything 3x3 or larger, each hit
-	 * rolling its own accuracy and strength.
-	 *
-	 * <p>Only hits on the *same* target are counted here. A scythe also reaches
-	 * along a 1x3 arc into whatever stands beside the target, and those are
-	 * separate NPCs — that is the AoE gap listed under known-wrong, not this.
+	 * rolling its own accuracy and strength. Only hits on the SAME target: the
+	 * arc into whatever stands beside it is the AoE gap, not this.
 	 */
 	int hitsPerAttack(int npcId)
 	{
@@ -1354,14 +1266,6 @@ class CombatCalc
 
 	/**
 	 * Whether this weapon name is a scythe of vitur, in any of its forms.
-	 *
-	 * <p>Matched loosely on purpose, and both looseness are load-bearing. The
-	 * item's name comes back from the item composition as "Scythe of Vitur"
-	 * with a capital V, while the wiki writes it lowercase — a
-	 * {@code startsWith("Scythe of vitur")} therefore matched nothing at all,
-	 * and the extra hits silently stopped applying. And the ornament kits put a
-	 * word in front of it: a holy or sanguine scythe starts with neither
-	 * "Scythe" nor the same case, so anchoring at the start fails twice over.
 	 */
 	static boolean isScythe(String weaponName)
 	{
