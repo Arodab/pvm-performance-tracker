@@ -69,9 +69,8 @@ enum Spell
 	UNDEAD_GRASP(58, "Undead Grasp", 24, Spellbook.ARCEUUS);
 
 	// Elemental spells rose to the strongest of their tier the caster has
-	// unlocked, in the May 2024 rework: a wind strike at magic 13 hits for 8,
-	// the fire strike figure, not 2. The ladders are the four unlock levels of
-	// each tier against the max hit they carry.
+	// unlocked, in the May 2024 rework: a wind strike at magic 13 hits for 8, not
+	// 2. The ladders are the four unlock levels against the max hit they carry.
 	private static final int[] STRIKE_LEVELS = {1, 5, 9, 13};
 	private static final int[] STRIKE_HITS = {2, 4, 6, 8};
 	private static final int[] BOLT_LEVELS = {17, 23, 29, 35};
@@ -83,10 +82,7 @@ enum Spell
 	private static final int[] SURGE_LEVELS = {81, 85, 90, 95};
 	private static final int[] SURGE_HITS = {21, 22, 23, 24};
 
-	/**
-	 * The max hit for this spell at the given magic level. Only the elemental
-	 * spells move; everything else returns its listed figure.
-	 */
+	/** The max hit at this magic level. Only the elemental spells move. */
 	int maxHitAt(int magicLevel)
 	{
 		final int[] levels;
@@ -165,9 +161,8 @@ enum Spell
 
 	/**
 	 * Whether this spell reaches its target without a projectile the client
-	 * shows us. The ancient area spells — the burst and barrage families — land
-	 * on the tick they are cast and give no projectile to book an attack from,
-	 * so their attacks have to be taken from the hitsplat instead.
+	 * shows. The ancient area spells land on the tick they are cast and give
+	 * none, so their attacks are taken from the hitsplat instead.
 	 */
 	boolean landsWithoutProjectile()
 	{
@@ -181,9 +176,8 @@ enum Spell
 	}
 
 	/**
-	 * The spell with this name, or null if it isn't a combat spell. Used to read
-	 * a manual cast off the spell widget the player clicked, which carries the
-	 * spell's name but no id this table could be keyed by.
+	 * The spell with this name, or null if it is not a combat spell. Reads a
+	 * manual cast off the widget clicked, which carries a name but no id.
 	 */
 	static Spell forDisplayName(String name)
 	{

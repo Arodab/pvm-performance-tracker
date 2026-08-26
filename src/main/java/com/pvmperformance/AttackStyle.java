@@ -18,9 +18,8 @@ class AttackStyle
 	private final CombatStyle combatStyle;
 
 	/**
-	 * Invisible level boost added to the attack roll's effective level. Melee
-	 * and ranged gain +3 on accurate and +1 on controlled; magic gains +2 on
-	 * accurate.
+	 * Invisible boost to the attack roll's effective level: melee and ranged +3
+	 * on accurate and +1 on controlled, magic +2 on accurate.
 	 */
 	int attackLevelBonus()
 	{
@@ -36,9 +35,8 @@ class AttackStyle
 	}
 
 	/**
-	 * Invisible level boost added to the max hit's effective strength level.
-	 * Melee gains +3 on aggressive and +1 on controlled; ranged gains +3 on
-	 * accurate.
+	 * Invisible boost to the max hit's effective strength level: melee +3 on
+	 * aggressive and +1 on controlled, ranged +3 on accurate.
 	 */
 	int strengthLevelBonus()
 	{

@@ -39,11 +39,10 @@ class Encounter
 	}
 
 	/**
-	 * Whether killing this NPC is killing what this room is about, as opposed to
-	 * something dying beside it. Asked of the group rather than the id, because
-	 * a boss made of several NPCs is killed at whichever part happens to be
-	 * last: the Hueycoatl drops its loot from a head while the room is full of
-	 * fights against body segments.
+	 * Whether killing this NPC is killing what this room is about. Asked of the
+	 * group rather than the id: a boss made of several NPCs is killed at whichever
+	 * part is last, and the Hueycoatl drops its loot from a head while the room is
+	 * full of fights against body segments.
 	 */
 	boolean holds(int npcId)
 	{
@@ -63,9 +62,8 @@ class Encounter
 	}
 
 	/**
-	 * Whether anything has actually been thrown in this room yet. A room opens
-	 * as soon as a fight does, and a fight opens on looking at something, so a
-	 * room with no attempts in it is one nothing has happened in.
+	 * Whether anything has been thrown in this room yet. A fight opens on merely
+	 * looking at something, so a room with no attempts is one nothing happened in.
 	 */
 	boolean hasAttempts()
 	{
@@ -116,9 +114,8 @@ class Encounter
 	}
 
 	/**
-	 * Attacks that got an answer. An attack nulled by the kill - in the air when
-	 * the target died or changed form - is not one of them: it has no outcome to
-	 * be right or wrong about, and left in here it reads as a miss that dealt
+	 * Attacks that got an answer. One nulled by the kill has no outcome to be
+	 * right or wrong about, and left in here it reads as a miss that dealt
 	 * nothing.
 	 */
 	int getAttempts()

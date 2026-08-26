@@ -2,17 +2,15 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-// Aggregated performance across every fight against one target, where a
-// target is a room when the NPCs of that room are grouped and a single NPC
-// otherwise. So the nylocas add up per colour and Kephri's whole room reads
-// as Kephri, while a Vorkath is still a Vorkath.
+// Aggregated performance against one target, where a target is a room when its
+// NPCs are grouped and a single NPC otherwise - so the Nylocas add up per colour
+// and Kephri's room reads as Kephri, while a Vorkath is still a Vorkath.
 @Getter
 class NpcStats
 {
 	private final String name;
-	// Rooms, not sub-fights. One Hueycoatl is a fight against a body and then
-	// one against the head, and counting those separately read as "2 fights, 1
-	// kill" for a single clean kill.
+	// Rooms, not sub-fights: one Hueycoatl is a body then a head, and counting
+	// those separately read as "2 fights, 1 kill" for one clean kill.
 	private int fights;
 	private int kills;
 	private int maxHp = -1;
@@ -83,10 +81,9 @@ class NpcStats
 	}
 
 	/**
-	 * Mean damage per attack across every fight, counting misses as zero.
-	 * Denominated on attacks that actually resolved: one nulled by the kill
-	 * dealt nothing because there was nothing left to deal it to, not because
-	 * it was thrown badly.
+	 * Mean damage per attack, counting misses as zero and denominated on attacks
+	 * that resolved: one nulled by the kill dealt nothing because there was
+	 * nothing left to deal it to.
 	 */
 	double avgHit()
 	{

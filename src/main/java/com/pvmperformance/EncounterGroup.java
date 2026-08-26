@@ -34,9 +34,8 @@ final class EncounterGroup
 	}
 
 	/**
-	 * NPCs that should never be tracked at all. Zebak's water jugs die to one
-	 * hit and exist to be broken, so counting them as fights would bury the
-	 * boss's own figures under a run of one-tick kills.
+	 * NPCs never tracked at all. Zebak's water jugs die to one hit and exist to
+	 * be broken, so counting them would bury the boss's figures.
 	 */
 	static boolean isIgnored(int npcId)
 	{
@@ -50,9 +49,8 @@ final class EncounterGroup
 		return UNSCORED.contains(npcId);
 	}
 
-	// Forms an NPC wears while it cannot be fought, a transition, a charge, a
-	// death that has not despawned yet. No tick is lost while the target is
-	// one of these, because no attack was possible.
+	// Forms an NPC wears while it cannot be fought - a transition, a charge, a
+	// death not yet despawned. No tick is lost while the target is one of these.
 	static boolean isUnattackable(int npcId)
 	{
 		return UNATTACKABLE.contains(npcId);
@@ -62,10 +60,9 @@ final class EncounterGroup
 	{
 		final Map<Integer, String> groups = new HashMap<>();
 
-		// Chambers of Xeric. The vanguards are one fight, since they must be
-		// brought down together. Vasa's crystals are his healing mechanic. Olm's
-		// hands are grouped with each other but not with the head, and they
-		// respawn each phase rather than transforming.
+		// Chambers of Xeric. The vanguards are one fight, being brought down
+		// together. Vasa's crystals are his healing mechanic. Olm's hands are
+		// grouped with each other but not the head, and respawn each phase.
 		put(groups, "Vanguards",
 			NpcID.RAIDS_VANGUARD_DORMANT, NpcID.RAIDS_VANGUARD_WALKING,
 			NpcID.RAIDS_VANGUARD_MELEE, NpcID.RAIDS_VANGUARD_RANGED, NpcID.RAIDS_VANGUARD_MAGIC);
@@ -76,9 +73,8 @@ final class EncounterGroup
 			NpcID.RAIDS_TEKTON_WAITING, NpcID.RAIDS_TEKTON_HAMMERING,
 			NpcID.RAIDS_TEKTON_WALKING_STANDARD, NpcID.RAIDS_TEKTON_FIGHTING_STANDARD,
 			NpcID.RAIDS_TEKTON_WALKING_ENRAGED, NpcID.RAIDS_TEKTON_FIGHTING_ENRAGED);
-		// Vespula's portal is a separate NPC and is what most teams actually
-		// kill, so ungrouped the room's damage would file itself under the
-		// portal and leave Vespula looking untouched.
+		// Vespula's portal is a separate NPC and is what most teams kill, so
+		// ungrouped the room's damage filed itself under the portal.
 		put(groups, "Vespula",
 			NpcID.RAIDS_VESPULA_FLYING, NpcID.RAIDS_VESPULA_WALKING, NpcID.RAIDS_VESPULA_ENRAGED,
 			NpcID.RAIDS_VESPULA_PORTAL,
@@ -95,11 +91,9 @@ final class EncounterGroup
 			NpcID.OLM_HAND_LEFT_SPAWNING, NpcID.OLM_HAND_LEFT, NpcID.OLM_HAND_LEFT_DYING,
 			NpcID.OLM_HAND_RIGHT_SPAWNING, NpcID.OLM_HAND_RIGHT, NpcID.OLM_HAND_RIGHT_DYING);
 
-		// Phosani's Nightmare takes her totems, which are the other half of the
-		// fight. Her adds are grouped too but scored out below. The totem ids
-		// are shared with The Nightmare, so the boss in the room decides which
-		// it is: see labelNightmareTotem. Listing them here is the default for
-		// when no boss has been seen.
+		// Phosani's Nightmare takes her totems. The totem ids are shared with The
+		// Nightmare, so the boss in the room decides which it is - see
+		// labelNightmareTotem - and listing them here is the default.
 		put(groups, "Phosani's Nightmare",
 			NpcID.NIGHTMARE_CHALLENGE_INITIAL, NpcID.NIGHTMARE_CHALLENGE_BLAST,
 			NpcID.NIGHTMARE_CHALLENGE_PHASE_01, NpcID.NIGHTMARE_CHALLENGE_PHASE_02,
@@ -135,9 +129,8 @@ final class EncounterGroup
 			NpcID.AKKHA_ENRAGE_SPAWN, NpcID.AKKHA_ENRAGE_INITIAL, NpcID.AKKHA_ENRAGE,
 			NpcID.AKKHA_SHADOW, NpcID.AKKHA_SHADOW_ENRAGE,
 			NpcID.AKKHA_ENRAGE_DUMMY, NpcID.AKKHA_SHADOW_ENRAGE_DUMMY);
-		// Kephri takes her whole room: her own forms, the scarabs that come with
-		// them, and the eggs, which are grouped rather than ignored because
-		// killing them is a real job for anyone whose gear cannot outpace them.
+		// Kephri takes her whole room: her forms, the scarabs, and the eggs, which
+		// are grouped rather than ignored because killing them is a real job.
 		put(groups, "Kephri",
 			NpcID.TOA_KEPHRI_BOSS_SHIELDED, NpcID.TOA_KEPHRI_BOSS_WEAK, NpcID.TOA_KEPHRI_BOSS_ENRAGE,
 			NpcID.TOA_KEPHRI_SHIELD_SCARAB, NpcID.TOA_KEPHRI_GUARDIAN_MELEE,
@@ -151,11 +144,10 @@ final class EncounterGroup
 			NpcID.TOA_PATH_APMEKEN_BABOON_SHAMAN, NpcID.TOA_PATH_APMEKEN_BABOON_ZOMBIE,
 			NpcID.TOA_PATH_APMEKEN_BABOON_CURSED, NpcID.TOA_PATH_APMEKEN_BABOON_THRALL);
 
-		// Theatre of Blood.
-		// The nylocas group by style, big with small: one colour is one job.
-		// Both the incoming form and the fighting form it becomes on
-		// reaching a pillar are listed, only the incoming ones were, which
-		// left every nylocas killed after it settled in reporting itself.
+		// Theatre of Blood. The nylocas group by style, big with small: one colour
+		// is one job. Both the incoming form and the fighting form it becomes are
+		// listed - with only the incoming ones, every nylocas killed after it
+		// settled reported itself.
 		put(groups, "Nylocas (melee)",
 			NpcID.TOB_NYLOCAS_INCOMING_MELEE, NpcID.TOB_NYLOCAS_BIG_INCOMING_MELEE,
 			NpcID.TOB_NYLOCAS_FIGHTING_MELEE, NpcID.TOB_NYLOCAS_BIG_FIGHTING_MELEE,
@@ -200,9 +192,9 @@ final class EncounterGroup
 			NpcID.TOB_XARPUS_STATIC_STORY, NpcID.TOB_XARPUS_FEEDING_STORY, NpcID.TOB_XARPUS_COMBAT_STORY,
 			NpcID.TOB_XARPUS_STATIC_HARD, NpcID.TOB_XARPUS_FEEDING_HARD, NpcID.TOB_XARPUS_COMBAT_HARD);
 
-		// Three phases across two wardens, their obelisks and their cores. The
-		// four statues named for the path bosses are left out: they are scenery,
-		// and nothing here should rest on a name alone.
+		// Three phases across two wardens, their obelisks and cores. The four
+		// statues named for the path bosses are scenery, and nothing should rest on
+		// a name alone.
 		put(groups, "Wardens",
 			NpcID.TOA_WARDENS_P1_OBELISK_NPC, NpcID.TOA_WARDENS_P2_OBELISK_NPC,
 			NpcID.TOA_WARDEN_ELIDINIS_PHASE1, NpcID.TOA_WARDEN_TUMEKEN_PHASE1,
@@ -239,8 +231,7 @@ final class EncounterGroup
 			NpcID.RAIDS_DOGODILE, NpcID.RAIDS_DOGODILE_SUBMERGED, NpcID.RAIDS_DOGODILE_JUNIOR,
 			NpcID.RAIDS_DOGODILE_MEAT_TREE);
 
-		// Maiden takes her own adds with her: the matomenos that must be culled
-		// and the blood spawns are part of that room and nothing else. Verzik's
+		// Maiden takes her own adds: the matomenos and the blood spawns. Verzik's
 		// blood nylocas share the matomenos name but not its id, and stay out.
 		put(groups, "The Maiden of Sugadinti",
 			NpcID.TOB_MAIDEN_100, NpcID.TOB_MAIDEN_70, NpcID.TOB_MAIDEN_50, NpcID.TOB_MAIDEN_30,
@@ -258,17 +249,15 @@ final class EncounterGroup
 	{
 		return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
 			NpcID.TOA_ZEBAK_JUG, NpcID.TOA_ZEBAK_JUG_ROLLING,
-			// Hueycoatl scenery rather than the snake: the placeholder its head
-			// respawns from, the tail's projectile, and the invisible pillar
-			// that carries the phase two health bar.
+			// Hueycoatl scenery rather than the snake: the head's respawn
+			// placeholder, the tail's projectile, and the phase two health bar pillar.
 			NpcID.HUEY_HEAD_RESPAWN_PLACEHOLDER, NpcID.HUEY_TAIL_PROJECTILE,
 			NpcID.HUEY_P2_PILLAR_HEADBAR_INVIS)));
 	}
 
 	/**
-	 * Whether this is one of the totems, which both Nightmares share the ids of.
-	 * Which fight a totem belongs to is decided by the boss standing in the room
-	 * rather than by anything in the totem itself.
+	 * Whether this is one of the totems, whose ids both Nightmares share. Which
+	 * fight one belongs to is decided by the boss standing in the room.
 	 */
 	static boolean isNightmareTotem(int npcId)
 	{

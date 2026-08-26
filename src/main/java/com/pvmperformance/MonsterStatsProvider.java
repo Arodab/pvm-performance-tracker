@@ -31,10 +31,9 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 /**
- * Supplies NPC defensive stats (defence level, per-style defence bonuses) for
- * the expected accuracy/DPS calc. Data is the OSRS Wiki DPS calculator's
- * monsters.json (maintained, keyed by NPC id, CC-BY-SA game facts); it is
- * fetched once and cached on disk, refreshed when the cache ages out.
+ * NPC defensive stats for the expected accuracy and DPS. Data is the OSRS Wiki
+ * DPS calculator's monsters.json, fetched once and cached on disk, refreshed
+ * when the cache ages out.
  */
 @Slf4j
 @Singleton
@@ -50,12 +49,11 @@ class MonsterStatsProvider
 
 	// npcId -> stats; replaced wholesale after a load, so reads need no lock.
 	private volatile Map<Integer, MonsterStats> byId = Collections.emptyMap();
-	// name -> stats, for the ids the data does not carry. A monster wears
-	// several ids as it idles, walks and fights, and the source lists one of
-	// them: Tekton is 7540 and 7543 there but appears in game as 7542 too, and
-	// a Muttadile as 7563 against the 7561 and 7562 that are listed. Every miss
-	// meant no accuracy, no expected damage and no defence drain, which read as
-	// the plugin ignoring whole stretches of a raid.
+	// name -> stats, for the ids the data does not carry. A monster wears several
+	// ids as it idles, walks and fights and the source lists one: Tekton appears
+	// in game as 7542 as well as the 7540 and 7543 listed. Every miss meant no
+	// accuracy, no expected damage and no drain, reading as whole stretches of a
+	// raid being ignored.
 	private volatile Map<String, MonsterStats> byName = Collections.emptyMap();
 
 	@Inject
@@ -84,9 +82,8 @@ class MonsterStatsProvider
 		{
 			return null;
 		}
-		// The id is unknown, so ask the game what it is called and look the name
-		// up instead. Where a name covers several versions the first listed wins,
-		// which is the ordinary form rather than an enraged or larger one, so a
+		// The id is unknown, so ask the game its name and look that up. Where a name
+		// covers several versions the first wins, which is the ordinary form, so a
 		// figure may be a little low but is no longer absent.
 		final NPCComposition composition = client.getNpcDefinition(npcId);
 		return composition == null ? null : byName.get(normalise(composition.getName()));

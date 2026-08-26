@@ -1,8 +1,7 @@
 package com.pvmperformance;
 
-// The enchanted crossbow bolts whose effects change expected damage, with
-// their PvM activation rates. The hard Kandarin diary raises every rate by
-// a tenth of itself.
+// The enchanted bolts whose effects change expected damage, with their PvM
+// activation rates. The hard Kandarin diary raises every rate by a tenth.
 enum EnchantedBolt
 {
 	/** Blood forfeit: 20% of the target's current health, capped, ignoring accuracy. */
@@ -32,8 +31,8 @@ enum EnchantedBolt
 	}
 
 	/**
-	 * The bolt loaded in the ammo slot, or null if it isn't one of these. Matches
-	 * on name so the plain and dragon variants of each are both covered.
+	 * The bolt loaded in the ammo slot, or null. Matches on name so the plain
+	 * and dragon variants of each are both covered.
 	 */
 	static EnchantedBolt forAmmoName(String ammoName)
 	{

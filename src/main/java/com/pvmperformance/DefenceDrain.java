@@ -20,9 +20,9 @@ import net.runelite.client.plugins.specialcounter.SpecialWeapon;
 @Singleton
 class DefenceDrain
 {
-	// A special lands on the tick it is thrown for melee, and a few ticks later
-	// for the thrown and fired ones. Past this the special is forgotten rather
-	// than credited to whatever is hit next.
+	// A special lands on the tick it is thrown for melee, a few ticks later for
+	// thrown and fired ones. Past this it is forgotten rather than credited to
+	// whatever is hit next.
 	private static final int MAX_SPEC_ENERGY = 1000;
 	private static final int HIT_WINDOW_TICKS = 5;
 
@@ -34,8 +34,7 @@ class DefenceDrain
 	private final Map<Integer, Integer> drained = new HashMap<>();
 
 	// Seeded from the live value rather than left unknown, so the first special
-	// after a reset is measured against something. Left at -1 it was swallowed:
-	// the drop that fired it looked like the first reading rather than a fall.
+	// after a reset is measured against something: at -1 it was swallowed.
 	private int specEnergy = -1;
 	private SpecialWeapon firedWeapon;
 	private int firedTick = Integer.MIN_VALUE;
@@ -56,10 +55,9 @@ class DefenceDrain
 	}
 
 	/**
-	 * Notices the player's own special attack going out, from the energy
-	 * falling. The party message only carries what other members did, and only
-	 * while they are in a party, so a solo player's own specials have to be
-	 * seen here or not at all.
+	 * Notices the player's own special going out, from the energy falling. The
+	 * party message carries only what other members did, so a solo player's own
+	 * specials have to be seen here or not at all.
 	 */
 	void onEnergyChanged()
 	{
@@ -88,9 +86,9 @@ class DefenceDrain
 	}
 
 	/**
-	 * Applies the special's drain when its hit lands. The hit is what decides
-	 * the amount for both kinds, a percentage of what remains, or the damage
-	 * dealt, so nothing can be worked out until it arrives.
+	 * Applies the special's drain when its hit lands. The hit decides the amount
+	 * for both kinds - a percentage of what remains, or the damage dealt - so
+	 * nothing can be worked out until it arrives.
 	 */
 	void onMyHitsplat(NPC npc, int amount)
 	{

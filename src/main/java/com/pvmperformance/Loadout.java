@@ -38,7 +38,7 @@ final class Loadout
 	}
 
 	/**
-	 * This loadout with one slot swapped, leaving this one untouched. A search
+	 * This loadout with one slot swapped, leaving this one untouched: a search
 	 * walks candidates by making these, so it must not disturb what it came
 	 * from.
 	 */
@@ -55,10 +55,9 @@ final class Loadout
 	}
 
 	/**
-	 * Whether two loadouts hold the same item in every slot. Compared by what
-	 * is in them and not by identity, because the worn loadout is rebuilt every
-	 * tick: two objects describing the same gear are the normal case, not the
-	 * exception.
+	 * Whether two loadouts hold the same item in every slot. Compared by
+	 * contents, not identity: the worn loadout is rebuilt every tick, so two
+	 * objects describing the same gear are the normal case.
 	 */
 	boolean sameItems(Loadout other)
 	{

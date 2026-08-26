@@ -4,9 +4,9 @@ import net.runelite.api.Client;
 import net.runelite.api.gameval.VarbitID;
 
 /**
- * The raid the player is inside, if any. Read from the game's own varbits
- * rather than inferred from what is being fought, so entering a raid is known
- * before the first NPC and leaving it is known at once.
+ * The raid the player is inside, if any. Read from the game's own varbits rather
+ * than inferred from what is being fought, so entering is known before the first
+ * NPC and leaving is known at once.
  */
 enum RaidType
 {
@@ -30,10 +30,9 @@ enum RaidType
 	static RaidType current(Client client)
 	{
 		// None of these varbits is reliably cleared on leaving, so a fight in
-		// Prifddinas was being filed under Theatre of Blood on the strength of a
-		// progress value left over from a raid. Requiring an instance is not the
-		// whole answer - a house is instanced too - but it keeps the open world
-		// clean while a varbit that actually clears is identified.
+		// Prifddinas was filed under Theatre of Blood on a leftover progress value.
+		// Requiring an instance is not the whole answer - a house is instanced too -
+		// but it keeps the open world clean.
 		if (!client.isInInstancedRegion())
 		{
 			return null;
@@ -42,18 +41,16 @@ enum RaidType
 		{
 			return CHAMBERS_OF_XERIC;
 		}
-		// The wave, not TOB_PROGRESS. That one runs 0 to 5 and counts how far
-		// the player has got through the Theatre's stages at some point, not
-		// whether they are in it now: it reads non-zero for anyone who has ever
-		// been near the place, and filed every goblin and guard ever killed
-		// under Theatre of Blood. The wave only moves while a raid is under way.
+		// The wave, not TOB_PROGRESS. That runs 0 to 5 and counts how far the player
+		// has ever got through the Theatre, not whether they are in it now - it read
+		// non-zero for anyone who has been near the place, and filed every goblin
+		// ever killed under Theatre of Blood.
 		if (client.getVarbitValue(VarbitID.TOB_CLIENT_WAVEPROGRESS_VAL) > 0)
 		{
 			return THEATRE_OF_BLOOD;
 		}
-		// The party status, not the raid level. The level is never cleared on
-		// leaving, so it reads set for the rest of the session; the status is 1
-		// inside and 0 everywhere else, a house included.
+		// The party status, not the raid level: the level is never cleared on
+		// leaving, while the status is 1 inside and 0 everywhere else.
 		if (client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS) > 0)
 		{
 			return TOMBS_OF_AMASCUT;

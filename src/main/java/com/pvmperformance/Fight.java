@@ -3,10 +3,9 @@ package com.pvmperformance;
 import lombok.Getter;
 
 /**
- * The performance of a single fight against one NPC: the measured side from
- * observed facts, damage from {@code hitsplat.isMine()} splats, hits vs zeros
- * for accuracy, damage taken, and wall-clock duration, alongside the expected
- * side sampled from the combat model once per attack made.
+ * One fight against one NPC: the measured side from observed facts - damage from
+ * {@code hitsplat.isMine()} splats, hits vs zeros, damage taken, duration -
+ * alongside the expected side sampled from the combat model once per attack.
  */
 @Getter
 class Fight
@@ -18,17 +17,15 @@ class Fight
 	// The room or boss this fight is a part of, or null if it stands alone.
 	private final String groupName;
 	// Overrides the group name where the room alone is too coarse to compare
-	// against itself, Olm's phases, which differ by which special is running.
-	// Null unless set, which is also how an older history file reads.
+	// against itself - Olm's phases. Null unless set.
 	private String encounterLabel;
-	// Stored the wrong way round on purpose. Deserialisation fills fields
-	// without running their initialisers, so a fight read back from a history
-	// file written before this existed gets false, which has to mean the
-	// ordinary case, that the fight counts.
+	// Stored the wrong way round on purpose: deserialisation fills fields without
+	// running initialisers, so a fight from an older history file gets false,
+	// which has to mean the ordinary case.
 	private final boolean unscored;
-	// The raid this was fought in, and which run of it, so the history can be
-	// read back as raids without a second file to keep in step. Null and 0
-	// outside a raid, which is also what an older history file reads as.
+	// The raid this was fought in and which run of it, so the history reads back
+	// as raids without a second file. Null and 0 outside a raid, which is what an
+	// older history file reads as.
 	private final String raidName;
 	private final int raidId;
 	private final int targetId;
@@ -49,16 +46,14 @@ class Fight
 	private int nulled;
 	private boolean ended;
 	private boolean targetDied;
-	// Whether this fight is the last of its room: the one the boss's loot
-	// dropped on. Not the same as targetDied, which a Hueycoatl sets several
-	// times over on the way to one kill as its parts fall.
+	// Whether this fight is the last of its room: the one the boss's loot dropped
+	// on. Not targetDied, which a Hueycoatl sets several times on the way down.
 	private boolean closedRoom;
 	private long endMillis;
 
-	// The expected figures, sampled once per attack made rather than snapshotted
-	// once for the fight. With one loadout throughout, the mean is just that
-	// loadout's figure; with a spec weapon swapped in partway it is the actual
-	// blend of what was wielded, which no single snapshot could represent.
+	// Sampled once per attack rather than snapshotted once for the fight: with a
+	// spec weapon swapped in partway the mean is the actual blend wielded, which
+	// no single snapshot could represent.
 	private double sumExpectedMaxHit;
 	private int expectedMaxHitSamples;
 	private double sumExpectedAccuracy;
@@ -67,9 +62,8 @@ class Fight
 	// max hit is known, and are counted separately.
 	private int expectedTargetSamples;
 
-	// What the attacks were set up to deal, against what they would have dealt
-	// set up properly. The ratio prices each slip in damage rather than counting
-	// them all alike.
+	// What the attacks were set up to deal, against what they would have set up
+	// properly. The ratio prices each slip in damage rather than counting alike.
 	private int attacksMade;
 	private int attacksPrayed;
 	private int attacksPotted;
@@ -79,17 +73,17 @@ class Fight
 	private double sumActualSetup;
 	private double sumIdealSetup;
 
-	// Ticks the weapon was off cooldown but no attack was made, against the
-	// ticks elapsed since the first attack. Eating is separated out because it
-	// is a choice with a known cost, unlike the rest of the idle time.
+	// Ticks the weapon was off cooldown with no attack made, against those
+	// elapsed since the first attack. Eating is separated out because it is a
+	// choice with a known cost.
 	private int ticksLostEating;
 	private int ticksLostOther;
 	private int combatTicks;
 	private boolean attacking;
 
-	// The tick this target became attackable, and how long it then took to be
-	// attacked. 0 means unknown, not -1: deserialising an older history file
-	// does not run the initialisers, and a gap of 0 cannot occur anyway.
+	// The tick this target became attackable, and how long it took to be
+	// attacked. 0 means unknown, not -1: deserialising an older history file does
+	// not run the initialisers.
 	private transient int engageFromTick;
 	private int ticksToEngage;
 
@@ -110,9 +104,8 @@ class Fight
 
 	/**
 	 * Notes the tick this target became attackable, so the wait before the first
-	 * attack can be timed. Set only where that tick is actually known, which is
-	 * a boss respawning under the player's nose; a fight that starts any other
-	 * way has nothing to measure from and reports no lag.
+	 * attack can be timed. Only where that tick is known, which is a boss
+	 * respawning under the player's nose.
 	 */
 	void setEngageFromTick(int tick)
 	{
@@ -135,9 +128,9 @@ class Fight
 	}
 
 	/**
-	 * Whether this fight's damage counts towards the room it belongs to. An
-	 * unscored fight still spends time and still loses ticks; it just does not
-	 * get to speak for how well the player was hitting.
+	 * Whether this fight's damage counts towards its room. An unscored fight
+	 * still spends time and loses ticks; it just does not speak for how well the
+	 * player was hitting.
 	 */
 	boolean isScored()
 	{
@@ -160,11 +153,9 @@ class Fight
 	}
 
 	/**
-	 * Damage from one hitsplat. {@code landedAttack} says whether this hitsplat
-	 * is the one that makes its attack count as landed, the first of a burst to
-	 * deal anything. A dragon claw special lands four hitsplats and a dark bow
-	 * two, and those are one attack apiece, so only the first to do damage
-	 * credits a hit.
+	 * Damage from one hitsplat. {@code landedAttack} says whether this is the
+	 * one that makes its attack count as landed - the first of a burst to deal
+	 * anything - since a claw special's four splats are one attack.
 	 */
 	void recordDamageDealt(int amount, long now, boolean landedAttack)
 	{
@@ -221,9 +212,8 @@ class Fight
 	}
 
 	/**
-	 * Mean damage per attack made, counting misses as zero. This is the figure
-	 * the expected side is compared against, since it depends only on the
-	 * loadout and the target rather than on how fast the fight was played.
+	 * Mean damage per attack, counting misses as zero. This is what the expected
+	 * side is compared against, depending only on the loadout and the target.
 	 */
 	double averageHit()
 	{
@@ -239,9 +229,8 @@ class Fight
 	}
 
 	/**
-	 * Takes one sample of the expected figures for the attack just resolved.
-	 * A negative accuracy or average hit means the target's stats weren't
-	 * available, and only the max hit is recorded.
+	 * One sample of the expected figures for the attack just resolved. A
+	 * negative accuracy or average hit means no target stats were available.
 	 */
 	void recordExpected(int maxHit, double accuracy, double averageHit)
 	{
@@ -276,10 +265,9 @@ class Fight
 		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
 	}
 
-	// The prayer-dependent half of an attack: whether the goal prayer was up,
-	// and how the attack was set up given that. Kept apart from recordAttackMade
-	// because a projectile's prayer is only known when it resolves, and the flag
-	// and the efficiency pair have to come from the same reading.
+	// The prayer-dependent half of an attack. Apart from recordAttackMade because
+	// a projectile's prayer is only known when it resolves, and the flag and the
+	// efficiency pair have to come from the same reading.
 	void recordAttackResolved(boolean prayed, boolean switched, double actualSetup, double idealSetup)
 	{
 		if (prayed)
@@ -318,9 +306,8 @@ class Fight
 		combatTicks++;
 		attacksMade++;
 		// One attack, one attempt. Counted here rather than where the damage
-		// arrives so that a spec landing four hitsplats is the single attack it
-		// was, and so the measured side is denominated the same way the expected
-		// side is, both are now per attack thrown.
+		// arrives, so a spec landing four hitsplats is the single attack it was and
+		// both sides are denominated per attack thrown.
 		attempts++;
 		if (potted)
 		{
@@ -329,9 +316,9 @@ class Fight
 	}
 
 	/**
-	 * Damage the attacks were set up to deal as a share of what they would have
-	 * dealt with the intended prayer up and stats at full boost. -1 until an
-	 * attack has been made against a target with stats to compare on.
+	 * What the attacks were set up to deal as a share of what they would have
+	 * with the intended prayer and full boost. -1 until an attack has been made
+	 * against a target with stats.
 	 */
 	double efficiency()
 	{
@@ -339,9 +326,8 @@ class Fight
 	}
 
 	/**
-	 * Marks a tick that passed with the weapon off cooldown and no attack made.
-	 * Ignored before the first attack, since waiting to reach a boss isn't
-	 * wasted combat time.
+	 * A tick that passed with the weapon off cooldown and no attack made.
+	 * Ignored before the first attack: walking to a boss is not wasted time.
 	 */
 	void recordTickLost(boolean eating)
 	{
@@ -376,8 +362,8 @@ class Fight
 	}
 
 	/**
-	 * Ticks lost as a share of those elapsed since the first attack, so a long
-	 * fight and a short one compare. -1 before the first attack.
+	 * Ticks lost as a share of those since the first attack, so a long fight and
+	 * a short one compare. -1 before the first attack.
 	 */
 	double ticksLostShare()
 	{

@@ -42,11 +42,9 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return null;
 		}
 
-		// Expected-only asks for the loadout's figures and nothing else, so none
-		// of the widths below apply. Otherwise it is one of three: the whole
-		// trip, the raid so far, or the room being fought. The room is the
-		// default; a single fight is not offered, because a room whose adds are
-		// separate NPCs would blink between them as they died.
+		// Expected-only asks for the loadout's figures and nothing else. Otherwise
+		// it is the whole trip, the raid so far, or the room being fought - the room
+		// by default, since a single fight would blink between a room's adds.
 		final boolean expectedOnly = config.overlayExpectedOnly();
 		final SessionTotals session = expectedOnly || !config.overlaySessionTotals()
 			? null : plugin.getSession();
@@ -83,9 +81,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 		}
 
-		// Top half: what the loadout in hand does against this target. These hold
-		// still through a fight, so they read as the stats of what is being used
-		// rather than as a running score.
+		// Top half: what the loadout does against this target. These hold still
+		// through a fight, so they read as stats rather than as a running score.
 		final double expAcc = plugin.getExpectedAccuracy();
 		if (expAcc >= 0)
 		{
@@ -109,9 +106,9 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return super.render(graphics);
 		}
 
-		// Bottom half: what has actually happened, against what the model said to
-		// expect of it. The expected side is a running total of each attack's own
-		// figure, so swapping weapons mid-fight adds each weapon's own share.
+		// Bottom half: what happened, against what the model expected. The expected
+		// side is a running total of each attack's own figure, so swapping weapons
+		// mid-fight adds each weapon's share.
 		panelComponent.getChildren().add(LineComponent.builder().left("").right("").build());
 
 		final int damage = session != null ? session.getDamageDealt()
@@ -129,11 +126,9 @@ class PvmPerformanceOverlay extends OverlayPanel
 			: raid != null ? raid.getHits() : room.getHits();
 		final double expHits = session != null ? session.getSumExpectedAccuracy()
 			: raid != null ? raid.sumExpectedAccuracy() : room.sumExpectedAccuracy();
-		// Measured hits against what was expected of the attacks thrown, and then
-		// the accuracy those two actually make. The top half of the overlay
-		// already carries the accuracy the LOADOUT should get; this is the one
-		// that happened, which is the comparison worth having and was otherwise
-		// left for the reader to do in their head.
+		// Measured hits against what was expected, then the accuracy those two make.
+		// The top half carries the accuracy the LOADOUT should get; this is the one
+		// that happened.
 		final double realAccuracy = session != null ? session.accuracy()
 			: raid != null ? raid.accuracy() : room.accuracy();
 		panelComponent.getChildren().add(LineComponent.builder()
@@ -202,11 +197,9 @@ class PvmPerformanceOverlay extends OverlayPanel
 			}
 		}
 
-		// Time from a boss respawning to the first attack on it. Its own line
-		// rather than part of the tick loss above: some of this wait is the boss
-		// being unattackable, which no play removes. Over a trip the best one
-		// stands in for that floor, so the gap between it and the average is
-		// what was really lost.
+		// Time from a boss respawning to the first attack on it. Its own line, not
+		// part of the tick loss: some of this wait is the boss being unattackable,
+		// which no play removes. The best over a trip stands in for that floor.
 		final boolean trip = session != null;
 		final int engage = trip ? session.getBestTicksToEngage() : fight.getTicksToEngage();
 		if (engage > 0)

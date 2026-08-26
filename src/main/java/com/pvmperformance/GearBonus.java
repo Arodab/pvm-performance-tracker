@@ -2,10 +2,9 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-// The multipliers contributed by a gear effect. Effects stack
-// multiplicatively.
-// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton,
-// which carries one damage figure; the split into two is new here.
+// The multipliers contributed by a gear effect; effects stack multiplicatively.
+// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, which
+// carries one damage figure; the split into two is new here.
 @Getter
 class GearBonus
 {

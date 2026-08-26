@@ -26,8 +26,8 @@ class GearBonusCalc
 	private static final GearBonus BLACK_MASK_RANGED_MAGIC = GearBonus.symmetric(1.15);
 
 	/**
-	 * Demons whose demonbane effectiveness isn't 100%, scaling how much of a
-	 * demonbane weapon's bonus actually lands. Keyed by monster name.
+	 * Demons whose demonbane effectiveness is not 100%, scaling how much of a
+	 * demonbane weapon's bonus lands. Keyed by monster name.
 	 */
 	private static final Map<String, Double> DEMONBANE_EFFECTIVENESS = new HashMap<>();
 
@@ -72,9 +72,8 @@ class GearBonusCalc
 		final GearBonus demonbane = demonbaneBonus(type, npc, spell, gear);
 
 		total = total.combine(salve);
-		// The dragon hunter crossbow and scorching bow add their damage to the
-		// black mask's rather than multiplying by it, so those pairs are folded
-		// together before joining the rest.
+		// The dragon hunter crossbow and scorching bow ADD their damage to the black
+		// mask's rather than multiplying, so those pairs are folded together first.
 		if (!blackMask.isNone() && stacksAdditivelyWithBlackMask(gear))
 		{
 			total = total.combine(addDamage(blackMask, dragonHunter.combine(demonbane)));
@@ -113,9 +112,8 @@ class GearBonusCalc
 		{
 			return GearBonus.NONE;
 		}
-		// "(e)" and "(ei)" are enhanced; "(i)" and "(ei)" are imbued. Only the
-		// imbued versions do anything at all for ranged and magic, so plain
-		// enhanced is 20% on melee and nothing elsewhere.
+		// "(e)" and "(ei)" are enhanced; "(i)" and "(ei)" are imbued. Only imbued
+		// does anything for ranged and magic, so plain enhanced is melee only.
 		final boolean enhanced = amulet.contains("(e");
 		final boolean imbued = amulet.contains("i)");
 		if (type.isMelee())
@@ -218,9 +216,9 @@ class GearBonusCalc
 		{
 			return GearBonus.NONE;
 		}
-		// The July 2026 update folded the old separate set effect into the
-		// hauberk and plateskirt, so the pieces are now purely additive: 0.5%
-		// for the helm and 1% each for the other two, 2.5% for all three.
+		// The July 2026 update folded the old set effect into the hauberk and
+		// plateskirt, so the pieces are purely additive: 0.5% for the helm, 1% each
+		// for the other two.
 		double bonus = 0.0;
 		if (gear.id(EquipmentInventorySlot.HEAD) == ItemID.INQUISITORS_HELM)
 		{
@@ -282,10 +280,9 @@ class GearBonusCalc
 		}
 		if (type == AttackType.MAGIC && weapon == ItemID.DRAGONHUNTER_WAND)
 		{
-			// 75% and 40%, which is the buffed wand. The reference carries the
-			// figures it launched with, 50% and 20%, and they are wrong: a max
-			// hit read 51 in game where the wiki gives 58. Checked against the
-			// lance and the crossbow at the same time, and both of those match.
+			// 75% and 40%, the buffed wand. The reference carries its launch figures,
+			// 50% and 20%, which read 51 in game where the wiki gives 58. The lance
+			// and the crossbow were checked at the same time and both match.
 			return GearBonus.of(1.75, 1.40);
 		}
 		return GearBonus.NONE;
@@ -323,8 +320,8 @@ class GearBonusCalc
 	}
 
 	/**
-	 * Dharok's set effect: the lower the wearer's hitpoints, the harder they
-	 * hit. Needs the full set, greataxe included.
+	 * Dharok's set effect: the lower the wearer's hitpoints the harder they hit.
+	 * Needs the full set, greataxe included.
 	 */
 	private GearBonus dharoksBonus(AttackType type, Loadout gear)
 	{
@@ -358,10 +355,9 @@ class GearBonusCalc
 	}
 
 	/**
-	 * Demonbane weapons and spells. The listed bonus is scaled by the target's
-	 * demonbane effectiveness, which a handful of demons alter, Duke Sucellus
-	 * resists it at 70% while Yama and the ice demon take more than the full
-	 * amount.
+	 * Demonbane weapons and spells, scaled by the target's demonbane
+	 * effectiveness: Duke Sucellus resists at 70% while Yama and the ice demon
+	 * take more than the full amount.
 	 */
 	private GearBonus demonbaneBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Spell spell, Loadout gear)
 	{
@@ -392,14 +388,10 @@ class GearBonusCalc
 		}
 		else if (type == AttackType.MAGIC && isDemonbaneSpell(spell))
 		{
-			// Three states, not one. Bare, the spell is 20% accuracy and no
-			// damage. Mark of Darkness doubles the accuracy to 40% and brings
-			// the 25% damage with it, and a purging staff doubles both again,
-			// but only while the Mark is up — the staff does nothing on its own.
-			//
-			// Scaled by demonbane effectiveness afterwards like everything else
-			// here, which is what lets a Void Flare double the lot again: 80 and
-			// 50 become 160 and 100.
+			// Three states, not one. Bare, the spell is 20% accuracy and no damage;
+			// Mark of Darkness doubles the accuracy and brings 25% damage with it;
+			// and a purging staff doubles both again, but only while the Mark is up.
+			// Scaled by demonbane effectiveness afterwards like everything else.
 			if (!markOfDarkness)
 			{
 				raw = GearBonus.of(1.2, 1.0);
@@ -440,9 +432,9 @@ class GearBonusCalc
 			1.0 + (raw.getDamage() - 1.0) * effectiveness);
 	}
 
-	// The keris family deals 33% more damage to kalphites and scabarites, with
-	// a 1/51 chance of tripling it. The triple is reachable, so it counts
-	// towards the max hit, but it only averages out to a few percent.
+	// The keris family deals 33% more to kalphites and scabarites, with a 1/51
+	// chance of tripling it. The triple is reachable, so it counts towards the
+	// max hit, but averages out to a few percent.
 	private GearBonus kerisBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
 		if (npc == null || !npc.hasAttribute("kalphite") || !type.isMelee())
@@ -477,10 +469,9 @@ class GearBonusCalc
 	// arithmetic a multiplier cannot express, and both live in CombatCalc.
 
 	/**
-	 * The twisted bow scales off the target's magic, and turns into a penalty
-	 * against low-magic targets. The magic considered is capped at 250, raised
-	 * to 350 inside the Chambers of Xeric; the resulting accuracy caps at 140%
-	 * and the damage at 250%.
+	 * The twisted bow scales off the target's magic and turns into a penalty
+	 * against low-magic targets. Magic is capped at 250, or 350 inside the
+	 * Chambers; accuracy caps at 140% and damage at 250%.
 	 */
 	private GearBonus twistedBowBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
@@ -571,8 +562,8 @@ class GearBonusCalc
 
 	/**
 	 * Leafy monsters are immune to everything but leaf-bladed weapons, broad
-	 * ammo and magic dart, so anything else zeroes the damage rather than
-	 * reducing it. Only the leaf-bladed battleaxe carries a bonus on top.
+	 * ammo and magic dart, so anything else zeroes the damage. Only the
+	 * leaf-bladed battleaxe carries a bonus on top.
 	 */
 	private GearBonus leafyBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Spell spell, Loadout gear)
 	{
@@ -603,10 +594,9 @@ class GearBonusCalc
 	}
 
 	/**
-	 * Vampyrebane weapons. The monster data tags vampyres by tier, "vampyre1"
-	 * through "vampyre3", rather than with a single "vampyre" tag, and the tier
-	 * decides what can hurt them: blisterwood works on all three, the ivandis
-	 * flail only up to tier 2.
+	 * Vampyrebane weapons. The monster data tags vampyres by tier rather than
+	 * with one "vampyre" tag, and the tier decides what can hurt them:
+	 * blisterwood works on all three, the ivandis flail only up to tier 2.
 	 */
 	private GearBonus vampyreBaneBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
@@ -641,9 +631,8 @@ class GearBonusCalc
 
 	/**
 	 * Full ahrim's plus the amulet of the damned gives a 25% chance of 30% extra
-	 * damage, not a flat 30%, which is what the reference models. Since the
-	 * October 2024 update it applies to manual casts as well as autocasts, so
-	 * the style is not checked beyond it being magic.
+	 * damage, not a flat 30% as the reference models. Since October 2024 it
+	 * applies to manual casts too, so the style is not checked beyond magic.
 	 */
 	private GearBonus ahrimsBonus(AttackStyle style, Loadout gear)
 	{
@@ -660,8 +649,8 @@ class GearBonusCalc
 	}
 
 	/**
-	 * Chinchompa accuracy depends on how far the target is: each fuse length is
-	 * at its best in one band and worse in the others.
+	 * Chinchompa accuracy depends on distance: each fuse length is at its best
+	 * in one band and worse in the others.
 	 */
 	private GearBonus chinchompaBonus(AttackStyle style, Loadout gear)
 	{
@@ -706,9 +695,8 @@ class GearBonusCalc
 	}
 
 	/**
-	 * Extra magic damage from Virtus when casting Ancient Magicks: 3% per piece
-	 * on top of the 2% each already carries as a plain stat, so a full set is
-	 * 15% rather than 6%. Nothing outside the ancient spellbook benefits.
+	 * Extra magic damage from Virtus casting Ancient Magicks: 3% per piece on
+	 * top of the 2% each carries as a plain stat, so a full set is 15% not 6%.
 	 */
 	double virtusAncientDamagePercent(Loadout gear, Spell spell)
 	{
@@ -738,9 +726,8 @@ class GearBonusCalc
 	}
 
 	/**
-	 * Tumeken's Shadow multiplies the magic accuracy and magic damage of the
-	 * rest of the loadout, by 3 normally and by 4 inside the Tombs of Amascut.
-	 * Returns 1 when the shadow isn't equipped.
+	 * Tumeken's Shadow multiplies the magic accuracy and damage of the rest of
+	 * the loadout, by 3 normally and 4 inside the Tombs. 1 when not equipped.
 	 */
 	int shadowMultiplier(Loadout gear)
 	{
@@ -772,9 +759,7 @@ class GearBonusCalc
 		// Nothing to latch: the party status answers directly.
 	}
 
-	/**
-	 * Whether Mark of Darkness is up, which no varbit says.
-	 */
+	/** Whether Mark of Darkness is up, which no varbit says. */
 	void setMarkOfDarkness(boolean up)
 	{
 		markOfDarkness = up;

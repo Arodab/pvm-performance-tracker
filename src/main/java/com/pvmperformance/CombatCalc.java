@@ -84,10 +84,9 @@ class CombatCalc
 	private int manualCastsPending;
 	// Whether the attack currently being described was proven by a hitsplat.
 	private boolean meleeProvenAttack;
-	// Which setup the level and prayer reads should answer for. REAL is what the
-	// player had; IDEAL is the intended prayer at full boost; PRAYER_HELD is the
-	// intended prayer at the real boost, used when a prayer was flicked and so
-	// applied to the attack even though it reads as off by the tick's end.
+	// Which setup the level and prayer reads answer for. REAL is what the player
+	// had; IDEAL is the intended prayer at full boost; PRAYER_HELD is the
+	// intended prayer at the real boost, for a prayer flicked within the tick.
 	private static final int REAL = 0;
 	private static final int IDEAL = 1;
 	private static final int PRAYER_HELD = 2;
@@ -95,9 +94,8 @@ class CombatCalc
 	// The index of the NPC the figures are being computed against, so the
 	// defence read can account for what has been drained off it.
 	private int targetIndex = -1;
-	// The enemy a miss has armed the confliction gauntlets against, or -1. Held
-	// per enemy because the effect is spent on the next attack against that
-	// same one, and dropped by switching target.
+	// The enemy a miss has armed the gauntlets against, or -1. Per enemy because
+	// the effect is spent on the next attack against that same one.
 	private final ConflictionCharge charge = new ConflictionCharge();
 	private BlowpipeDart cachedDart;
 	private ItemEquipmentStats cachedDartStats;
@@ -125,9 +123,8 @@ class CombatCalc
 	}
 
 	// Held for the tick. Equipment, varbits and the combat option cannot change
-	// within one, and a single attack tick asks for the gear multipliers a dozen
-	// times over. The ideal figures share it safely: swapping in the intended
-	// prayer and a full boost changes levels, not gear.
+	// within one, and an attack tick asks for the gear multipliers a dozen times.
+	// The ideal figures share it safely: they change levels, not gear.
 	private int memoTick = Integer.MIN_VALUE;
 	private AttackStyle memoStyle;
 	private String memoWeaponName;
@@ -141,16 +138,14 @@ class CombatCalc
 	private int memoGearNpc = Integer.MIN_VALUE;
 	private GearBonus memoGear;
 	private Loadout memoLoadout;
-	// The gear search's answer. Outlives the tick memo on purpose — the search
-	// is the one expensive thing in this class, and none of what it depends on
-	// is a tick. Nor is it the worn items: the answer names item ids, and a
-	// switch only moves one between the hand and the bag, so the same answer
+	// The gear search's answer, which outlives the tick memo: the answer names
+	// item ids, and a switch only moves one between the hand and the bag, so it
 	// keeps describing what the player should be wearing while they wear it.
 	private int memoBestGearNpc = Integer.MIN_VALUE;
 	private Loadout memoBestGear;
-	// What the answer was worked out under. The weapon because it is pinned
-	// rather than judged, the style because which attack bonus counts turns on
-	// it, and the signature because the search can only offer what is there.
+	// What the answer was worked out under: the weapon because it is pinned, the
+	// style because which attack bonus counts turns on it, and the signature
+	// because the search can only offer what is there.
 	private int memoBestGearWeapon = Integer.MIN_VALUE;
 	private AttackStyle memoBestGearStyle;
 	private long memoBestGearAvailable = Long.MIN_VALUE;
@@ -159,14 +154,12 @@ class CombatCalc
 	private long availableSignature;
 	private boolean availableStale = true;
 
-	/** Drops everything held once the tick it was worked out for has passed. */
-	// Dropped when the worn items change as well as when the tick does. A tick
-	// was assumed to be the smallest unit anything could change in, which is
-	// true of varbits and the combat option but not of equipment: a weapon
-	// swapped part way through a tick left every figure already worked out that
-	// tick answering for the weapon before it, so the overlay showed one
-	// weapon's max hit beside the other's accuracy for a tick after every swap.
-	// The gear search's answer is not dropped here — see bestGear.
+	/**
+	 * Drops everything held once its tick has passed, and when the worn items
+	 * change: a weapon swapped part way through a tick left every figure already
+	 * worked out answering for the weapon before it. The gear search's answer is
+	 * NOT dropped here - see bestGear.
+	 */
 	void invalidateGear()
 	{
 		memoTick = Integer.MIN_VALUE;
@@ -174,9 +167,9 @@ class CombatCalc
 	}
 
 	/**
-	 * Something moved in or out of the inventory. Only a note that the count of
-	 * what could be worn is worth taking again — the count itself waits until
-	 * the search asks for it, because this fires on every bite and every sip.
+	 * Something moved in the inventory. Only a note that the count is worth
+	 * taking again - it waits until the search asks, because this fires on every
+	 * bite and sip.
 	 */
 	void invalidateInventory()
 	{
@@ -184,10 +177,9 @@ class CombatCalc
 	}
 
 	/**
-	 * How many of what the player could put on, worn and carried counted
-	 * together. A switch leaves this alone, which is the point: an item on the
-	 * arm is an item no longer in the bag, and the search's answer holds until
-	 * the player actually gains or loses one.
+	 * How many of what the player could put on, worn and carried together. A
+	 * switch leaves it alone, which is the point: an item on the arm is one no
+	 * longer in the bag.
 	 */
 	private long availableEquippableSignature()
 	{
@@ -196,9 +188,8 @@ class CombatCalc
 			return availableSignature;
 		}
 		availableStale = false;
-		// Order-independent, so items shuffled between slots and between the two
-		// containers are not a change. Cheap next to the search it avoids: one
-		// stats lookup an item against hundreds of loadouts evaluated.
+		// Order-independent, so items shuffled between slots or containers are not
+		// a change. Cheap next to the search it avoids.
 		long signature = 0;
 		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
 		{
@@ -243,9 +234,9 @@ class CombatCalc
 		Arrays.fill(memoBaseMaxHitSet, false);
 	}
 
-	// The gear every figure here is worked out for. One object rather than a
-	// container read per question, so that asking what a different loadout
-	// would do is the same calculation with a different argument.
+	// The gear every figure is worked out for. One object rather than a container
+	// read per question, so asking what another loadout would do is the same
+	// calculation with a different argument.
 	private Loadout gear()
 	{
 		expireMemo();
@@ -257,9 +248,8 @@ class CombatCalc
 	}
 
 	// Points every figure at a different loadout. Everything derived from the
-	// gear has to go with it, or the swap is half applied: the bonuses and the
-	// max hit are memoised per tick and would otherwise still describe the
-	// loadout that was in place when they were first asked for.
+	// gear goes with it, or the swap is half applied - the bonuses and the max
+	// hit are memoised per tick.
 	private void useLoadout(Loadout gear)
 	{
 		memoLoadout = gear;
@@ -337,9 +327,8 @@ class CombatCalc
 	}
 
 	/**
-	 * Held per mode rather than once. The levels and prayers behind it are
-	 * substituted while working out what an attack should have been, so the real
-	 * and the intended figures are genuinely different answers.
+	 * Held per mode rather than once: the levels and prayers behind it are
+	 * substituted while working out what an attack should have been.
 	 */
 	private int baseMaxHit()
 	{
@@ -364,10 +353,7 @@ class CombatCalc
 		return memoGear;
 	}
 
-	/**
-	 * Expected hit chance (0..1) vs the NPC, or -1 when there is no data or the
-	 * style isn't modelled yet (magic).
-	 */
+	/** Expected hit chance (0..1), or -1 with no data. */
 	double hitChance(int npcId)
 	{
 		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
@@ -407,11 +393,10 @@ class CombatCalc
 			return -1;
 		}
 		final int cap = damageCap(npcId);
-		// A scythe swing is several hits, each rolling its own accuracy and its
-		// own damage, so what one attack is expected to deal is their sum. Each
-		// hit's max is half the one before ROUNDED DOWN, which is why this walks
-		// them rather than multiplying the first by 1.75: a 51 max is 51, 25, 12
-		// and those come to 88, not 89.25.
+		// A scythe swing is several hits, each rolling its own accuracy and damage,
+		// so one attack is expected to deal their sum. Each max is half the one
+		// before ROUNDED DOWN, which is why this walks them rather than multiplying
+		// by 1.75: a 51 max is 51, 25, 12, which is 88 and not 89.25.
 		double ordinary = 0;
 		double max = averageMax;
 		for (int hit = 0; hit < hitsPerAttack(npcId); hit++)
@@ -447,8 +432,7 @@ class CombatCalc
 
 	/**
 	 * The enchanted bolt loaded for this attack, or null when none applies -
-	 * the style isn't ranged, the weapon isn't a crossbow, or onyx is loaded
-	 * against undead, which have no life to leech.
+	 * not ranged, not a crossbow, or onyx against undead.
 	 */
 	private EnchantedBolt loadedBolt(int npcId)
 	{
@@ -482,8 +466,8 @@ class CombatCalc
 	}
 
 	/**
-	 * The target's health right now, which the ruby bolt effect is a share of.
-	 * Falls back to its full health when no health bar is showing.
+	 * The target's health now, which the ruby bolt effect is a share of. Falls
+	 * back to full health when no health bar is showing.
 	 */
 	private int targetCurrentHp(int npcId)
 	{
@@ -510,14 +494,13 @@ class CombatCalc
 
 	/**
 	 * Defence level as the raid leaves it. The monster data carries raid level 0
-	 * stats, so unscaled figures read too high, and wrong in the flattering
-	 * direction: the harder the invocations, the better the player looks.
+	 * stats, so unscaled figures read too high - and in the flattering
+	 * direction, the harder the invocations the better the player looks.
 	 */
 	private int defenceLevel(MonsterStatsProvider.MonsterStats npc)
 	{
-		// What the target has left, not what it started with. Warhammers and
-		// godswords take real levels off it, and a model that keeps reading the
-		// book figure reports the player as less accurate than they were.
+		// What the target has left, not what it started with: warhammers and
+		// godswords take real levels off it.
 		return Math.max(0, raidScaled(npc) - drain.drainedFrom(targetIndex));
 	}
 
@@ -527,10 +510,8 @@ class CombatCalc
 		this.targetIndex = npcIndex;
 	}
 
-	// ToA raid level on a monster stat: every five levels add 2%, additively, so
-	// 300 is +120% and 500 is +200%. Defence level only. Magic level does not
-	// scale, nor do defence bonuses, which are armour rather than levels.
-	// Chambers scaling is in RaidScaling.
+	// ToA: 2% per five raid levels, additively. Defence level only - magic does
+	// not scale, nor do defence bonuses. Chambers scaling is in RaidScaling.
 	private int raidScaled(MonsterStatsProvider.MonsterStats npc)
 	{
 		return RaidScaling.defence(client, npc.getDefenceLevel(), npc.getName(), partyHitpoints.highest());
@@ -548,10 +529,9 @@ class CombatCalc
 	}
 
 	/**
-	 * Magic rolls against the target's magic level, not its defence level, and
-	 * starts from +9 rather than the +8 melee and ranged use. The 30/70 blend is
-	 * the player rule; a monster's magic defence is its Magic stat and its magic
-	 * defence bonus alone (wiki: Magic).
+	 * Magic rolls against the target's magic level, not its defence, and starts
+	 * from +9 rather than +8. The 30/70 blend is the player rule; a monster's
+	 * magic defence is its Magic stat and its magic defence bonus (wiki).
 	 */
 	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear,
 		int npcId)
@@ -567,15 +547,10 @@ class CombatCalc
 			return hitChanceFrom(attRoll, defRoll);
 		}
 		// The real chance for the attack about to be thrown, not the long-run
-		// average: the gauntlets roll twice after a miss, so every attack is at
-		// one of exactly two chances and which one is known. The steady state
-		// was right in aggregate and wrong for every individual attack, which is
-		// what expected damage is summed from.
-		//
-		// Armed against an index rather than a flag because the wiki's wording
-		// is "against the same enemy", and both sides have to name a real one:
-		// no fight is -1 and unarmed is -1, and comparing them bare made the two
-		// nothings match.
+		// average: the gauntlets roll twice after a miss, so every attack is at one
+		// of two known chances. Armed against an index rather than a flag, and both
+		// sides must name a real enemy - no fight is -1 and unarmed is -1, and
+		// comparing them bare made the two nothings match.
 		final boolean armed = conflictionArmedAgainst(charge.armedIndex(), targetIndex);
 		return armed
 			? 1.0 - sharedDefenceMissChance(attRoll, defRoll)
@@ -583,10 +558,9 @@ class CombatCalc
 	}
 
 	/**
-	 * Notes how a magic attack of mine ended, which is what says whether the
-	 * next one against that enemy rolls twice. A miss arms the gauntlets and a
-	 * hit spends them; the effect does not stack across consecutive misses, so
-	 * arming twice is the same as arming once.
+	 * How a magic attack of mine ended, which says whether the next against
+	 * that enemy rolls twice. A miss arms, a hit spends, and misses do not
+	 * stack.
 	 */
 	void noteMagicResolved(int npcIndex, boolean missed)
 	{
@@ -594,9 +568,8 @@ class CombatCalc
 	}
 
 	/**
-	 * Which enemy the doubled roll is being held against, as a thing on its own
-	 * so the rules can be tested without a Client. There are only two, and both
-	 * have been wrong at some point.
+	 * Which enemy the doubled roll is held against, apart so the rules can be
+	 * tested without a Client. There are two, and both have been wrong once.
 	 */
 	static final class ConflictionCharge
 	{
@@ -616,9 +589,8 @@ class CombatCalc
 			}
 			else if (missed)
 			{
-				// The last miss is what it is held against, and a second miss
-				// on the same enemy is the same charge: the effect does not
-				// stack.
+				// The last miss is what it is held against; a second on the same
+				// enemy is the same charge, since the effect does not stack.
 				armedIndex = npcIndex;
 			}
 			else if (armedIndex == npcIndex)
@@ -630,10 +602,9 @@ class CombatCalc
 	}
 
 	/**
-	 * Whether the doubled accuracy roll applies to the attack about to be
-	 * thrown: the gauntlets were armed by a miss, and the attack is against the
-	 * enemy that miss was against. The wiki's wording is "against the same
-	 * enemy", so switching target drops it.
+	 * Whether the doubled roll applies to the attack about to be thrown: armed
+	 * by a miss, and against the enemy that miss was against. The wiki says
+	 * "against the same enemy", so switching target drops it.
 	 */
 	static boolean conflictionArmedAgainst(int armedIndex, int targetIndex)
 	{
@@ -641,19 +612,15 @@ class CombatCalc
 	}
 
 	/**
-	 * Whether the gauntlets can work at all: they are worn, and the weapon is
-	 * not two-handed. A two-hander disables the effect outright, which is a
-	 * property of the item and not of what is being fought.
+	 * Whether the gauntlets can work at all: worn, and no two-hander, which
+	 * disables the effect outright.
 	 */
 	static boolean conflictionGauntletsWork(int glovesItemId, boolean twoHandedWeapon)
 	{
 		return glovesItemId == ItemID.CONFLICTION_GAUNTLETS && !twoHandedWeapon;
 	}
 
-	/**
-	 * Forgets any charge the gauntlets were holding, because the fight it
-	 * belonged to is over.
-	 */
+	/** Forgets any charge held, because the fight it belonged to is over. */
 	void forgetConflictionCharge()
 	{
 		charge.resolved(-1, false);
@@ -665,10 +632,7 @@ class CombatCalc
 		return hasConflictionGauntlets() && attackStyle().getAttackType() == AttackType.MAGIC;
 	}
 
-	/**
-	 * Whether the confliction gauntlets are worn and able to work: their effect
-	 * is disabled entirely by a two-handed weapon.
-	 */
+	// Worn, and not disabled by a two-hander.
 	private boolean hasConflictionGauntlets()
 	{
 		final ItemEquipmentStats weapon = weaponStats();
@@ -686,10 +650,9 @@ class CombatCalc
 	}
 
 	/**
-	 * The attack roll, floored at zero. A bonus below -64 turns the bonus+64 term
-	 * negative, and a negative roll comes back from hitChanceFrom as a negative
-	 * chance, which every caller reads as "no figure" rather than the near zero
-	 * it is. Casting from melee gear reaches it easily, around -70 magic attack.
+	 * The attack roll, floored at zero: a bonus below -64 turns the term
+	 * negative, and hitChanceFrom then returns a negative chance, which callers
+	 * read as "no figure". Casting from melee gear reaches it easily.
 	 */
 	static int attackRoll(int effectiveLevel, int equipmentBonus, double gearMultiplier)
 	{
@@ -791,20 +754,17 @@ class CombatCalc
 	}
 
 	// The selected combat option: the weapon's category paired with the option
-	// index. Never null; unknown categories fall back to fallbackStyle().
-	// Category from the name on the combat tab, falling back to the varbit id.
-	// The name wins because the ids have drifted: powered staff reports 24,
-	// which this table had as banner, so tridents resolved as melee weapons.
+	// index, never null. Category from the name on the combat tab, falling back
+	// to the varbit id - the name wins because the ids have drifted, and a
+	// powered staff reporting 24 made tridents resolve as melee weapons.
 	private WeaponCategory weaponCategory()
 	{
 		final String heading = combatTabCategory();
 		final int weapon = weaponItemId();
-		// The combat tab lags the equipment by a tick, so on the tick a weapon is
-		// swapped the heading still names the old one, and pairing it with the
-		// new weapon's bonuses gives a figure belonging to neither - accuracy
-		// halved for a tick in the middle of every switch. A heading that has
-		// not changed while the weapon has is stale rather than wrong, and is
-		// dropped for the weapon's own dominant attack bonus.
+		// The combat tab lags the equipment by a tick, so on a swap the heading
+		// still names the old weapon, and pairing it with the new one's bonuses
+		// halved accuracy for a tick. A heading that has not changed while the
+		// weapon has is stale, and is dropped for the weapon's own attack bonus.
 		final boolean stale = weapon != headingWeapon && heading != null && heading.equals(headingText);
 		if (!stale)
 		{
@@ -820,10 +780,9 @@ class CombatCalc
 			: WeaponCategory.forVarbit(client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY));
 	}
 
-	// The combat tab's category heading, e.g. "Category: Whip", or null.
-	// The text is null-checked as well as the widget: an interface can exist
-	// before its text is set, and Text.removeTags throws on null.
-	// For the trace only: what the category resolved to this tick.
+	// The combat tab's category heading, e.g. "Category: Whip", or null. The text
+	// is null-checked as well as the widget: an interface can exist before its
+	// text is set, and Text.removeTags throws on null.
 	String categoryName()
 	{
 		final WeaponCategory category = weaponCategory();
@@ -847,9 +806,8 @@ class CombatCalc
 	}
 
 	/**
-	 * Notes that the player clicked a spell onto an NPC. A manual cast overrides
-	 * whatever the weapon would otherwise do, so a trident held while barraging
-	 * reports the barrage rather than the trident's own attack.
+	 * Notes a spell clicked onto an NPC. A manual cast overrides the weapon, so
+	 * a trident held while barraging reports the barrage.
 	 */
 	void recordManualCast(Spell spell)
 	{
@@ -862,16 +820,14 @@ class CombatCalc
 		manualCastSpell = spell;
 		manualCastTick = client.getTickCount();
 		// Capped: spamming the spell icon queues clicks the game will never turn
-		// into casts, and each one would otherwise have to be spent before the
-		// weapon could be read again.
+		// into casts, and each would have to be spent before the weapon is read.
 		manualCastsPending = Math.min(MAX_PENDING_CASTS, manualCastsPending + 1);
 	}
 
 	/**
-	 * The manually cast spell, if one was cast recently enough to still be what
-	 * the player is doing. Casting takes 5 ticks, so a window slightly wider than
-	 * that stays lit while the player keeps clicking and lapses back to the
-	 * weapon once they stop.
+	 * The manually cast spell, if cast recently enough to still be what the
+	 * player is doing. Casting takes 5 ticks, so the window is slightly wider
+	 * and lapses back to the weapon once they stop clicking.
 	 */
 	private Spell activeManualCast()
 	{
@@ -894,9 +850,9 @@ class CombatCalc
 		memoStyle = null; // the style turns on this
 	}
 
-	// Spends the manual cast once a cast has actually gone out under it. The
-	// timer alone cannot end it: it has to outlast the click-to-cast delay, and
-	// a window that wide goes on claiming the weapon's own attacks afterwards.
+	// Spends the manual cast once one has gone out under it. The timer alone
+	// cannot end it: it has to outlast the click-to-cast delay, and a window that
+	// wide goes on claiming the weapon's own attacks afterwards.
 	void noteAttackThrown()
 	{
 		if (meleeProvenAttack || activeManualCast() == null)
@@ -914,13 +870,6 @@ class CombatCalc
 	}
 
 	/** The spell being cast, manual taking priority over autocast. */
-	/**
-	 * Whether the attack in hand lands without a projectile, which is the
-	 * ancient area spells. Their attacks cannot be booked from a projectile
-	 * because the client never shows one, so the hitsplat has to serve.
-	 */
-	// Names the spell in the "cast UNKNOWN ANIM" line, which is how the cast
-	// animation list gets extended. Kept for that.
 	String activeSpellName()
 	{
 		final Spell spell = activeSpell();
@@ -944,15 +893,15 @@ class CombatCalc
 	{
 		final int varp = client.getVarpValue(VarPlayerID.COM_MODE);
 		// A spell clicked onto an NPC is a magic attack whatever is held, so it is
-		// settled before the weapon is consulted. The combat option does not
-		// enter it: a manual cast is accurate whatever the weapon is set to.
+		// settled before the weapon. A manual cast is accurate whatever the combat
+		// option says.
 		if (!meleeProvenAttack && activeManualCast() != null)
 		{
 			return new AttackStyle(varp, "Manual cast", AttackType.MAGIC, CombatStyle.ACCURATE);
 		}
-		// A staff recognised by name attacks with magic, whatever the category
-		// table claims. The table's ids have gone stale against the live game,
-		// and trusting it sent tridents down the melee path entirely.
+		// A staff recognised by name attacks with magic whatever the category table
+		// claims - its ids have gone stale, and trusting it sent tridents down the
+		// melee path.
 		if (poweredStaffMaxHit() > 0)
 		{
 			return new AttackStyle(varp, "Powered staff", AttackType.MAGIC,
@@ -971,9 +920,8 @@ class CombatCalc
 	}
 
 	/**
-	 * Best guess for a weapon category we don't have a table for: the attack
-	 * type comes from the weapon's dominant attack bonus and the combat style
-	 * from the layout the great majority of categories share.
+	 * Best guess for a category with no table entry: the attack type from the
+	 * weapon's dominant attack bonus, the style from the layout most share.
 	 */
 	private AttackStyle fallbackStyle(int varp)
 	{
@@ -1023,8 +971,8 @@ class CombatCalc
 	}
 
 	/**
-	 * The dart loaded in the blowpipe, or null when a blowpipe isn't held. The
-	 * game doesn't say which dart it holds, so this comes from the config.
+	 * The dart loaded in the blowpipe, or null when one is not held. The game
+	 * does not say which, so this comes from the config.
 	 */
 	private ItemEquipmentStats blowpipeDart()
 	{
@@ -1093,9 +1041,8 @@ class CombatCalc
 		}
 		if (type == AttackType.MAGIC && usingWeaponsOwnAttack())
 		{
-			// The shadow multiplies the magic accuracy of everything else worn,
-			// on the same terms as the damage: its built-in spell only. A cast
-			// made while holding it is an ordinary cast.
+			// The shadow multiplies the magic accuracy of everything else worn on the
+			// same terms as the damage: its own spell only.
 			total *= gearBonuses.shadowMultiplier(gear);
 		}
 		if (type == AttackType.RANGED)
@@ -1114,10 +1061,7 @@ class CombatCalc
 		return equipmentStats(gear().id(EquipmentInventorySlot.WEAPON));
 	}
 
-	/**
-	 * How many ticks the current weapon takes between attacks, which is the
-	 * cadence the tick-loss count measures against.
-	 */
+	/** Ticks between attacks, which is the cadence tick loss measures against. */
 	int attackSpeedTicks()
 	{
 		final ItemEquipmentStats w = weaponStats();
@@ -1134,17 +1078,15 @@ class CombatCalc
 
 	/**
 	 * Casting runs on its own clock: the weapon's speed applies only to powered
-	 * staves and salamanders, which fire their own attack rather than a spell.
-	 * Everything else casts in 5 ticks, or 4 for the harmonised staff on the
-	 * standard spellbook.
+	 * staves and salamanders. Everything else casts in 5 ticks, or 4 for the
+	 * harmonised staff on the standard spellbook.
 	 */
 	private int castSpeedTicks(int weaponTicks)
 	{
 		final WeaponCategory category = weaponCategory();
-		// A manual cast runs on the spell's clock even from a powered staff, so
-		// a trident being barraged off is 5 ticks, not the trident's own speed.
-		// Recognising the staff by name matters here too: going by category
-		// alone put an unmapped one on the 5 tick spell clock.
+		// A manual cast runs on the spell's clock even from a powered staff, so a
+		// trident being barraged off is 5 ticks. Recognising the staff by name
+		// matters here too: by category alone an unmapped one got the spell clock.
 		final boolean ownAttack = poweredStaffMaxHit() > 0
 			|| category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER;
 		if (activeManualCast() == null && ownAttack)
@@ -1161,10 +1103,9 @@ class CombatCalc
 	}
 
 	/**
-	 * Max hit for the current loadout against this target, or 0 if unavailable.
-	 * The target matters because salve, dragon hunter, demonbane and the rest
-	 * only apply against the monsters they are meant for; pass -1 for the figure
-	 * before any target-dependent gear effects.
+	 * Max hit against this target, or 0 if unavailable. The target matters
+	 * because salve, dragon hunter, demonbane and the rest only apply against
+	 * what they are meant for; pass -1 for the figure before those.
 	 */
 	int maxHit(int npcId)
 	{
@@ -1172,10 +1113,9 @@ class CombatCalc
 		// style is the wrong one for that hand.
 		final int first = (int) (unmitigatedMaxHit(npcId) * mitigation(npcId));
 		final int cap = damageCap(npcId);
-		// The most ONE ATTACK can deal, which for a scythe is all of its hits
-		// together. A 51 max against a 3x3 is 51 + 25 + 12, not 51: the halving
-		// rounds down at every step, so the parts do not come to twice the
-		// first. The cap is per hit, being a limit on what one blow may land.
+		// The most ONE ATTACK can deal, which for a scythe is all its hits: a 51
+		// max against a 3x3 is 51 + 25 + 12, since the halving rounds down at every
+		// step. The cap is per hit, being a limit on what one blow may land.
 		int total = 0;
 		int max = first;
 		for (int hit = 0; hit < hitsPerAttack(npcId); hit++)
@@ -1187,13 +1127,9 @@ class CombatCalc
 	}
 
 	/**
-	 * The max hit of the hit after this one in a scythe swing: half, rounded
-	 * down. Wiki (Scythe of Vitur): "each hit will deal 50% less damage,
-	 * (rounded down), than the preceding hit", with a base of 47 giving 47-23-11
-	 * and a base of 48 giving 48-24-12.
+	 * The max of the hit after this one in a scythe swing: half, rounded down.
+	 * Wiki: base 47 gives 47-23-11, base 48 gives 48-24-12.
 	 */
-	// The parts behind a scythe's total, which is otherwise one number with
-	// nothing behind it — the same reason the magic max hit is broken out.
 	private String scytheBreakdown(int npcId)
 	{
 		final int hits = hitsPerAttack(npcId);
@@ -1218,11 +1154,9 @@ class CombatCalc
 	}
 
 	/**
-	 * The chance that an attack lands at all, which is not the same as its
-	 * accuracy once one attack is several hits. A scythe swing against a 3x3
-	 * rolls three times and the measured side counts the swing once, however
-	 * many of them connect, so the two only compare if this is the chance that
-	 * at least one did.
+	 * The chance an attack lands at all, which is not its accuracy once one
+	 * attack is several hits: the measured side counts the swing once however
+	 * many connect, so this has to be the chance that any did.
 	 */
 	double landChance(int npcId)
 	{
@@ -1240,10 +1174,9 @@ class CombatCalc
 	}
 
 	/**
-	 * How many times one attack lands on this target. A scythe swing hits twice
-	 * against a 2x2 and three times against anything 3x3 or larger, each hit
-	 * rolling its own accuracy and strength. Only hits on the SAME target: the
-	 * arc into whatever stands beside it is the AoE gap, not this.
+	 * How many times one attack lands here: a scythe hits twice against a 2x2
+	 * and three times against 3x3 or larger, each rolling its own accuracy and
+	 * strength. Only the SAME target - the arc beside it is the AoE gap.
 	 */
 	int hitsPerAttack(int npcId)
 	{
@@ -1264,9 +1197,7 @@ class CombatCalc
 		return isScythe(weaponName());
 	}
 
-	/**
-	 * Whether this weapon name is a scythe of vitur, in any of its forms.
-	 */
+	/** Whether this weapon name is a scythe of vitur, in any of its forms. */
 	static boolean isScythe(String weaponName)
 	{
 		return weaponName != null && weaponName.toLowerCase(Locale.ROOT).contains("scythe of vitur");
@@ -1291,10 +1222,9 @@ class CombatCalc
 	}
 
 	/**
-	 * The average of a hit rolled uniformly from nought to {@code trueMax} and
-	 * then capped. Static and separate because the arithmetic is the whole point
-	 * of the distinction: every roll above the cap collapses onto it, so the
-	 * average sits far closer to the cap than to half of it.
+	 * The average of a roll from nought to {@code trueMax}, then capped. Every
+	 * roll above the cap collapses onto it, so the average sits far closer to
+	 * the cap than to half of it.
 	 */
 	static double cappedAverage(int trueMax, int cap)
 	{
@@ -1326,9 +1256,9 @@ class CombatCalc
 	}
 
 	/**
-	 * The top of the fang's narrowed roll: the true max less the 15% minimum it
-	 * raises the bottom to. Split out from the equipment reads so the off-by-one
-	 * against a plain 0.85 multiplier stays under test without a {@code Client}.
+	 * The top of the fang's narrowed roll: the true max less the 15% it raises
+	 * the bottom to. Split out so the off-by-one against a plain 0.85 stays
+	 * under test without a Client.
 	 */
 	static int fangMaxHit(int trueMaxHit)
 	{
@@ -1358,9 +1288,8 @@ class CombatCalc
 	}
 
 	/**
-	 * The colossal blade adds 2 damage per tile of the target's size, up to 5
-	 * tiles. This is a flat addition rather than a multiplier, so it lands after
-	 * the gear multipliers.
+	 * The colossal blade adds 2 damage per tile of the target's size, up to 5.
+	 * A flat addition, so it lands after the gear multipliers.
 	 */
 	private int colossalBladeBonus(int npcId)
 	{
@@ -1392,9 +1321,8 @@ class CombatCalc
 		final int weapon = weaponItemId();
 		if (isFangEquipped())
 		{
-			// Eviscerate rolls to the true max instead of the narrowed 85%, so it
-			// reaches exactly the figure the passive gives up. Its other half is a
-			// 50% accuracy bonus, which is not damage and so is not counted here.
+			// Eviscerate rolls to the true max instead of the narrowed 85%. Its
+			// other half is accuracy, which is not damage and not counted here.
 			return unnarrowedMaxHit(npcId);
 		}
 		if (weapon == ItemID.ABYSSAL_BLUDGEON)
@@ -1455,9 +1383,8 @@ class CombatCalc
 		return (effectiveStrength * (strengthBonus + 64) + 320) / 640;
 	}
 
-	// Magic max hit: the autocast spell's base hit for a casting staff, or the
-	// staff's own attack for a powered staff, either way scaled by the magic
-	// damage bonus of the worn gear.
+	// Magic max hit: the autocast spell's base hit, or the staff's own attack
+	// for a powered staff, scaled by the worn magic damage bonus.
 	private int magicMaxHit()
 	{
 		// A manual cast is what the player is actually doing, whatever is held,
@@ -1532,8 +1459,7 @@ class CombatCalc
 	/**
 	 * Whether the magic attack in hand is the weapon's own rather than a spell.
 	 * A manual cast is a cast whatever is held, and a powered staff cannot
-	 * autocast, so anything else with a staff recognised by name is its own
-	 * attack. This is what the shadow's passive is gated on.
+	 * autocast. This is what the shadow's passive is gated on.
 	 */
 	private boolean usingWeaponsOwnAttack()
 	{
@@ -1580,11 +1506,9 @@ class CombatCalc
 	}
 
 	/**
-	 * A short summary of how the current loadout was resolved, for the ::loadout
-	 * command. Written for a player pasting it into a bug report, so it says
-	 * which weapon and target were read and what came out. The cache internals
-	 * it used to print meant nothing to anyone but me, and only while the weapon
-	 * category table was being fixed.
+	 * A short summary of how the loadout was resolved, for ::loadout. Written
+	 * for a player pasting it into a bug report, so it says which weapon and
+	 * target were read and what came out.
 	 */
 	List<String> describeLoadout(int npcId)
 	{
@@ -1610,9 +1534,8 @@ class CombatCalc
 			? String.format("Target: npc %d, no stats for it", npcId)
 			: String.format("Target: %s (npc %d), defence %d (base %d), magic %d, toa raid level %d",
 				npc.getName(), npcId, defenceLevel(npc), npc.getDefenceLevel(), npc.getMagicLevel(),
-				// The level actually applied, not the raw varbit. That is not
-				// cleared on leaving the Tombs, and printing it beside an
-				// unscaled defence reads as though the scaling were still on.
+				// The level actually applied, not the raw varbit, which is not cleared
+				// on leaving the Tombs.
 				gearBonuses.tombsRaidLevel()));
 
 		final double accuracy = hitChance(npcId);
@@ -1622,10 +1545,8 @@ class CombatCalc
 				maxHit(npcId), scytheBreakdown(npcId), accuracy * 100,
 				landChance(npcId) * 100, averageHit(npcId)));
 
-		// Where a magic max hit came from. Every part of it is a separate rule
-		// and a wrong figure is otherwise one number with nothing behind it —
-		// the wand's stale multiplier and the shadow's misapplied passive both
-		// showed up only as "the max hit is wrong".
+		// Where a magic max hit came from. Every part is a separate rule, and a
+		// wrong figure is otherwise one number with nothing behind it.
 		if (style.getAttackType() == AttackType.MAGIC)
 		{
 			final Loadout gear = gear();
@@ -1650,11 +1571,9 @@ class CombatCalc
 				gearBonuses.hasMarkOfDarkness() ? "UP" : "down"));
 		}
 
-		// Which prayers are actually up, by name. "prayed 0/n" with augury held
-		// all fight turned out to be Mystic Lore being the prayer really on,
-		// and nothing printed enough to see that: the figures showed a 1.10
-		// accuracy multiplier and 1.0% magic damage, which name the prayer only
-		// if you already know the table.
+		// Which prayers are actually up, by name. "prayed 0/n" with augury held all
+		// fight turned out to be Mystic Lore really being on, and the figures named
+		// the prayer only to someone who knew the table.
 		final StringBuilder up = new StringBuilder();
 		for (Prayer prayer : Prayer.values())
 		{
@@ -1678,12 +1597,10 @@ class CombatCalc
 		lines.add(String.format("Efficiency goal: %s, %s at %d (+%d)",
 			prayerGoal(), main, base + maxBoost(main, base), maxBoost(main, base)));
 
-		// Kept for bug reports: these raw values are what expose a misread. The
-		// cox timer goes beside the tier because the tier is only read while the
-		// timer runs, and the tier is not cleared on leaving a raid.
-		// Every raid varbit that might say "I am in a raid", so the ones that
-		// actually clear on leaving can be told from the ones that do not. ToA's
-		// raid level and ToB's progress are both known to persist.
+		// Kept for bug reports: these raw values are what expose a misread. Every
+		// raid varbit that might say "I am in a raid", so the ones that clear on
+		// leaving can be told from the ones that do not - ToA's raid level and
+		// ToB's progress both persist.
 		lines.add(String.format("(raid: cox indungeon %d, cox timer %d, tob progress %d,"
 				+ " tob wave %d/%d, tob party %d, toa level %d, toa partystatus %d)",
 			client.getVarbitValue(VarbitID.RAIDS_CLIENT_INDUNGEON),
@@ -1694,10 +1611,8 @@ class CombatCalc
 			client.getVarbitValue(VarbitID.TOB_CLIENT_PARTYSTATUS),
 			client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL),
 			client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS)));
-		// Two more that may separate a lobby from a running raid, and may
-		// explain why the level will not refresh without a relog: the path is
-		// likely 0 until inside, and the freeze flag reads as though the level
-		// auto-updates in the lobby until a raid starts and pins it.
+		// Two more that may separate a lobby from a running raid, and may explain
+		// why the level will not refresh without a relog.
 		lines.add(String.format("(toa path %d, toa level frozen %d)",
 			client.getVarbitValue(VarbitID.TOA_CLIENT_CURRENT_PATH),
 			client.getVarbitValue(VarbitID.TOA_CLIENT_RAID_LEVEL_STOP_AUTO_UPDATING)));
@@ -1727,9 +1642,8 @@ class CombatCalc
 	}
 
 	/**
-	 * Whether the selected combat option attacks in melee, which decides where
-	 * an attack's tick can be read from: melee lands on the tick it is thrown,
-	 * while ranged and magic fly for a while first.
+	 * Whether the combat option attacks in melee, which decides where an
+	 * attack's tick can be read from: melee lands on the tick it is thrown.
 	 */
 	boolean isMeleeEquipped()
 	{
@@ -1787,33 +1701,28 @@ class CombatCalc
 		return 1.0;
 	}
 
-	// Expected damage per attack if the attack had been set up properly: the
-	// configured prayer up and stats at full boost, with everything else -
-	// gear, target, style, exactly as it is.
+	// Expected damage if the attack had been set up properly: the configured
+	// prayer up and stats at full boost, everything else exactly as it is.
 	double idealAverageHit(int npcId)
 	{
 		return averageHitWith(bestGear(npcId), npcId, IDEAL);
 	}
 
 	/**
-	 * Whether a switch was available and not made. Compared by what is in the
-	 * two loadouts, never by identity: the search's answer is held across
-	 * ticks while the worn loadout is rebuilt on each one, so the same gear is
-	 * two different objects a tick later. Comparing references marked every
-	 * attack after the first as a miss.
+	 * Whether a switch was available and not made. Compared by contents, never
+	 * by identity: the answer is held across ticks while the worn loadout is
+	 * rebuilt each one, so the same gear is two objects a tick later.
 	 */
 	boolean missedGearSwitch(int npcId)
 	{
 		return !bestGear(npcId).sameItems(gear());
 	}
 
-	// The best gear available against this target, held until one of the three
-	// things it actually answers for moves: the weapon, the combat style, or
-	// what the player has on them. Deliberately not the worn items — switching
-	// into the answer must not throw the answer away, or the search runs again
-	// on every attack of a fight fought properly. What it does not key on is
-	// the spell, which changes the figure but rarely the gear that maximises
-	// it; the magic damage on a body does not care which spell is cast.
+	// The best gear against this target, held until the weapon, the combat style
+	// or what the player has on them moves. Deliberately not the worn items:
+	// switching into the answer must not throw it away, or the search runs on
+	// every attack of a fight fought properly. Not keyed on the spell either,
+	// which changes the figure but rarely the gear that maximises it.
 	private Loadout bestGear(int npcId)
 	{
 		final Loadout worn = gear();
@@ -1823,13 +1732,10 @@ class CombatCalc
 		if (memoBestGear != null && memoBestGearNpc == npcId && memoBestGearWeapon == weaponId
 			&& memoBestGearStyle == style && memoBestGearAvailable == available)
 		{
-			// Kept only while it still beats what is being worn. The search is
-			// greedy, so an answer reached from one set is not guaranteed to
-			// beat a different set reached later — full void put on after the
-			// fact is exactly that — and holding a stale answer against gear
-			// that is actually better would mark a player down for doing the
-			// right thing. Two evaluations, and only while a switch is
-			// outstanding: gear that matches the answer never gets here.
+			// Kept only while it still beats what is worn. The search is greedy, so
+			// an answer reached from one set is not guaranteed to beat a different
+			// set reached later - void put on after the fact is exactly that - and a
+			// stale answer would mark a player down for doing the right thing.
 			if (!memoBestGear.sameItems(worn)
 				&& averageHitWith(worn, npcId, IDEAL)
 				> averageHitWith(memoBestGear, npcId, IDEAL) - GearSearch.MEANINGFUL)
@@ -1848,9 +1754,9 @@ class CombatCalc
 		return memoBestGear;
 	}
 
-	// Everything in the inventory that could be equipped, paired with the slot
-	// it goes in. The bank is deliberately not available: the question is what
-	// the player could have switched to without leaving.
+	// Everything carried that could be equipped, paired with its slot. The bank
+	// is deliberately out: the question is what could have been switched to
+	// without leaving.
 	private List<GearSearch.Candidate> carriedCandidates()
 	{
 		final ItemContainer inventory = client.getItemContainer(InventoryID.INV);
@@ -1877,8 +1783,7 @@ class CombatCalc
 
 	/**
 	 * Expected damage for the attack as it was really set up. A prayer flicked
-	 * within the tick counts as held: it was up while the server resolved the
-	 * attack, even though reading it afterwards finds it off.
+	 * within the tick counts as held: it was up while the server resolved it.
 	 */
 	double actualAverageHit(int npcId, boolean prayerHeld)
 	{
@@ -1899,9 +1804,9 @@ class CombatCalc
 	}
 
 	/**
-	 * The level a skill rolls at. While computing the ideal, this is the base
-	 * level plus the full boost of the potion expected here, so a dose that has
-	 * decayed or was never drunk shows up as the damage it costs.
+	 * The level a skill rolls at. Computing the ideal, this is the base plus the
+	 * full boost of the potion expected here, so a decayed or undrunk dose shows
+	 * up as the damage it costs.
 	 */
 	private int boostedLevel(Skill skill)
 	{
@@ -1913,15 +1818,14 @@ class CombatCalc
 		return base + maxBoost(skill, base);
 	}
 
-	// The boost the potion for this content gives, applied to every stat the
-	// style rolls on, attack as well as strength for melee, so the accuracy a
-	// dose buys is counted and not just the damage.
+	// The boost this content's potion gives, applied to every stat the style
+	// rolls on - attack as well as strength for melee - so the accuracy a dose
+	// buys is counted and not just the damage.
 	private int maxBoost(Skill skill, int base)
 	{
 		// What the player says they meant to bring. A raid was assumed to supply
 		// its own dose, which is wrong from the moment one starts: you enter with
-		// what you carried and brew later, if at all. The Chambers tier varbit is
-		// no help either, since it survives the raid that set it.
+		// what you carried. The Chambers tier varbit survives the raid that set it.
 		int boost;
 		if (skill == Skill.RANGED)
 		{
@@ -1935,9 +1839,9 @@ class CombatCalc
 		{
 			boost = config.meleeBoostGoal().boost(skill, base);
 		}
-		// Raised if something stronger is actually up, never lowered: taking the
-		// standard from whatever the player happens to hold would let one who
-		// took nothing read as perfectly dosed.
+		// Raised if something stronger is up, never lowered: taking the standard
+		// from what the player happens to hold would let one who took nothing read
+		// as perfectly dosed.
 		if (client.getVarbitValue(VarbitID.STATRENEWAL_POTION_TIMER) > 0)
 		{
 			boost = Math.max(boost, base * 16 / 100 + 11);
@@ -1949,9 +1853,8 @@ class CombatCalc
 		return boost;
 	}
 
-	// The boost from the Chambers overload the player brewed. The three tiers
-	// are far apart, at 99 they give 13, 17 and 21, so treating them alike
-	// would misjudge the standard by up to eight levels.
+	// The Chambers overload the player brewed. The tiers are far apart - at 99
+	// they give 13, 17 and 21 - so treating them alike misjudges the standard.
 	private int chambersOverloadBoost(int base)
 	{
 		switch (client.getVarbitValue(VarbitID.RAIDS_OVERLOAD_TIER))
@@ -2025,19 +1928,15 @@ class CombatCalc
 		return client.getBoostedSkillLevel(skill) >= base + maxBoost(skill, base);
 	}
 
-	// Whether a prayer was active for what the server is resolving now. Reads
-	// the prayer's varbit directly; Client.isPrayerActive is deprecated and
-	// has no replacement overload.
+	// Whether a prayer was active for what the server is resolving now. Reads the
+	// varbit directly; Client.isPrayerActive is deprecated with no replacement.
 	private boolean prayerActive(Prayer prayer)
 	{
 		final int varbit = prayer.getVarbit();
-		// The server's copy, always. Clicking a prayer flips the client's copy at
-		// once so the orb responds without waiting for a reply, which answers for
-		// the click rather than for the attack: flick a prayer off at the end of
-		// a tick and the client reads off while the server resolved the attack
-		// with it up. The xp drop plugins read the server copy for the same
-		// reason. A client-view mode existed here and was removed once the last
-		// caller went; it undercounted every flick it was used for.
+		// The server's copy, always. Clicking flips the client's copy at once so
+		// the orb responds without waiting, which answers for the click rather than
+		// the attack: flick off at the end of a tick and the client reads off while
+		// the server resolved the attack with it up.
 		return client.getServerVarbitValue(varbit) == 1;
 	}
 
@@ -2088,8 +1987,8 @@ class CombatCalc
 	}
 
 	/**
-	 * Magic damage granted by prayer, in percent. Unlike the other styles, some
-	 * magic prayers add damage as well as accuracy.
+	 * Magic damage from prayer, in percent: unlike the other styles, some magic
+	 * prayers add damage as well as accuracy.
 	 */
 	private double magicDamagePrayerPercent()
 	{

@@ -8,12 +8,10 @@ import net.runelite.api.Client;
 import net.runelite.api.gameval.NpcID;
 import net.runelite.api.gameval.VarbitID;
 
-// Raid scaling applied to a monster's levels, in one place because two
-// callers need the same answer: the model that rolls against a target, and
-// the drain tracker that takes a share of its defence.
-// The Chambers arithmetic is taken from the GearScape DPS calculator, the
-// only working record of it, and credit is owed to them in the submission.
-// What is reproduced is the arithmetic of a game mechanic, not their code.
+// Raid scaling applied to a monster's levels, in one place because the model
+// and the drain tracker need the same answer. The Chambers arithmetic is taken
+// from the GearScape DPS calculator, the only working record of it; credit is
+// owed in the submission. It is the mechanic that is reproduced, not their code.
 final class RaidScaling
 {
 	// The few whose magic level is worth rolling against, and so is scaled with
@@ -40,9 +38,8 @@ final class RaidScaling
 		{
 			return type.isMelee() ? 1 : MITIGATED;
 		}
-		// The Nightmare's totems take double from magic, which is why they are
-		// charged with it. Left out, the expected damage would be half what
-		// lands and the player would look twice as unlucky as they were.
+			// The Nightmare's totems take double from magic. Left out, expected
+			// damage would be half what lands.
 		return isNightmareTotem(npcId) && type == AttackType.MAGIC ? 2 : 1;
 	}
 
@@ -98,19 +95,16 @@ final class RaidScaling
 	}
 
 	/**
-	 * Tombs of Amascut: 2% for every five raid levels, additively, so 300 is
-	 * +120% and 500 is +200%. The defence level only, magic level does not
-	 * move, and defence bonuses are armour rather than levels.
+	 * Tombs: 2% per five raid levels, additively, so 500 is +200%. Defence level
+	 * only - magic does not move, and defence bonuses are armour.
 	 */
 	static int tombs(int base, int raidLevel)
 	{
 		return base * (100 + 2 * (raidLevel / 5)) / 100;
 	}
 
-	// Chambers of Xeric: the level is taken down by the party's hitpoints and
-	// back up by its size, then multiplied for challenge mode. Each step
-	// floors, and the order they are applied in changes the answer, so it is
-	// kept.
+		// Chambers: down by the party's hitpoints, up by its size, then multiplied
+		// for challenge mode. Each step floors and the order changes the answer.
 	static int chambers(int base, int partySize, int partyHitpoints, double cmMultiplier)
 	{
 		final int party = Math.max(1, Math.min(100, partySize));
@@ -124,9 +118,8 @@ final class RaidScaling
 	}
 
 	/**
-	 * Challenge mode raises defence by half, except for Tekton, a fifth in a
-	 * small team and rather more in a large one, and the glowing crystal, whose
-	 * defence it leaves alone.
+	 * Challenge mode raises defence by half, except Tekton - a fifth in a small
+	 * team, more in a large one - and the glowing crystal, which it leaves.
 	 */
 	static double defenceMultiplier(boolean challengeMode, int partySize, String name)
 	{
@@ -151,10 +144,9 @@ final class RaidScaling
 		final String lower = name.toLowerCase();
 		if (lower.startsWith("tekton") || lower.startsWith("great olm"))
 		{
-			// Olm's head rolls on defence rather than magic; both hands use it.
-			// GearScape halves the mage hand's, which is not reproduced here
-			// because the monster data names both claws "Great Olm" and tells
-			// them apart only by a version string it does not carry through.
+				// Olm's head rolls on defence rather than magic, and both hands use
+				// it. GearScape halves the mage hand's; not reproduced, because the
+				// monster data names both claws "Great Olm".
 			return !lower.contains("head");
 		}
 		for (String scaled : MAGIC_SCALED)
@@ -168,8 +160,8 @@ final class RaidScaling
 	}
 
 	/**
-	 * The party size the raid is scaled for, which is not always how many people
-	 * are in it: the Chambers can be set to scale as though for more.
+	 * The party size the raid is scaled for, which the Chambers can set higher
+	 * than the number of people actually in it.
 	 */
 	private static int chambersPartySize(Client client)
 	{
@@ -188,9 +180,11 @@ final class RaidScaling
 		return client.getVarbitValue(VarbitID.RAIDS_CLIENT_INDUNGEON) == 1;
 	}
 
-	/** Reads in the Tombs lobby as well, where nothing is fought. */
-	// Set by the plugin each tick from GearBonusCalc, which latches the raid on
-	// the way in. The varbit alone cannot answer it: it is never cleared.
+	/**
+	 * Reads in the Tombs lobby too, where nothing is fought. Set each tick by
+	 * GearBonusCalc, which latches the raid on the way in: the varbit alone
+	 * cannot answer it, since it is never cleared.
+	 */
 	private static int tombsLevel;
 
 	static void setTombsRaidLevel(int level)

@@ -229,8 +229,7 @@ class PvmPerformancePanel extends PluginPanel
 
 	/**
 	 * The efficiency and tick loss line, left off entirely when neither was
-	 * measured, an empty pair of dashes reads as a bad score rather than as no
-	 * score, which is what a history recorded before these existed would show.
+	 * measured: an empty pair of dashes reads as a bad score rather than none.
 	 */
 	private static String quality(NpcStats s)
 	{
@@ -262,9 +261,8 @@ class PvmPerformancePanel extends PluginPanel
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(new EmptyBorder(6, 8, 6, 8));
 
-		// Two lines: what was fought, then how well. Efficiency and lost ticks
-		// are the two that say where to improve, so they go on the end where the
-		// eye lands after the totals rather than being buried among them.
+		// Two lines: what was fought, then how well. Efficiency and lost ticks say
+		// where to improve, so they go where the eye lands after the totals.
 		final String info = String.format(
 			"<html><b>%s</b><br><font color='#a0a0a0'>%d fights &middot; %d kills &middot; "
 				+ "%.2f avg hit &middot; %.0f%% acc &middot; %s dmg</font>%s</html>",
@@ -282,10 +280,9 @@ class PvmPerformancePanel extends PluginPanel
 		row.add(export, BorderLayout.EAST);
 
 		// Height capped only now that the row holds something. Asked before the
-		// label and the button went in, the preferred height is an empty
-		// panel's — the border and nothing else — and the row is then pinned to
-		// twelve pixels with its contents clipped away. That is what an empty
-		// looking side panel of bare grey bars was: the rows were all there.
+		// label and the button went in, the preferred height is an empty panel's -
+		// the border and nothing else - and the row is pinned to twelve pixels with
+		// its contents clipped away.
 		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
 		return row;
 	}

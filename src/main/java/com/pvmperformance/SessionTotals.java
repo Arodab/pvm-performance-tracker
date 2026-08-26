@@ -2,9 +2,8 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-// Running totals for the current trip, so the overlay can show how a whole
-// session went rather than resetting at each kill. A single unlucky kill
-// says little; forty of them say something.
+// Running totals for the current trip, so the overlay can show how a session
+// went rather than resetting at each kill. One unlucky kill says little.
 @Getter
 class SessionTotals
 {
@@ -17,8 +16,7 @@ class SessionTotals
 	private int attempts;
 	private int hits;
 	// Attacks that went out and never resolved, because the target died or
-	// changed form while they were in the air. Not misses; see
-	// Fight.recordAttackNulled.
+	// changed form in flight. Not misses; see Fight.recordAttackNulled.
 	private int nulled;
 	private int attacksMade;
 	private int attacksPrayed;
@@ -31,9 +29,9 @@ class SessionTotals
 	private int ticksLostEating;
 	private int ticksLostOther;
 	private int combatTicks;
-	// How long the player took to attack each respawned boss this trip. The best
-	// of them is the interesting half: it is roughly the wait that could not be
-	// avoided, so the distance from it to the average is what was actually lost.
+	// How long the player took to attack each respawned boss. The best is the
+	// interesting half - roughly the wait that could not be avoided - so the
+	// distance from it to the average is what was actually lost.
 	private int engagements;
 	private int sumTicksToEngage;
 	private int bestTicksToEngage;
@@ -136,11 +134,9 @@ class SessionTotals
 	}
 
 	/**
-	 * Adds what this attack was expected to do. The max hit isn't accumulated:
-	 * it is a property of the loadout rather than something that adds up, and
-	 * the overlay shows it live for whatever is held now.
+	 * Adds what this attack was expected to do. The max hit is not accumulated:
+	 * it is a property of the loadout rather than something that adds up.
 	 */
-	/** How well one attack was set up, sampled on the tick it was made. */
 	void recordAttackMade(boolean potted)
 	{
 		attacksMade++;
@@ -201,8 +197,8 @@ class SessionTotals
 	}
 
 	/**
-	 * How long the trip has been running, from its first attack rather than
-	 * from when the plugin started.
+	 * How long the trip has run, from its first attack rather than from when the
+	 * plugin started.
 	 */
 	long durationMillis()
 	{
@@ -210,9 +206,8 @@ class SessionTotals
 			: Math.max(0, lastActivityMillis - firstActivityMillis);
 	}
 
-	// Stamped by the first thing that happens rather than at construction. Zero
-	// means nothing has happened yet, which is why the trip reads no time at all
-	// until the first attack rather than counting up from login.
+	// Stamped by the first thing that happens rather than at construction, so the
+	// trip reads no time at all until the first attack.
 	private void noteActivity(long now)
 	{
 		if (firstActivityMillis == 0)

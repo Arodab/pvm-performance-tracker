@@ -8,10 +8,9 @@ import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-// The combat options each weapon category offers, keyed by the value of
-// VarbitID.COMBAT_WEAPON_CATEGORY. Together with the COM_MODE varplayer
-// this identifies exactly which combat option the player has selected,
-// rather than guessing it from the weapon's bonuses.
+// The combat options each weapon category offers, keyed by
+// VarbitID.COMBAT_WEAPON_CATEGORY. With the COM_MODE varplayer this identifies
+// exactly which option is selected rather than guessing from the bonuses.
 // Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, with
 // entries corrected against RuneLite's own attack styles plugin (BSD-2).
 @RequiredArgsConstructor
@@ -190,11 +189,10 @@ enum WeaponCategory
 	}
 
 	/**
-	 * The category the combat tab names, or null if it isn't one of these. This
-	 * is the preferred way in: the name comes from the game and so cannot drift,
-	 * whereas the varbit ids have already been renumbered once underneath this
-	 * table, powered staff moved from 23 to 24, which made every trident
-	 * resolve as a banner and be calculated as a melee weapon.
+	 * The category the combat tab names, or null. The preferred way in: the name
+	 * comes from the game and cannot drift, whereas the varbit ids have already
+	 * been renumbered once under this table - powered staff moved from 23 to 24,
+	 * which made every trident resolve as a banner.
 	 */
 	static WeaponCategory forName(String gameName)
 	{
