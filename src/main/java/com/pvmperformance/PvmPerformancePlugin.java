@@ -250,6 +250,10 @@ public class PvmPerformancePlugin extends Plugin
 	// which is only set once booked: this has to be right immediately, being what
 	// says the weapon is busy.
 	private int lastAttackSeenTick = Integer.MIN_VALUE;
+	// The last tick a melee weapon was in hand. A swap is not wielded until the
+	// tick after it, so a blow thrown before the swap lands while the client is
+	// already showing the new weapon.
+	private int lastMeleeTick = Integer.MIN_VALUE;
 	// How far behind the attack the observation that proved it was.
 	private int attackObservedLag = MELEE_BOOKING_LAG;
 	// The last tick a cast was booked from its animation, so the hitsplat does
@@ -262,6 +266,8 @@ public class PvmPerformancePlugin extends Plugin
 	private int acceptedProjectileTick = Integer.MIN_VALUE;
 	// What getAnimation returns when nothing is playing.
 	private static final int IDLE_ANIMATION = -1;
+	/** How long after a swap a landing blow may still be the melee weapon's. */
+	private static final int MELEE_SWAP_GRACE_TICKS = 1;
 	// The tick an attack was last seen going out on, from the events that prove
 	// one rather than from what the player looks like, and which event proved it:
 	// a projectile is a cast or a shot, a hitsplat a melee blow.
@@ -464,8 +470,22 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				burstLanded.add(npc.getIndex());
 			}
-			// This is the attack landing, so whatever was waiting on this NPC
-			// gets its expectation counted now, beside the damage it did.
+			// Whether this hitsplat is one of MY projectiles landing. Consumed here
+			// rather than further down because the resolve below depends on it.
+			final boolean arrivedFromFlight = consumePending(npc.getIndex());
+			// KNOWN-WRONG, deliberately: this resolves on ANY hitsplat of mine, so a
+			// melee blow can resolve a projectile still in the air. The melee attack
+			// then books its own too, so the tick adds both and the total comes out
+			// right by luck - and would not if the target died in between. It is left
+			// this way because the obvious fix is worse, and
+			// deliberately left that way for now - see "the melee blow that resolved a
+			// crossbow" in CODE_NOTES.md. Gating it on arrivedFromFlight was tried and
+			// reverted: it made ranged resolution depend on the landing-tick estimate
+			// being accurate, and where that missed, the expectation was never counted
+			// at all. Magic did not show it because a cast has a SECOND route through
+			// recordSplash, which is what proved the cause. Trading a total that is
+			// right by luck for one that is silently short is the worse bargain; the
+			// real fix is to match a held sample to its own landing tick.
 			resolvePendingSample(npc.getIndex());
 			// A cast waiting on an answer has it the moment one of my hitsplats
 			// DEALS DAMAGE to the NPC it was aimed at; nothing later can unsay
@@ -499,10 +519,6 @@ public class PvmPerformancePlugin extends Plugin
 			// A special's drain is worked out from the hit it landed, so it can
 			// only be applied here.
 			drain.onMyHitsplat(npc, hitsplat.getAmount());
-			// A landed hit resolves one of my pending attacks so it cannot later be
-			// mistaken for another player's splash, and whether it did says where
-			// this hitsplat came from.
-			final boolean arrivedFromFlight = consumePending(npc.getIndex());
 			// Melee, plus a projectile-less cast the animation route did not
 			// recognise; everything else is booked from its projectile. That
 			// route sees misses and this one cannot, so it books first and this
@@ -512,7 +528,15 @@ public class PvmPerformancePlugin extends Plugin
 			final int castLag = magicHitDelay(castDistance(npc));
 			final boolean unbookedCast = combatCalc.castLandsWithoutProjectile()
 				&& client.getTickCount() - lastCastBookedTick > castLag;
-			final boolean melee = combatCalc.isMeleeEquipped() || unbookedCast;
+			// Melee as it was when the blow was THROWN, not as the client shows it
+			// now. A swap is not wielded until the tick after it, so swinging and
+			// then switching to a blowpipe left the melee hitsplat arriving while a
+			// ranged weapon was on screen - the attack was never booked and its
+			// damage counted against no expectation. Only non-projectile hitsplats
+			// reach here, so widening this cannot claim a ranged attack.
+			final boolean meleeRecently = combatCalc.isMeleeEquipped()
+				|| client.getTickCount() - lastMeleeTick <= MELEE_SWAP_GRACE_TICKS;
+			final boolean melee = meleeRecently || unbookedCast;
 			final boolean firstOfBurst = !burstBooked.contains(npc.getIndex());
 			if (!arrivedFromFlight && melee && burstBooked.add(npc.getIndex()))
 			{
@@ -659,6 +683,46 @@ public class PvmPerformancePlugin extends Plugin
 
 	// Whether this projectile came from me. It names its own source actor, which
 	// settles it outright and cannot confuse me with another player on my tile.
+	/**
+	 * Whether a projectile set off too soon after my last attack to have been
+	 * mine. Static so the arithmetic stays under test without a Client.
+	 */
+	static boolean tooSoonToBeMine(int firedTick, int lastAttackTick, int fastestSpeed)
+	{
+		return lastAttackTick != Integer.MIN_VALUE && firedTick < lastAttackTick + fastestSpeed;
+	}
+
+	/**
+	 * The shortest attack speed seen in the last few ticks, for deciding whether a
+	 * projectile could have been mine.
+	 *
+	 * <p>The FASTEST rather than the current one, and deliberately. The live
+	 * reading is unusable at exactly the moment this is asked: ProjectileMoved
+	 * fires earlier in the frame than the GameTick that records the speed, so the
+	 * current tick has no entry yet, and mid-switch the weapon is not readable at
+	 * all so it defaults to four. A two tick blowpipe shot was being judged
+	 * against that four and rejected as too early to be mine, while its hitsplat
+	 * still counted damage - a hit that added damage and no expectation.
+	 *
+	 * <p>The two errors are not equal. A wrongly REJECTED attack disappears from
+	 * the expected side and nothing says so; a wrongly accepted one is a
+	 * neighbour's projectile that already had to leave a tile I stood on, at a
+	 * target I am fighting, while I was animating. This guard is the weakest of
+	 * the four and should behave like it.
+	 */
+	private int fastestSpeedSeen()
+	{
+		int fastest = combatCalc.attackSpeedTicks();
+		for (int speed : speedByTick.values())
+		{
+			if (speed > 0 && speed < fastest)
+			{
+				fastest = speed;
+			}
+		}
+		return Math.max(1, fastest);
+	}
+
 	private boolean isProjectileMine(Projectile projectile, Player me, Actor target)
 	{
 		final Actor source = projectile.getSourceActor();
@@ -677,20 +741,29 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		// And I have to have been able to fire it. Two players stand on one tile as
 		// a matter of course, so position alone cannot separate them - but a weapon
-		// on cooldown cannot have thrown anything. The live speed errs towards
-		// accepting, which is the safer way to be wrong.
-		if (client.getTickCount() < lastAttackSeenTick + combatCalc.attackSpeedTicks())
+		// on cooldown cannot have thrown anything.
+		//
+		// Judged on the tick the projectile SET OFF, and against the fastest speed
+		// seen lately rather than the live one - see fastestSpeedSeen for why the
+		// live reading is unusable here.
+		final int firedTick = startTick(projectile);
+		if (tooSoonToBeMine(firedTick, lastAttackSeenTick, fastestSpeedSeen()))
 		{
 			return false;
 		}
-		// And I have to have been doing something: an attack animates, so a player
-		// with nothing playing did not throw this. Only ever a rejection, and it
-		// does not care WHAT the animation is - naming every spell's animation would
-		// be a table where a missing entry silently drops attacks.
-		if (me.getAnimation() == IDLE_ANIMATION)
-		{
-			return false;
-		}
+		// There is deliberately NO animation check here. There was one - a player
+		// with nothing playing did not throw this - and it had to go: RuneLite
+		// delivers ProjectileMoved BEFORE AnimationChanged within a tick, so on the
+		// first attack of a fight, or the first after a switch, getAnimation() is
+		// still IDLE when this is asked. Traced at six ticks stale on a shot that
+		// was plainly mine, whose 24 damage counted against no expectation. No
+		// grace window fixes that: the evidence does not exist yet at the moment it
+		// is needed, and widening the window only delays the same rejection.
+		//
+		// The three checks above carry the work: the projectile left a tile I stood
+		// on, my weapon was off cooldown when it set off, and it is aimed at what I
+		// am fighting. Do not add a fourth that is unavailable exactly when the
+		// first attack needs it.
 		// And aimed at something I am engaged with. Held loosely on purpose - any
 		// one of the three will do, because getInteracting lapses between a cast
 		// leaving and its projectile appearing. The check above does the work.
@@ -906,6 +979,10 @@ public class PvmPerformancePlugin extends Plugin
 		// tab lags a swap by a tick, so rapid would be read off the old style and
 		// applied to the new weapon's speed.
 		speedByTick.put(client.getTickCount(), combatCalc.attackSpeedTicks());
+		if (combatCalc.isMeleeEquipped())
+		{
+			lastMeleeTick = client.getTickCount();
+		}
 		speedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
 		if (shown != null)
 		{
@@ -1020,7 +1097,28 @@ public class PvmPerformancePlugin extends Plugin
 		// surfaces a tick late, and scoring it with the loadout held by then
 		// credited a shadow's attack to the whip switched to mid-flight.
 		final double[] atOrigin = expectedByTick.get(attackOriginTick);
-		if (attackObservedNpcId == targetId && attackObservedAccuracy >= 0)
+		// A PROJECTILE is scored from the tick it set off, not from the live
+		// reading taken when its event surfaced - by then the player may have
+		// switched, and the observed figures are the new weapon's. Alternating a
+		// blowpipe and a crossbow scored every shot with the OTHER one's average,
+		// which is what this ordering is for and what it was not doing: the
+		// observed branch below was consulted first and always matched.
+		//
+		// Melee is left alone. It lands on the tick it is thrown, so the figures
+		// taken at its hitsplat are already the right ones.
+		final boolean originIsAuthoritative = attackObservedFromProjectile
+			&& atOrigin != null && (int) atOrigin[EXP_NPC_ID] == targetId
+			&& atOrigin[EXP_ACCURACY] >= 0;
+		if (originIsAuthoritative)
+		{
+			maxHit = (int) atOrigin[EXP_MAX];
+			accuracy = atOrigin[EXP_ACCURACY];
+			averageHit = atOrigin[EXP_AVERAGE];
+			specMaxHit = (int) atOrigin[EXP_SPEC_MAX];
+			specLandChance = atOrigin[EXP_SPEC_ACCURACY];
+			specAverageHit = atOrigin[EXP_SPEC_AVERAGE];
+		}
+		else if (attackObservedNpcId == targetId && attackObservedAccuracy >= 0)
 		{
 			maxHit = attackObservedMaxHit;
 			accuracy = attackObservedAccuracy;
