@@ -66,7 +66,14 @@ class GearBonusCalc
 		GearBonus total = GearBonus.NONE;
 
 		// Salve and the slayer helm deliberately do not stack; salve takes priority.
-		final GearBonus salve = salveBonus(type, npc, gear);
+		// The dragon hunter wand is the exception to that: alone among the three
+		// dragonbane weapons its effect does not stack with salve at all, though
+		// it does stack with the slayer helm. The wand is kept as much the larger
+		// of the two; which of them the game actually drops is not documented.
+		// UNTESTED IN GAME - the case is a magic attack at Vorkath.
+		final GearBonus salve = wandSuppressesSalve(type, npc, gear)
+			? GearBonus.NONE
+			: salveBonus(type, npc, gear);
 		final GearBonus blackMask = salve.isNone() ? blackMaskBonus(type, gear, onSlayerTask) : GearBonus.NONE;
 		final GearBonus dragonHunter = dragonHunterBonus(type, npc, gear);
 		final GearBonus demonbane = demonbaneBonus(type, npc, spell, gear);
@@ -261,6 +268,23 @@ class GearBonusCalc
 			|| weapon == ItemID.TZHAAR_MACE
 			|| weapon == ItemID.TZHAAR_MAUL
 			|| weapon == ItemID.TZHAAR_MAUL_T;
+	}
+
+	/**
+	 * Whether the dragon hunter wand is taking salve's place for this attack.
+	 *
+	 * <p>Wiki (Dragonbane weapons): the crossbow and the lance both stack with
+	 * salve amulets, but "the dragon hunter wand's effect stacks multiplicatively
+	 * with the Slayer helm (i) or Void Knight equipment, but not the salve amulet
+	 * (i)". Multiplying them, which is what this used to do, overstates a magic
+	 * attack at Vorkath by a fifth.
+	 */
+	private boolean wandSuppressesSalve(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
+	{
+		return type == AttackType.MAGIC
+			&& npc != null
+			&& npc.hasAttribute("dragon")
+			&& gear.id(EquipmentInventorySlot.WEAPON) == ItemID.DRAGONHUNTER_WAND;
 	}
 
 	private GearBonus dragonHunterBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
