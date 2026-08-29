@@ -75,9 +75,7 @@ class PvmPerformanceOverlay extends OverlayPanel
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
 				.left("Spec max")
-				.right(spec.hits() > 1
-					? specMaxHit + " (" + spec.hits() + ")"
-					: String.valueOf(specMaxHit))
+				.right(String.valueOf(specMaxHit))
 				.build());
 		}
 
@@ -197,14 +195,6 @@ class PvmPerformanceOverlay extends OverlayPanel
 			}
 		}
 
-		final boolean trip = session != null;
-		final long millis = session != null ? session.durationMillis()
-			: raid != null ? raid.durationMillis() : room.durationMillis();
-		panelComponent.getChildren().add(LineComponent.builder()
-			.left("Time")
-			.right(trip ? formatDuration(millis) : String.format("%.1fs", millis / 1000.0))
-			.build());
-
 		return super.render(graphics);
 	}
 
@@ -225,11 +215,5 @@ class PvmPerformanceOverlay extends OverlayPanel
 				raid.getEncounters().size(), raid.getEncounters().size() == 1 ? "" : "s");
 		}
 		return room == null ? fight.getTargetName() : room.getName();
-	}
-
-	private static String formatDuration(long millis)
-	{
-		final long seconds = millis / 1000;
-		return String.format("%d:%02d", seconds / 60, seconds % 60);
 	}
 }
