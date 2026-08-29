@@ -1173,9 +1173,14 @@ class CombatCalc
 	private int computeAttackBonus(AttackType type)
 	{
 		final Loadout gear = gear();
+		final boolean skipAmmo = !ammoSlotFeedsWeapon();
 		int total = 0;
 		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
 		{
+			if (skipAmmo && slot == EquipmentInventorySlot.AMMO)
+			{
+				continue;
+			}
 			final ItemEquipmentStats e = equipmentStats(gear.id(slot));
 			if (e != null)
 			{
@@ -2665,12 +2670,64 @@ class CombatCalc
 
 	/** Sum of the melee (str) or ranged (rstr) strength bonus across worn gear. */
 	// Sums the strength bonus across worn gear.
+	/**
+	 * The bows and crossbows that make their own ammunition, so the ammo slot is
+	 * only being carried rather than drawn from.
+	 */
+	private static final Set<Integer> AMMOLESS_BOWS = Collections.unmodifiableSet(
+		new HashSet<>(Arrays.asList(
+			ItemID.CRYSTAL_BOW, ItemID.CRYSTAL_BOW_2500,
+			ItemID.BOW_OF_FAERDHINEN, ItemID.BOW_OF_FAERDHINEN_INFINITE,
+			ItemID.BOW_OF_FAERDHINEN_INFINITE_ITHELL, ItemID.BOW_OF_FAERDHINEN_INFINITE_IORWERTH,
+			ItemID.BOW_OF_FAERDHINEN_INFINITE_TRAHAEARN, ItemID.BOW_OF_FAERDHINEN_INFINITE_CADARN,
+			ItemID.WILD_CAVE_WEBWEAVER_CHARGED)));
+
+	/**
+	 * Whether anything worn in the ammo slot actually feeds this weapon.
+	 *
+	 * <p>A blowpipe keeps its darts inside itself, a chinchompa and a thrown
+	 * weapon ARE the missile, and a crystal bow makes its own arrows - so in all
+	 * of those the ammo slot is just being carried and the game does not roll it.
+	 * Summing it anyway is what made a blowpipe read a max hit of 37 where it
+	 * should have read about 16: dragon bolts left in the slot are +122 ranged
+	 * strength, and they went straight into the max hit. Ranged ATTACK looked
+	 * right the whole time, which is what made it hard to see - bolts carry
+	 * ranged strength and no ranged attack at all.
+	 *
+	 * <p>The eclipse atlatl is the exception that stops this being a rule about
+	 * thrown weapons: it is thrown, and its darts really do sit in the ammo slot.
+	 */
+	private boolean ammoSlotFeedsWeapon()
+	{
+		if (attackStyle().getAttackType() != AttackType.RANGED)
+		{
+			// Ammunition carries no melee or magic bonus, so nothing changes hands.
+			return true;
+		}
+		final int weapon = weaponItemId();
+		if (weapon == ItemID.ECLIPSE_ATLATL || weapon == ItemID.BR_ECLIPSE_ATLATL)
+		{
+			return true;
+		}
+		final WeaponCategory category = weaponCategory();
+		if (category == WeaponCategory.THROWN || category == WeaponCategory.CHINCHOMPAS)
+		{
+			return false;
+		}
+		return !AMMOLESS_BOWS.contains(weapon);
+	}
+
 	private int computeEquipmentBonus(boolean melee)
 	{
 		final Loadout gear = gear();
+		final boolean skipAmmo = !ammoSlotFeedsWeapon();
 		int total = 0;
 		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
 		{
+			if (skipAmmo && slot == EquipmentInventorySlot.AMMO)
+			{
+				continue;
+			}
 			final ItemEquipmentStats e = equipmentStats(gear.id(slot));
 			if (e != null)
 			{
