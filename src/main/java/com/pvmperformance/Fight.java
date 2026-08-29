@@ -10,9 +10,6 @@ import lombok.Getter;
 @Getter
 class Fight
 {
-	// A minute. Past this the wait is no longer about the fight.
-	private static final int MAX_ENGAGE_TICKS = 100;
-
 	private final String targetName;
 	// The room or boss this fight is a part of, or null if it stands alone.
 	private final String groupName;
@@ -82,10 +79,6 @@ class Fight
 	private boolean attacking;
 
 	// The tick this target became attackable, and how long it took to be
-	// attacked. 0 means unknown, not -1: deserialising an older history file does
-	// not run the initialisers.
-	private transient int engageFromTick;
-	private int ticksToEngage;
 
 	Fight(String targetName, int targetId, int targetIndex, int maxHp, long now,
 		RaidType raid, int raidId)
@@ -100,31 +93,6 @@ class Fight
 		this.maxHp = maxHp;
 		this.startMillis = now;
 		this.lastActivityMillis = now;
-	}
-
-	/**
-	 * Notes the tick this target became attackable, so the wait before the first
-	 * attack can be timed. Only where that tick is known, which is a boss
-	 * respawning under the player's nose.
-	 */
-	void setEngageFromTick(int tick)
-	{
-		engageFromTick = tick;
-	}
-
-	// Times the first attack against the tick the target became attackable,
-	// and returns the gap, or 0 if it isn't known.
-	int recordEngaged(int tick)
-	{
-		if (engageFromTick <= 0 || tick <= engageFromTick)
-		{
-			return 0;
-		}
-		final int gap = tick - engageFromTick;
-		// Beyond a minute the player was doing something else entirely, banking,
-		// restocking, away, and timing it says nothing about the kill.
-		ticksToEngage = gap > MAX_ENGAGE_TICKS ? 0 : gap;
-		return ticksToEngage;
 	}
 
 	/**

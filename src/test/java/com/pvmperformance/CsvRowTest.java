@@ -30,7 +30,7 @@ public class CsvRowTest
 	@Test
 	public void theHeaderNamesEveryColumnOnce()
 	{
-		assertEquals(29, COLUMNS);
+		assertEquals(28, COLUMNS);
 	}
 
 	@Test

@@ -170,7 +170,7 @@ public class PvmPerformancePlugin extends Plugin
 		"level,raid,raidRun,room,"
 		+ "started,npc,npcId,maxHp,killed,damageDealt,damageTaken,attempts,hits,"
 		+ "accuracyPct,durationSec,dps,avgHit,expMaxHit,expAccuracyPct,expAvgHit,"
-		+ "ticksLost,ticksLostPct,ticksLostEating,ticksToEngage,"
+		+ "ticksLost,ticksLostPct,ticksLostEating,"
 		+ "attacksMade,attacksPrayed,attacksPotted,attacksSwitched,efficiencyPct\n";
 
 	private static final DateTimeFormatter ROW_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -317,11 +317,6 @@ public class PvmPerformancePlugin extends Plugin
 	// overlay is set to whole-trip mode.
 	private final SessionTotals session = new SessionTotals(System.currentTimeMillis());
 
-	// A boss just killed, watched for its respawn so the wait can be timed.
-	// Bosses only: on a slayer task a second spawn is not the same fight back.
-	private int respawnWatchNpcId = -1;
-	private int respawnNpcIndex = -1;
-	private int respawnTick;
 
 	// The room the fights add up to, and the raid the rooms add up to. Both are
 	// views over the fights, so the three widths cannot disagree.
@@ -406,8 +401,6 @@ public class PvmPerformancePlugin extends Plugin
 		partyHitpoints.clear();
 		nightmareBoss = null;
 		targetNpc = null;
-		respawnWatchNpcId = -1;
-		respawnNpcIndex = -1;
 	}
 
 	@Subscribe
@@ -1104,13 +1097,6 @@ public class PvmPerformancePlugin extends Plugin
 			// The flame wall is an NPC rather than an object, so it arrives here.
 			olmPhase = phase;
 		}
-		if (npc.getId() != respawnWatchNpcId)
-		{
-			return;
-		}
-		respawnWatchNpcId = -1;
-		respawnNpcIndex = npc.getIndex();
-		respawnTick = client.getTickCount();
 	}
 
 	/**
@@ -1346,16 +1332,6 @@ public class PvmPerformancePlugin extends Plugin
 			// Read on the attack tick: this is when the prayers and boosts are
 			// the ones the attack actually rolled with.
 			final int targetId = current.getTargetId();
-			if (!current.isAttacking())
-			{
-				// The opening attack: time it against the respawn, if this fight
-				// was opened by one.
-				final int engaged = current.recordEngaged(client.getTickCount());
-				if (engaged > 0)
-				{
-					session.recordEngaged(engaged);
-				}
-			}
 			// The tick the attack went out on, which is the lag of whatever
 			// proved it and not a fixed offset. The prayer is read back from
 			// there, never live: read live it counts one switched on after the
@@ -1684,8 +1660,6 @@ public class PvmPerformancePlugin extends Plugin
 			drain.clear();
 			nightmareBoss = null;
 			targetNpc = null;
-			respawnWatchNpcId = -1;
-			respawnNpcIndex = -1;
 		}
 	}
 
@@ -1708,13 +1682,6 @@ public class PvmPerformancePlugin extends Plugin
 		labelOlmPhase(current);
 		labelNightmareTotem(current, npc.getId());
 		openEncounterFor(current, now);
-		if (npc.getIndex() == respawnNpcIndex)
-		{
-			// This is the boss whose respawn was watched, so the wait for it can
-			// be timed from the tick it appeared rather than from this one.
-			current.setEngageFromTick(respawnTick);
-			respawnNpcIndex = -1;
-		}
 	}
 
 	// Opens a fight as soon as the player targets something attackable, so the
@@ -1860,11 +1827,6 @@ public class PvmPerformancePlugin extends Plugin
 			// fight it. Nothing happened, so nothing is recorded.
 			current = null;
 			return;
-		}
-		if (died && isBoss(current))
-		{
-			respawnWatchNpcId = current.getTargetId();
-			respawnNpcIndex = -1;
 		}
 		session.recordFightEnded(died, current, now);
 		history.add(0, current);
@@ -2255,7 +2217,7 @@ public class PvmPerformancePlugin extends Plugin
 		final double seconds = Math.max(0.6, room.durationMillis() / 1000.0);
 		final int attempts = room.getAttempts();
 		return csvScope("room", raidName, raidRun, room.getName())
-			+ String.format("%s,,,,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,,%d,%d,%d,%d,%s%n",
+			+ String.format("%s,,,,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,%d,%d,%d,%d,%s%n",
 				started,
 				room.isKilled(),
 				room.getDamageDealt(),
@@ -2290,7 +2252,7 @@ public class PvmPerformancePlugin extends Plugin
 		final double seconds = Math.max(0.6, raid.durationMillis() / 1000.0);
 		final int attempts = raid.getAttempts();
 		return csvScope("raid", raidName, raidRun, null)
-			+ String.format("%s,,,,,%d,,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,,%d,%d,%d,%d,%s%n",
+			+ String.format("%s,,,,,%d,,%d,%d,%.1f,%.1f,%.2f,%.2f,,%s,%s,%d,%s,%d,%d,%d,%d,%d,%s%n",
 				started,
 				raid.getDamageDealt(),
 				attempts,
@@ -2322,7 +2284,7 @@ public class PvmPerformancePlugin extends Plugin
 	{
 		final String started = ROW_TS.format(LocalDateTime.ofInstant(
 			Instant.ofEpochMilli(fight.getStartMillis()), ZoneId.systemDefault()));
-		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d,%s,%d,%d,%d,%d,%s%n",
+		return String.format("%s,\"%s\",%d,%d,%b,%d,%d,%d,%d,%.1f,%.1f,%.2f,%.2f,%s,%s,%s,%d,%s,%d,%d,%d,%d,%d,%s%n",
 			started,
 			fight.getTargetName().replace('"', '\''),
 			fight.getTargetId(),
@@ -2342,7 +2304,6 @@ public class PvmPerformancePlugin extends Plugin
 			fight.getTicksLost(),
 			csvExpected(fight.ticksLostShare() * 100, 1),
 			fight.getTicksLostEating(),
-			fight.getTicksToEngage() == 0 ? "" : String.valueOf(fight.getTicksToEngage()),
 			fight.getAttacksMade(),
 			fight.getAttacksPrayed(),
 			fight.getAttacksPotted(),

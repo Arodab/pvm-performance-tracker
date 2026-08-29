@@ -29,13 +29,6 @@ class SessionTotals
 	private int ticksLostEating;
 	private int ticksLostOther;
 	private int combatTicks;
-	// How long the player took to attack each respawned boss. The best is the
-	// interesting half - roughly the wait that could not be avoided - so the
-	// distance from it to the average is what was actually lost.
-	private int engagements;
-	private int sumTicksToEngage;
-	private int bestTicksToEngage;
-
 	// Running totals of what each attack was expected to do, so the measured
 	// side can be compared against the sum of every weapon's own contribution.
 	private double sumExpectedAccuracy;
@@ -67,9 +60,6 @@ class SessionTotals
 		ticksLostEating = 0;
 		ticksLostOther = 0;
 		combatTicks = 0;
-		engagements = 0;
-		sumTicksToEngage = 0;
-		bestTicksToEngage = 0;
 		sumExpectedAccuracy = 0;
 		sumExpectedAverageHit = 0;
 	}
@@ -103,23 +93,6 @@ class SessionTotals
 	void recordTickSpent()
 	{
 		combatTicks++;
-	}
-
-	/** Ticks between a boss respawning and the player's first attack on it. */
-	void recordEngaged(int ticks)
-	{
-		engagements++;
-		sumTicksToEngage += ticks;
-		if (bestTicksToEngage == 0 || ticks < bestTicksToEngage)
-		{
-			bestTicksToEngage = ticks;
-		}
-	}
-
-	/** Mean ticks taken to attack a respawned boss, or 0 if none were timed. */
-	double avgTicksToEngage()
-	{
-		return engagements == 0 ? 0 : (double) sumTicksToEngage / engagements;
 	}
 
 	/** Damage from one hitsplat; see {@code Fight.recordDamageDealt}. */

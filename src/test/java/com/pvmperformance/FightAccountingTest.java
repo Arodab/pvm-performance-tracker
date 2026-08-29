@@ -60,29 +60,6 @@ public class FightAccountingTest
 	}
 
 	@Test
-	public void aRespawnIsTimedOnlyWhenItWasWatched()
-	{
-		final Fight untimed = fight(NpcIds.GOBLIN);
-		assertEquals(0, untimed.recordEngaged(50));
-		assertEquals(0, untimed.getTicksToEngage());
-
-		final Fight timed = fight(NpcIds.GOBLIN);
-		timed.setEngageFromTick(100);
-		assertEquals(7, timed.recordEngaged(107));
-		assertEquals(7, timed.getTicksToEngage());
-	}
-
-	@Test
-	public void aWaitPastAMinuteIsNotAboutTheFight()
-	{
-		final Fight f = fight(NpcIds.GOBLIN);
-		f.setEngageFromTick(100);
-		// The player went to bank; timing it says nothing about the kill.
-		assertEquals(0, f.recordEngaged(1000));
-		assertEquals(0, f.getTicksToEngage());
-	}
-
-	@Test
 	public void anUnscoredFightLendsItsTimeButNotItsDamage()
 	{
 		final Encounter room = new Encounter("Kephri", null, 0L);
