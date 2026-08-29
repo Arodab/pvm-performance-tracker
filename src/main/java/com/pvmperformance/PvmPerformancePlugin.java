@@ -1678,7 +1678,7 @@ public class PvmPerformancePlugin extends Plugin
 			raidType, raidCounter);
 		targetLiveId = npc.getId();
 		targetNpc = npc;
-		combatCalc.setTargetIndex(npc.getIndex());
+		combatCalc.setTarget(npc);
 		labelOlmPhase(current);
 		labelNightmareTotem(current, npc.getId());
 		openEncounterFor(current, now);
@@ -1818,7 +1818,7 @@ public class PvmPerformancePlugin extends Plugin
 		combatCalc.forgetConflictionCharge();
 		pendingMineHits.clear();
 		// Nothing is being fought, so no drain should be read against anything.
-		combatCalc.setTargetIndex(-1);
+		combatCalc.setTarget(null);
 		targetNpc = null;
 		targetLiveId = -1;
 		if (current.getAttempts() == 0)

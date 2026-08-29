@@ -11,13 +11,11 @@ import java.util.Locale;
 import java.util.Map;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
-import net.runelite.api.Player;
 import net.runelite.api.Prayer;
 import net.runelite.api.Skill;
 import net.runelite.api.widgets.Widget;
@@ -108,6 +106,8 @@ class CombatCalc
 	// The index of the NPC the figures are being computed against, so the
 	// defence read can account for what has been drained off it.
 	private int targetIndex = -1;
+	// The NPC being fought, for the health bar the ruby bolt is a share of.
+	private NPC targetNpc;
 	// The enemy a miss has armed the gauntlets against, or -1. Per enemy because
 	// the effect is spent on the next attack against that same one.
 	private final ConflictionCharge charge = new ConflictionCharge();
@@ -536,13 +536,11 @@ class CombatCalc
 		{
 			return 0;
 		}
-		final Player player = client.getLocalPlayer();
-		final Actor target = player == null ? null : player.getInteracting();
-		if (!(target instanceof NPC))
+		final NPC npc = targetNpc;
+		if (npc == null || !healthBarBelongsTo(npc.getId(), npc.getIndex(), npcId, targetIndex))
 		{
 			return maxHp;
 		}
-		final NPC npc = (NPC) target;
 		final int ratio = npc.getHealthRatio();
 		final int scale = npc.getHealthScale();
 		if (ratio < 0 || scale <= 0)
@@ -550,6 +548,20 @@ class CombatCalc
 			return maxHp;
 		}
 		return Math.max(0, maxHp * ratio / scale);
+	}
+
+	/**
+	 * Whether a health bar read off the interacting NPC describes the target
+	 * being asked about. Split out static so the guard stays under test without
+	 * a Client, like {@link #conflictionArmedAgainst}.
+	 *
+	 * <p>The index is only checked once there is one to check: no fight is open
+	 * between kills and on the opening attack, and refusing the bar then would
+	 * read every target at full health.
+	 */
+	static boolean healthBarBelongsTo(int barNpcId, int barIndex, int npcId, int targetIndex)
+	{
+		return barNpcId == npcId && (targetIndex < 0 || barIndex == targetIndex);
 	}
 
 	/**
@@ -564,10 +576,24 @@ class CombatCalc
 		return Math.max(0, raidScaled(npc) - drain.drainedFrom(targetIndex));
 	}
 
-	/** The NPC the expected figures are being asked about, for the drain lookup. */
-	void setTargetIndex(int npcIndex)
+	/**
+	 * The NPC the expected figures are being asked about: its index for the
+	 * drain lookup, and the NPC itself for the health bar the ruby bolt needs.
+	 *
+	 * <p>The NPC is held rather than found again from
+	 * {@code getLocalPlayer().getInteracting()}, which is what the health bar
+	 * used to be read off. Interaction lags a target switch by a tick, so on the
+	 * tick of a switch it still named the NPC just left - and the guard, quite
+	 * correctly, refused a bar belonging to something else and fell back to full
+	 * health. That showed in game as the ruby figure reading full health for one
+	 * tick after every switch before correcting itself. This is the fight's
+	 * target as the plugin already knows it, which is true from the tick the
+	 * fight opens.
+	 */
+	void setTarget(NPC npc)
 	{
-		this.targetIndex = npcIndex;
+		this.targetNpc = npc;
+		this.targetIndex = npc == null ? -1 : npc.getIndex();
 	}
 
 	// ToA: 2% per five raid levels, additively. Defence level only - magic does
