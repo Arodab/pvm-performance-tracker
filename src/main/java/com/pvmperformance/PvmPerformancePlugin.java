@@ -302,6 +302,8 @@ public class PvmPerformancePlugin extends Plugin
 	// The tick the special attack energy last fell, which is the tick a special
 	// went out on. Read back at the booking rather than at the sample: the varp
 	// can arrive after the tick's onGameTick has already run.
+	// How long after the energy falls an attack may still be that special's.
+	private static final int SPEC_BOOKING_WINDOW_TICKS = 1;
 	private int specFiredTick = Integer.MIN_VALUE;
 	private int specEnergy = -1;
 	// Where I stood on each of the last few ticks, in scene coordinates: a
@@ -983,6 +985,28 @@ public class PvmPerformancePlugin extends Plugin
 		session.recordAttackResolved(prayed, switched, actual, ideal);
 	}
 
+	/**
+	 * Whether the special that fired on {@code specFiredTick} is the one that threw
+	 * the attack which left on {@code attackOriginTick}.
+	 *
+	 * <p>NOT an equality. The energy varp does not fall on the tick the attack goes
+	 * out: a traced burning claws special put the drop on tick 45 and the hitsplat
+	 * on 46, so asking for equality booked it against the ordinary expectation and
+	 * threw the special's own figure away. DefenceDrain has carried a window over
+	 * the same varp all along, for the same reason.
+	 *
+	 * <p>One tick, and no wider. The fastest weapon here attacks every two ticks,
+	 * so a window of two would start claiming the NEXT attack as a special as well.
+	 */
+	static boolean specialWentOutFor(int attackOriginTick, int specFiredTick)
+	{
+		if (specFiredTick == Integer.MIN_VALUE || attackOriginTick < specFiredTick)
+		{
+			return false;
+		}
+		return attackOriginTick - specFiredTick <= SPEC_BOOKING_WINDOW_TICKS;
+	}
+
 	private void sampleExpected(Fight fight)
 	{
 		final int targetId = fight.getTargetId();
@@ -1042,11 +1066,15 @@ public class PvmPerformancePlugin extends Plugin
 		// figures were sampled because the energy varp can arrive after that
 		// tick's onGameTick has already run, so whether the attack was a special
 		// is only reliably known by the time it is booked.
-		final boolean special = attackOriginTick == specFiredTick && specAverageHit >= 0;
+		final boolean special = specialWentOutFor(attackOriginTick, specFiredTick)
+			&& specAverageHit >= 0;
 		double expectedChances =
 			CombatCalc.landChance(accuracy, combatCalc.hitsPerAttack(targetId));
 		if (special)
 		{
+			// Spent: one activation books one attack, so the next attack inside the
+			// window cannot claim it too.
+			specFiredTick = Integer.MIN_VALUE;
 			maxHit = specMaxHit;
 			averageHit = specAverageHit;
 			expectedChances = specLandChance;
