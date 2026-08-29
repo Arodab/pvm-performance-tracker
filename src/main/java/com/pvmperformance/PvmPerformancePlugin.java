@@ -543,8 +543,13 @@ public class PvmPerformancePlugin extends Plugin
 		// that has transformed is described as it stands.
 		final int targetId = current != null && !current.isEnded() ? targetLiveId
 			: shown == null ? -1 : shown.getTargetId();
+		// Mirrored to the log as well as the chatbox. ::loadout is the tool for
+		// settling a wrong figure, and a chat message cannot be read back out of
+		// client.log afterwards - which cost a round trip the first time it was
+		// needed.
 		for (String line : combatCalc.describeLoadout(targetId))
 		{
+			log.debug("::loadout {}", line);
 			client.addChatMessage(ChatMessageType.CONSOLE, "PvM Performance", line, null);
 		}
 	}
