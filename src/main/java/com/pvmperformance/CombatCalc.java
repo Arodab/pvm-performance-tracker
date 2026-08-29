@@ -65,6 +65,39 @@ class CombatCalc
 	// Slot index back to the slot, for reading the slot an inventory item goes
 	// in off its equipment stats. Not every index is a real slot.
 	/**
+	 * The claws' hitsplat shape when the first accuracy roll connects: a max
+	 * hit, then half, then a quarter twice, which is the doubled max the wiki
+	 * describes spread over four hitsplats.
+	 */
+	private static final double[] CLAW_SHAPE = {1.0, 0.5, 0.25, 0.25};
+	/**
+	 * The claws' fourth-roll outcome, which is the one that does not follow the
+	 * shape above: 125% of the max concentrated onto a single hitsplat.
+	 */
+	private static final double[] CLAW_LAST_RESORT = {1.25};
+
+	/**
+	 * The crimson kisten's four accuracy rolls, the floor of each outcome's
+	 * damage as a share of the max hit, and the width of every band.
+	 */
+	private static final int KISTEN_ROLLS = 4;
+	private static final double[] KISTEN_FLOORS = {0.70, 0.90, 1.10, 1.30};
+	private static final double KISTEN_BAND = 0.40;
+
+	/**
+	 * Burning barrage, by which accuracy roll connected first. The total rolls
+	 * between the floor and the ceiling as a share of the normal max hit, and is
+	 * split over three hitsplats by the shape.
+	 */
+	private static final double[] BURNING_CLAW_FLOORS = {0.75, 0.50, 0.25};
+	private static final double[] BURNING_CLAW_CEILINGS = {1.75, 1.50, 1.25};
+	private static final double[][] BURNING_CLAW_SHAPES = {
+		{0.25, 0.25, 0.50},
+		{0.50, 0.50, 0.00},
+		{0.00, 0.00, 1.00},
+	};
+
+	/**
 	 * Verzik's first phase, in all three difficulties. The seated form counts:
 	 * it is the same phase and the same cap, and the fight opens on it.
 	 */
@@ -370,6 +403,21 @@ class CombatCalc
 	/** Expected hit chance (0..1), or -1 with no data. */
 	double hitChance(int npcId)
 	{
+		return hitChance(npcId, null);
+	}
+
+	/**
+	 * Hit chance with a special attack's roll modifier folded in.
+	 *
+	 * <p>The modifier multiplies the ATTACK ROLL, not the finished chance, and is
+	 * applied to the FINISHED roll with integer arithmetic rather than folded in
+	 * with the gear multiplier - that is the order the game works in, and it is
+	 * exact where a double multiply can land a point either side. Scaling the
+	 * chance instead would put a godsword above 100% against anything it already
+	 * hits two thirds of the time.
+	 */
+	double hitChance(int npcId, SpecialAttack spec)
+	{
 		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
 		if (npc == null)
 		{
@@ -380,13 +428,13 @@ class CombatCalc
 		final double gear = gearBonus(npcId).getAccuracy();
 		if (type.isMelee())
 		{
-			return meleeHitChance(style, type, npc, gear);
+			return meleeHitChance(style, type, npc, gear, spec);
 		}
 		if (type == AttackType.RANGED)
 		{
-			return rangedHitChance(style, npc, gear);
+			return rangedHitChance(style, npc, gear, spec);
 		}
-		return magicHitChance(style, npc, gear, npcId);
+		return magicHitChance(style, npc, gear, npcId, spec);
 	}
 
 	/** How much of a hit the target keeps, for the few that shrug most of it off. */
@@ -527,7 +575,22 @@ class CombatCalc
 
 	/**
 	 * The target's health now, which the ruby bolt effect is a share of. Falls
-	 * back to full health when no health bar is showing.
+	 * back to full health whenever it cannot be read for THIS target.
+	 *
+	 * <p>The health bar has to be confirmed to belong to the npc being asked
+	 * about. It is read off whoever the player is interacting with, which is not
+	 * always the fight this figure describes - a room with several NPCs, a
+	 * target switched mid-fight, the opening attack recomputed against the
+	 * fight's target, and every candidate the gear search evaluates all reach
+	 * here. Taking the bar unchecked scaled one NPC's max health by another
+	 * one's bar, which is not a rounding error but a different number
+	 * altogether. Both the id and the index must agree: the id alone cannot
+	 * separate two of the same NPC standing together.
+	 *
+	 * <p>What comes back is the health BAR, quantised to its own scale rather
+	 * than exact hitpoints, so this is the right bucket and not the right
+	 * number. Exact NPC health is not readable, and ruby's share of it inherits
+	 * the granularity - a point or two on a high-health boss.
 	 */
 	private int targetCurrentHp(int npcId)
 	{
@@ -603,11 +666,12 @@ class CombatCalc
 		return RaidScaling.defence(client, npc.getDefenceLevel(), npc.getName(), partyHitpoints.highest());
 	}
 
-	private double meleeHitChance(AttackStyle style, AttackType type, MonsterStatsProvider.MonsterStats npc, double gear)
+	private double meleeHitChance(AttackStyle style, AttackType type,
+		MonsterStatsProvider.MonsterStats npc, double gear, SpecialAttack spec)
 	{
 		final int effAtk = (int) Math.floor(boostedLevel(Skill.ATTACK) * meleeAccuracyPrayer())
 			+ style.attackLevelBonus() + 8;
-		final int attRoll = attackRoll(effAtk, attackBonus(type), gear);
+		final int attRoll = scaled(attackRoll(effAtk, attackBonus(type), gear), spec);
 		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
 			: type == AttackType.SLASH ? npc.getDefSlash() : npc.getDefCrush();
 		final int defRoll = (defenceLevel(npc) + 9) * (defBonus + 64);
@@ -620,14 +684,14 @@ class CombatCalc
 	 * magic defence is its Magic stat and its magic defence bonus (wiki).
 	 */
 	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear,
-		int npcId)
+		int npcId, SpecialAttack spec)
 	{
 		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
 			+ style.attackLevelBonus() + 9;
 		// Elemental weakness is worth as much accuracy as it is damage, a point
 		// each, and multiplies the roll as the gear effects do.
-		final int attRoll = attackRoll(effMagic, attackBonus(AttackType.MAGIC),
-			gear * (1.0 + elementalWeakness(npcId) / 100.0));
+		final int attRoll = scaled(attackRoll(effMagic, attackBonus(AttackType.MAGIC),
+			gear * (1.0 + elementalWeakness(npcId) / 100.0)), spec);
 		final int magic = RaidScaling.magic(client, npcId, npc.getMagicLevel(), npc.getName(),
 			partyHitpoints.highest());
 		final int defRoll = (magic + 9) * (npc.getDefMagic() + 64);
@@ -729,11 +793,12 @@ class CombatCalc
 			weapon != null && weapon.isTwoHanded());
 	}
 
-	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear)
+	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc,
+		double gear, SpecialAttack spec)
 	{
 		final int effRanged = (int) Math.floor(boostedLevel(Skill.RANGED) * rangedAccuracyPrayer())
 			+ style.attackLevelBonus() + 8;
-		final int attRoll = attackRoll(effRanged, attackBonus(AttackType.RANGED), gear);
+		final int attRoll = scaled(attackRoll(effRanged, attackBonus(AttackType.RANGED), gear), spec);
 		final int defRoll = (defenceLevel(npc) + 9) * (npc.getDefRanged() + 64);
 		return hitChanceFrom(attRoll, defRoll);
 	}
@@ -743,6 +808,12 @@ class CombatCalc
 	 * negative, and hitChanceFrom then returns a negative chance, which callers
 	 * read as "no figure". Casting from melee gear reaches it easily.
 	 */
+	/** The special's scaling of a finished attack roll, or the roll unchanged. */
+	private static int scaled(int attackRoll, SpecialAttack spec)
+	{
+		return spec == null ? attackRoll : spec.scaleAttackRoll(attackRoll);
+	}
+
 	static int attackRoll(int effectiveLevel, int equipmentBonus, double gearMultiplier)
 	{
 		return Math.max(0, (int) (effectiveLevel * (equipmentBonus + 64) * gearMultiplier));
@@ -1306,10 +1377,12 @@ class CombatCalc
 	 * ten for melee, three for ranged and magic. The cap is per hitsplat, which
 	 * is what {@link #cappedAverage} already models.
 	 *
-	 * <p>The Dawnbringer is not exempted here because the special is not the
-	 * ordinary attack this figure describes, and its expected damage is the
-	 * spec's own. Anything else read at its unrestricted max would say a player
-	 * was throwing away twenty damage a hit when the phase allows three.
+	 * <p>The Dawnbringer exemption is NOT written here, and deliberately: the
+	 * phase exempts Pulsate, not the staff, so an exemption at this level would
+	 * uncap the Dawnbringer's ordinary attacks too. It lives on the special
+	 * instead, as {@code SpecialAttack.ignoresDamageCap}, which is the only
+	 * caller allowed to skip this. Every other special IS capped here - a
+	 * godsword on the first phase is held to ten a hitsplat like anything else.
 	 */
 	private int verzikFirstPhaseCap(int npcId)
 	{
@@ -1334,6 +1407,30 @@ class CombatCalc
 	 * roll above the cap collapses onto it, so the average sits far closer to
 	 * the cap than to half of it.
 	 */
+	/**
+	 * The same average for a roll that cannot fall below {@code min}, which is
+	 * the Voidwaker's shape and nothing else's.
+	 *
+	 * <p>Built out of the closed form below rather than walking the roll: the
+	 * average over [min, max] is the whole sum less the part beneath min, so the
+	 * tested arithmetic is reused on both ends and the hot path keeps its closed
+	 * form. With min at zero this is that function exactly.
+	 */
+	static double cappedAverage(int min, int trueMax, int cap)
+	{
+		if (trueMax <= 0 || trueMax < min)
+		{
+			return 0;
+		}
+		if (min <= 0)
+		{
+			return cappedAverage(trueMax, cap);
+		}
+		final double whole = (trueMax + 1) * cappedAverage(trueMax, cap);
+		final double beneath = min * cappedAverage(min - 1, cap);
+		return (whole - beneath) / (trueMax - min + 1);
+	}
+
 	static double cappedAverage(int trueMax, int cap)
 	{
 		if (trueMax <= 0)
@@ -1446,10 +1543,282 @@ class CombatCalc
 			// The spec is its own attack, not a spell, so no ancient bonus applies.
 			return applyMagicDamage(Math.min(58, 58 * magic / 99 + 1), null);
 		}
+		if (weapon == ItemID.NIGHTMARE_STAFF_ELDRITCH)
+		{
+			final int magic = boostedLevel(Skill.MAGIC);
+			// Wiki: min(floor(44 * magic / 99 + 1), 44), then the staff's own
+			// magic damage - the same shape as the volatile staff above, which is
+			// why it sits beside it.
+			return applyMagicDamage(Math.min(44, 44 * magic / 99 + 1), null);
+		}
+		if (weapon == ItemID.VERZIK_SPECIAL_WEAPON)
+		{
+			// Flat, and deliberately not run through applyMagicDamage: the wiki
+			// is explicit that magic damage gear, prayer and the magic level all
+			// leave Pulsate alone.
+			return SpecialAttack.DAWNBRINGER.fixedMax();
+		}
+		final SpecialAttack flat = SpecialAttack.forItem(weapon);
+		if (flat != null && flat.hasFixedDamage())
+		{
+			// The dragonfire shields, which roll a flat range off the wielder's
+			// Defence rather than off any attack style or gear.
+			return flat.fixedMax();
+		}
 		final SpecialAttack spec = specialAttack();
 		// The unmitigated hit: the caller applies mitigation, and taking it from
 		// maxHit() as well would apply Olm's third twice over.
 		return spec == null ? 0 : spec.maxTotal(unmitigatedMaxHit(npcId));
+	}
+
+	/**
+	 * The chance one activation of the special lands at least one hitsplat.
+	 *
+	 * <p>Not the ordinary hit chance: most specials modify the attack roll, the
+	 * Voidwaker and the Dawnbringer cannot miss at all, and the claws roll up to
+	 * four times, so missing needs every roll to fail. The abyssal dagger is the
+	 * other way about - its two rolls are linked, so both hits land or neither
+	 * does, and a second hit adds nothing to the chance of landing.
+	 */
+	double specialAttackLandChance(int npcId)
+	{
+		final SpecialAttack spec = specialAttack();
+		if (spec == null)
+		{
+			return landChance(hitChance(npcId), hitsPerAttack(npcId));
+		}
+		if (spec.alwaysHits())
+		{
+			return 1.0;
+		}
+		final double accuracy = hitChance(npcId, spec);
+		if (accuracy < 0)
+		{
+			return -1;
+		}
+		if (spec.sharedAccuracyRoll())
+		{
+			return accuracy;
+		}
+		// One roll per hitsplat either way. A cascade stops at its first success
+		// and the others all roll independently, but "at least one connected" is
+		// the same arithmetic for both, so the count is all this needs.
+		return landChance(accuracy, spec.hits());
+	}
+
+	/**
+	 * What one activation of the equipped special is expected to deal here.
+	 *
+	 * <p>This is the special's counterpart to {@link #averageHit}, and the two
+	 * are not interchangeable: a special has its own accuracy, its own per-hit
+	 * maxima and, for the claws and the Voidwaker, its own shape of damage roll.
+	 * Booking a special with the ordinary figure understates a godsword and
+	 * badly understates anything capped - a Dawnbringer on Verzik's first phase
+	 * expects three where it deals fifty, because the cap belongs to her
+	 * ordinary hitsplats and not to the special that is exempt from it.
+	 */
+	double specialAttackAverageHit(int npcId)
+	{
+		final SpecialAttack spec = specialAttack();
+		if (spec == null)
+		{
+			// No special that changes the hit, so activating one deals what an
+			// ordinary attack deals.
+			return averageHit(npcId);
+		}
+		final double accuracy = spec.alwaysHits() ? 1.0 : hitChance(npcId, spec);
+		if (accuracy < 0)
+		{
+			return -1;
+		}
+		// Pulsate alone: fixed damage that no gear, prayer or mitigation touches,
+		// and the only hit Verzik's first phase lets past its cap.
+		if (spec.hasFixedDamage())
+		{
+			final int flatMax = spec.fixedMax();
+			return cappedAverage((int) (flatMax * spec.minFraction()), flatMax,
+				spec.ignoresDamageCap() ? Integer.MAX_VALUE : damageCap(npcId));
+		}
+		// Chance-based gear is worth less over time than it is at the top of the
+		// roll, which is the whole reason averageHit has its own multiplier. The
+		// ratio carries that across without restating how a max hit is built.
+		final GearBonus bonus = gearBonus(npcId);
+		final double expectedShare = bonus.getDamage() > 0
+			? bonus.getExpectedDamage() / bonus.getDamage()
+			: 1.0;
+		final double scale = mitigation(npcId) * expectedShare;
+		// Every other special is capped like an ordinary hit: the phase exempts
+		// the Dawnbringer's, not specials in general, so a godsword there is
+		// still held to ten a hitsplat.
+		final int cap = damageCap(npcId);
+		if (spec.cascadingAccuracy())
+		{
+			final int normalMax = (int) (unmitigatedMaxHit(npcId) * scale);
+			return spec == SpecialAttack.BURNING_CLAWS
+				? burningClawsAverage(normalMax, accuracy, cap)
+				: clawsAverage(normalMax, accuracy, cap);
+		}
+		if (spec.binomialAccuracy())
+		{
+			return crimsonKistenAverage((int) (unmitigatedMaxHit(npcId) * scale), accuracy, cap);
+		}
+		// A special with no damage multipliers of its own - the fang, the
+		// bludgeon, the volatile staff - has already had its max worked out.
+		final int base = spec.hasDamageMultipliers()
+			? unmitigatedMaxHit(npcId)
+			: unmitigatedSpecialAttackMaxHit(npcId);
+		return specAverage(spec.hitMaxima((int) (base * scale)), accuracy, spec.minFraction(),
+			spec.flatMinimum(), cap);
+	}
+
+	/**
+	 * The expected damage of a special that rolls its accuracy once and then
+	 * lands every hitsplat, which is all of them bar the claws.
+	 */
+	static double specAverage(int[] hitMaxima, double accuracy, double minFraction, int cap)
+	{
+		return specAverage(hitMaxima, accuracy, minFraction, 0, cap);
+	}
+
+	/**
+	 * As above, with a floor stated in hitpoints as well as one stated as a
+	 * share of the hit's own max. Only the granite hammer needs the flat one,
+	 * whose Hammer Blow adds five to a roll made against the max less five.
+	 */
+	static double specAverage(int[] hitMaxima, double accuracy, double minFraction,
+		int flatMinimum, int cap)
+	{
+		double total = 0;
+		for (int max : hitMaxima)
+		{
+			final int floor = Math.max(flatMinimum, (int) (max * minFraction));
+			total += accuracy * cappedAverage(Math.min(floor, max), max, cap);
+		}
+		return total;
+	}
+
+	/**
+	 * The crimson kisten's expected damage, which is a binomial rather than a
+	 * cascade: all four accuracy rolls are made and the number that SUCCEED
+	 * decides the damage, where the claws stop at the first success.
+	 *
+	 * <p>Wiki: one success deals 70-110% of the max hit, two 90-130%, three
+	 * 110-150% and four 130-170%. No success deals nothing. Each band is 40%
+	 * wide, so the outcome averages the midpoints - 90%, 110%, 130%, 150%.
+	 */
+	static double crimsonKistenAverage(int normalMaxHit, double accuracy, int cap)
+	{
+		double expected = 0;
+		for (int hits = 1; hits <= KISTEN_ROLLS; hits++)
+		{
+			final double weight = binomial(KISTEN_ROLLS, hits)
+				* Math.pow(accuracy, hits) * Math.pow(1.0 - accuracy, KISTEN_ROLLS - hits);
+			final double floor = KISTEN_FLOORS[hits - 1];
+			expected += weight * cappedAverage(
+				(int) (normalMaxHit * floor), (int) (normalMaxHit * (floor + KISTEN_BAND)), cap);
+		}
+		return expected;
+	}
+
+	/** Ways to choose k of n, for the kisten's four rolls. */
+	private static double binomial(int n, int k)
+	{
+		double result = 1;
+		for (int i = 0; i < k; i++)
+		{
+			result = result * (n - i) / (i + 1);
+		}
+		return result;
+	}
+
+	/**
+	 * The claws' expected damage, which their cascade of accuracy rolls makes a
+	 * different shape from every other special.
+	 *
+	 * <p>Wiki: up to four accuracy rolls are made and the first to succeed
+	 * decides the damage - the first roll spreads a doubled max across four
+	 * hitsplats, the second 175% across three, the third 150% across two and the
+	 * fourth 125% onto one. Those totals are exactly the running sums of the
+	 * claws' own 1, 1/2, 1/4, 1/4 shape bar the last, so each failed roll simply
+	 * drops the largest remaining hitsplat; only the fourth outcome needs a
+	 * shape of its own. Four failures still deal 0 or 2, averaging 1.
+	 *
+	 * <p>Modelling this matters: against a target hit four times in five the
+	 * cascade is worth about a fifth more than one roll for the whole
+	 * activation, because a first-roll miss is usually rescued by the second.
+	 */
+	static double clawsAverage(int normalMaxHit, double accuracy, int cap)
+	{
+		final double[] byOutcome = new double[CLAW_SHAPE.length];
+		for (int failed = 0; failed < byOutcome.length; failed++)
+		{
+			final double[] shape = failed < byOutcome.length - 1
+				? Arrays.copyOf(CLAW_SHAPE, byOutcome.length - failed)
+				: CLAW_LAST_RESORT;
+			for (double share : shape)
+			{
+				byOutcome[failed] += cappedAverage(0, (int) (normalMaxHit * share), cap);
+			}
+		}
+		// Every roll missed, which is the one outcome that still deals something.
+		return cascadeAverage(accuracy, byOutcome, Math.min(1.0, cap));
+	}
+
+	/**
+	 * Burning barrage's expected damage. Three rolls, and like the dragon claws
+	 * the first to connect decides the damage - but each outcome has its own
+	 * damage RANGE rather than just a ceiling, so it needs its own figures.
+	 *
+	 * <p>Wiki: the first roll rolls a total between 75% and 175% of the max hit
+	 * split 25-25-50, the second 50% to 150% split 50-50-0, the third 25% to
+	 * 125% split 0-0-100, and three misses deal 0, 1 or 2 at 20/40/40. The
+	 * per-hitsplat shuffles the wiki describes after each split (-1, -1, +2 and
+	 * so on) move damage between hitsplats without changing the total, so they
+	 * matter only against a cap and are folded into the shares below.
+	 *
+	 * <p>The burn is NOT counted. Each hitsplat can inflict one, worth 10 over
+	 * 40 ticks and stacking to five, so a spec is worth 0 to 29 more damage
+	 * arriving long after the attack. That is damage with no attack behind it,
+	 * which is the same accounting problem as thrall damage and is parked for
+	 * the same reason - see "Thrall damage" in HANDOFF.md before modelling it.
+	 */
+	static double burningClawsAverage(int normalMaxHit, double accuracy, int cap)
+	{
+		final double[] byOutcome = new double[BURNING_CLAW_SHAPES.length];
+		for (int failed = 0; failed < byOutcome.length; failed++)
+		{
+			final double floor = BURNING_CLAW_FLOORS[failed];
+			final double ceiling = BURNING_CLAW_CEILINGS[failed];
+			for (double share : BURNING_CLAW_SHAPES[failed])
+			{
+				byOutcome[failed] += cappedAverage(
+					(int) (normalMaxHit * floor * share),
+					(int) (normalMaxHit * ceiling * share),
+					cap);
+			}
+		}
+		// 0, 1 or 2 at 20/40/40, which averages 1.2.
+		return cascadeAverage(accuracy, byOutcome, Math.min(1.2, cap));
+	}
+
+	/**
+	 * Walks a cascade of accuracy rolls, where the first roll to connect decides
+	 * the damage and a roll is only made because the one before it missed.
+	 *
+	 * <p>Split out because both claws share it and it is the half that is easy
+	 * to get wrong: outcome k is reached only when the first k rolls all missed,
+	 * so its weight is {@code (1-a)^k * a} rather than {@code a}.
+	 */
+	private static double cascadeAverage(double accuracy, double[] damageByOutcome, double missAverage)
+	{
+		double expected = 0;
+		double reached = 1.0;
+		for (double damage : damageByOutcome)
+		{
+			expected += reached * accuracy * damage;
+			reached *= 1.0 - accuracy;
+		}
+		return expected + reached * missAverage;
 	}
 
 	private int computeBaseMaxHit()

@@ -63,6 +63,7 @@ import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.SpotanimID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
@@ -225,6 +226,8 @@ public class PvmPerformancePlugin extends Plugin
 	private double expectedAccuracy = -1;
 	private double expectedAverageHit = -1;
 	private int expectedSpecMaxHit;
+	private double expectedSpecAccuracy = -1;
+	private double expectedSpecAverageHit = -1;
 	private SpecialAttack specialAttack;
 	// Which target the figures above were computed against, so an attack is only
 	// sampled with figures that were actually meant for it.
@@ -280,9 +283,27 @@ public class PvmPerformancePlugin extends Plugin
 	private int attackObservedMaxHit;
 	private double attackObservedAccuracy = -1;
 	private double attackObservedAverageHit = -1;
+	private int attackObservedSpecMaxHit;
+	private double attackObservedSpecAccuracy = -1;
+	private double attackObservedSpecAverageHit = -1;
 	// The expected figures as they stood on each of the last few ticks, so an
-	// attack can be scored with the loadout that actually threw it.
+	// attack can be scored with the loadout that actually threw it. Each row
+	// carries the ordinary figures AND the special's, because which of the two
+	// an attack needs is not known until it is booked - see sampleExpected.
+	private static final int EXP_MAX = 0;
+	private static final int EXP_ACCURACY = 1;
+	private static final int EXP_AVERAGE = 2;
+	private static final int EXP_NPC_ID = 3;
+	private static final int EXP_SPEC_MAX = 4;
+	private static final int EXP_SPEC_ACCURACY = 5;
+	private static final int EXP_SPEC_AVERAGE = 6;
+	private static final int EXP_WIDTH = 7;
 	private final Map<Integer, double[]> expectedByTick = new HashMap<>();
+	// The tick the special attack energy last fell, which is the tick a special
+	// went out on. Read back at the booking rather than at the sample: the varp
+	// can arrive after the tick's onGameTick has already run.
+	private int specFiredTick = Integer.MIN_VALUE;
+	private int specEnergy = -1;
 	// Where I stood on each of the last few ticks, in scene coordinates: a
 	// projectile names the tile it left, which is where the player was when it
 	// was fired, not where they are when the event arrives.
@@ -394,6 +415,10 @@ public class PvmPerformancePlugin extends Plugin
 		countedProjectiles.clear();
 		recentTiles.clear();
 		expectedByTick.clear();
+		// Both re-read from scratch: a stale energy reading across a reset would
+		// look like a special the moment the bar came back lower than it was.
+		specFiredTick = Integer.MIN_VALUE;
+		specEnergy = -1;
 		lastHitsplatTick.clear();
 		burstLanded.clear();
 		pendingMineHits.clear();
@@ -882,10 +907,18 @@ public class PvmPerformancePlugin extends Plugin
 			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
 			expectedAverageHit = combatCalc.averageHit(shown.getTargetId());
 			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(shown.getTargetId());
+			expectedSpecAccuracy = combatCalc.specialAttackLandChance(shown.getTargetId());
+			expectedSpecAverageHit = combatCalc.specialAttackAverageHit(shown.getTargetId());
 			expectedForNpcId = shown.getTargetId();
-			expectedByTick.put(client.getTickCount(),
-				new double[]{expectedMaxHit, expectedAccuracy, expectedAverageHit, expectedForNpcId,
-					combatCalc.isMeleeEquipped() ? 0 : 1});
+			final double[] row = new double[EXP_WIDTH];
+			row[EXP_MAX] = expectedMaxHit;
+			row[EXP_ACCURACY] = expectedAccuracy;
+			row[EXP_AVERAGE] = expectedAverageHit;
+			row[EXP_NPC_ID] = expectedForNpcId;
+			row[EXP_SPEC_MAX] = expectedSpecMaxHit;
+			row[EXP_SPEC_ACCURACY] = expectedSpecAccuracy;
+			row[EXP_SPEC_AVERAGE] = expectedSpecAverageHit;
+			expectedByTick.put(client.getTickCount(), row);
 			expectedByTick.keySet().removeIf(t -> client.getTickCount() - t > RECENT_TILES);
 		}
 		else
@@ -894,6 +927,8 @@ public class PvmPerformancePlugin extends Plugin
 			expectedAccuracy = -1;
 			expectedAverageHit = -1;
 			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(-1);
+			expectedSpecAccuracy = -1;
+			expectedSpecAverageHit = -1;
 			expectedForNpcId = -1;
 		}
 	}
@@ -949,6 +984,9 @@ public class PvmPerformancePlugin extends Plugin
 		int maxHit = expectedMaxHit;
 		double accuracy = expectedAccuracy;
 		double averageHit = expectedAverageHit;
+		int specMaxHit = expectedSpecMaxHit;
+		double specLandChance = expectedSpecAccuracy;
+		double specAverageHit = expectedSpecAverageHit;
 		// Prefer the figures from the tick the attack left on. A slow projectile
 		// surfaces a tick late, and scoring it with the loadout held by then
 		// credited a shadow's attack to the whip switched to mid-flight.
@@ -958,12 +996,18 @@ public class PvmPerformancePlugin extends Plugin
 			maxHit = attackObservedMaxHit;
 			accuracy = attackObservedAccuracy;
 			averageHit = attackObservedAverageHit;
+			specMaxHit = attackObservedSpecMaxHit;
+			specLandChance = attackObservedSpecAccuracy;
+			specAverageHit = attackObservedSpecAverageHit;
 		}
-		else if (atOrigin != null && (int) atOrigin[3] == targetId)
+		else if (atOrigin != null && (int) atOrigin[EXP_NPC_ID] == targetId)
 		{
-			maxHit = (int) atOrigin[0];
-			accuracy = atOrigin[1];
-			averageHit = atOrigin[2];
+			maxHit = (int) atOrigin[EXP_MAX];
+			accuracy = atOrigin[EXP_ACCURACY];
+			averageHit = atOrigin[EXP_AVERAGE];
+			specMaxHit = (int) atOrigin[EXP_SPEC_MAX];
+			specLandChance = atOrigin[EXP_SPEC_ACCURACY];
+			specAverageHit = atOrigin[EXP_SPEC_AVERAGE];
 		}
 		else if (expectedForNpcId != targetId)
 		{
@@ -973,6 +1017,9 @@ public class PvmPerformancePlugin extends Plugin
 			maxHit = combatCalc.maxHit(targetId);
 			accuracy = combatCalc.hitChance(targetId);
 			averageHit = combatCalc.averageHit(targetId);
+			specMaxHit = combatCalc.specialAttackMaxHit(targetId);
+			specLandChance = combatCalc.specialAttackLandChance(targetId);
+			specAverageHit = combatCalc.specialAttackAverageHit(targetId);
 		}
 		// Held rather than added, unless the attack has already resolved: an
 		// expectation only belongs beside a measured figure if the attack got
@@ -984,8 +1031,21 @@ public class PvmPerformancePlugin extends Plugin
 		// ATTACK: three scythe hitsplats land on one tick and book as one
 		// landed attack. So the expectation is the chance at least one roll
 		// connected, not the sum of them.
-		final double expectedChances =
+		// A special is not the attack the ordinary figures describe: it has its
+		// own accuracy, its own per-hitsplat maxima and, on Verzik's first phase,
+		// its own exemption from the cap. Decided HERE rather than when the
+		// figures were sampled because the energy varp can arrive after that
+		// tick's onGameTick has already run, so whether the attack was a special
+		// is only reliably known by the time it is booked.
+		final boolean special = attackOriginTick == specFiredTick && specAverageHit >= 0;
+		double expectedChances =
 			CombatCalc.landChance(accuracy, combatCalc.hitsPerAttack(targetId));
+		if (special)
+		{
+			maxHit = specMaxHit;
+			averageHit = specAverageHit;
+			expectedChances = specLandChance;
+		}
 		if (attackObservedLag == MELEE_BOOKING_LAG)
 		{
 			fight.recordExpected(maxHit, expectedChances, averageHit);
@@ -1498,6 +1558,9 @@ public class PvmPerformancePlugin extends Plugin
 		attackObservedMaxHit = combatCalc.maxHit(npcId);
 		attackObservedAccuracy = combatCalc.hitChance(npcId);
 		attackObservedAverageHit = combatCalc.averageHit(npcId);
+		attackObservedSpecMaxHit = combatCalc.specialAttackMaxHit(npcId);
+		attackObservedSpecAccuracy = combatCalc.specialAttackLandChance(npcId);
+		attackObservedSpecAverageHit = combatCalc.specialAttackAverageHit(npcId);
 		// A weapon swapped on a tick is not wielded until the next one, so an
 		// attack thrown on the tick of a switch used what was held before it.
 		// The client shows the new weapon immediately, which is why the figures
@@ -1510,11 +1573,15 @@ public class PvmPerformancePlugin extends Plugin
 				tick >= gearChangedTick - SWITCH_LOOKBACK_TICKS; tick--)
 			{
 				final double[] earlier = expectedByTick.get(tick);
-				if (earlier != null && (int) earlier[3] == npcId && earlier[1] >= 0)
+				if (earlier != null && (int) earlier[EXP_NPC_ID] == npcId
+					&& earlier[EXP_ACCURACY] >= 0)
 				{
-					attackObservedMaxHit = (int) earlier[0];
-					attackObservedAccuracy = earlier[1];
-					attackObservedAverageHit = earlier[2];
+					attackObservedMaxHit = (int) earlier[EXP_MAX];
+					attackObservedAccuracy = earlier[EXP_ACCURACY];
+					attackObservedAverageHit = earlier[EXP_AVERAGE];
+					attackObservedSpecMaxHit = (int) earlier[EXP_SPEC_MAX];
+					attackObservedSpecAccuracy = earlier[EXP_SPEC_ACCURACY];
+					attackObservedSpecAverageHit = earlier[EXP_SPEC_AVERAGE];
 					break;
 				}
 			}
@@ -1570,6 +1637,28 @@ public class PvmPerformancePlugin extends Plugin
 		// Watched here because the energy falling is what says a special went out,
 		// and the player's own specials are not carried by the party message.
 		drain.onEnergyChanged();
+		noteSpecialEnergy();
+	}
+
+	/**
+	 * Marks the tick a special went out on, which is the tick the energy falls.
+	 *
+	 * <p>Tracked here rather than taken from {@link DefenceDrain}, which watches
+	 * the same varp: that only arms for the handful of weapons whose special
+	 * drains defence, and every special needs booking against its own expected
+	 * damage rather than the ordinary attack's.
+	 */
+	private void noteSpecialEnergy()
+	{
+		final int energy = client.getVarpValue(VarPlayerID.SA_ENERGY);
+		final int previous = specEnergy;
+		specEnergy = energy;
+		// A first reading cannot be compared against anything, and energy that
+		// went up is regeneration rather than a special.
+		if (previous >= 0 && energy < previous)
+		{
+			specFiredTick = client.getTickCount();
+		}
 	}
 
 	@Subscribe
