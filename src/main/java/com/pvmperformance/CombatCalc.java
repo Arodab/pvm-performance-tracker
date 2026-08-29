@@ -58,6 +58,9 @@ class CombatCalc
 
 	// A manual cast counts for a few ticks past the click, so it survives the
 	// gap between casts while the player keeps going.
+	/** A game tick, in seconds. */
+	private static final double TICK_SECONDS = 0.6;
+
 	private static final int MANUAL_CAST_TICKS = 8;
 	// Clicks that may be outstanding at once. Two covers a click made while the
 	// previous cast is still in the air; the third is slack.
@@ -1227,6 +1230,41 @@ class CombatCalc
 	}
 
 	/** Ticks between attacks, which is the cadence tick loss measures against. */
+	/**
+	 * Damage a second this loadout is expected to do against this target, or -1
+	 * when there is no figure.
+	 *
+	 * <p>Built from the ATTACK SPEED, not from a clock: average hit over the
+	 * weapon's own cooldown. That is what makes it comparable between two setups
+	 * that swing at different speeds, which is the whole reason it is shown - a
+	 * bigger average hit on a slower weapon is not obviously better and this is
+	 * the figure that settles it. It also owes nothing to the fight timer, which
+	 * the measured dps does.
+	 *
+	 * <p>Ordinary attacks only. A special is not sustained, so folding one in
+	 * would describe a rotation nobody can keep up.
+	 */
+	double expectedDps(int npcId)
+	{
+		final double average = averageHit(npcId);
+		if (average < 0)
+		{
+			return -1;
+		}
+		return dpsFrom(average, attackSpeedTicks());
+	}
+
+	/**
+	 * Average hit over the weapon's cooldown. Split out static so the arithmetic
+	 * stays under test without a Client, like fangMaxHit and attackRoll.
+	 */
+	static double dpsFrom(double averageHit, int attackSpeedTicks)
+	{
+		return attackSpeedTicks <= 0 || averageHit < 0
+			? -1
+			: averageHit / (attackSpeedTicks * TICK_SECONDS);
+	}
+
 	int attackSpeedTicks()
 	{
 		final ItemEquipmentStats w = weaponStats();
@@ -2086,9 +2124,49 @@ class CombatCalc
 		final double accuracy = hitChance(npcId);
 		lines.add(accuracy < 0
 			? String.format("Max hit %d, no accuracy without target stats", maxHit(npcId))
-			: String.format("Max hit %d%s, accuracy %.1f%% (lands %.1f%%), avg hit %.2f",
+			: String.format("Max hit %d%s, accuracy %.1f%% (lands %.1f%%), avg hit %.2f, dps %.2f",
 				maxHit(npcId), scytheBreakdown(npcId), accuracy * 100,
-				landChance(npcId) * 100, averageHit(npcId)));
+				landChance(npcId) * 100, averageHit(npcId), expectedDps(npcId)));
+
+		// Where a melee or ranged max hit came from - the counterpart of the magic
+		// breakdown below. Without it a wrong max hit is one number with nothing
+		// behind it, and for a blowpipe the strength bonus carries the dart from the
+		// CONFIG rather than from the weapon, which is the first thing to check when
+		// the figure looks too high or too low.
+		if (style.getAttackType() != AttackType.MAGIC)
+		{
+			final boolean melee = style.getAttackType().isMelee();
+			final ItemEquipmentStats dart = blowpipeDart();
+			lines.add(String.format("%s: str bonus %+d%s, level %d, attack bonus %+d",
+				melee ? "Melee" : "Ranged",
+				equipmentBonus(melee),
+				dart == null ? "" : String.format(" (config dart %s %+d)",
+					config.blowpipeDart(), dart.getRstr()),
+				boostedLevel(melee ? Skill.STRENGTH : Skill.RANGED),
+				attackBonus(style.getAttackType())));
+
+			// Per slot, because a total that looks wrong says nothing about WHICH
+			// item is wrong. Only the slots that actually contribute are listed, so
+			// this is short in practice.
+			final StringBuilder perSlot = new StringBuilder();
+			for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
+			{
+				final int id = gear().id(slot);
+				final ItemEquipmentStats e = equipmentStats(id);
+				if (e == null)
+				{
+					continue;
+				}
+				final int str = melee ? e.getStr() : e.getRstr();
+				if (str != 0)
+				{
+					perSlot.append(perSlot.length() == 0 ? "" : ", ")
+						.append(slot).append(' ').append(itemManager.getItemComposition(id).getName())
+						.append(' ').append(String.format("%+d", str));
+				}
+			}
+			lines.add("  str from: " + (perSlot.length() == 0 ? "nothing worn" : perSlot));
+		}
 
 		// Where a magic max hit came from. Every part is a separate rule, and a
 		// wrong figure is otherwise one number with nothing behind it.

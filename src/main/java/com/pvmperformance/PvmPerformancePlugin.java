@@ -228,6 +228,7 @@ public class PvmPerformancePlugin extends Plugin
 	private int expectedSpecMaxHit;
 	private double expectedSpecAccuracy = -1;
 	private double expectedSpecAverageHit = -1;
+	private double expectedDps = -1;
 	private SpecialAttack specialAttack;
 	// Which target the figures above were computed against, so an attack is only
 	// sampled with figures that were actually meant for it.
@@ -990,6 +991,7 @@ public class PvmPerformancePlugin extends Plugin
 			expectedMaxHit = combatCalc.maxHit(shown.getTargetId());
 			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
 			expectedAverageHit = combatCalc.averageHit(shown.getTargetId());
+			expectedDps = combatCalc.expectedDps(shown.getTargetId());
 			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(shown.getTargetId());
 			expectedSpecAccuracy = combatCalc.specialAttackLandChance(shown.getTargetId());
 			expectedSpecAverageHit = combatCalc.specialAttackAverageHit(shown.getTargetId());
@@ -1010,6 +1012,7 @@ public class PvmPerformancePlugin extends Plugin
 			expectedMaxHit = combatCalc.maxHit(-1);
 			expectedAccuracy = -1;
 			expectedAverageHit = -1;
+			expectedDps = -1;
 			expectedSpecMaxHit = combatCalc.specialAttackMaxHit(-1);
 			expectedSpecAccuracy = -1;
 			expectedSpecAverageHit = -1;
@@ -2201,6 +2204,12 @@ public class PvmPerformancePlugin extends Plugin
 	double getExpectedAverageHit()
 	{
 		return expectedAverageHit;
+	}
+
+	/** Expected damage a second for the loadout in hand; see CombatCalc.expectedDps. */
+	double getExpectedDps()
+	{
+		return expectedDps;
 	}
 
 	/** Max total damage of one special attack activation (0 if the weapon has none). */

@@ -99,6 +99,19 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 		}
 
+		// Under Avg hit because it answers the question a bigger average hit
+		// cannot: which of two setups is actually better when they swing at
+		// different speeds. Off the weapon's own cooldown rather than any clock,
+		// so it holds still through a fight like the rest of this half.
+		final double expDps = plugin.getExpectedDps();
+		if (expDps >= 0)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("DPS")
+				.right(String.format("%.2f", expDps))
+				.build());
+		}
+
 		if (expectedOnly)
 		{
 			return super.render(graphics);
