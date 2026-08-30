@@ -778,10 +778,6 @@ class GearBonusCalc
 	 * so reading it scaled every NPC in the game once a raid had been done. This
 	 * also reads set in the lobby, which is harmless.
 	 */
-	void updateRaidState()
-	{
-		// Nothing to latch: the party status answers directly.
-	}
 
 	/** Whether Mark of Darkness is up, which no varbit says. */
 	void setMarkOfDarkness(boolean up)

@@ -1819,7 +1819,6 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
-		gearBonuses.updateRaidState();
 		RaidScaling.setTombsRaidLevel(gearBonuses.tombsRaidLevel());
 		trackRaid(System.currentTimeMillis());
 		startFightOnTarget();
