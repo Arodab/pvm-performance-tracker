@@ -1848,6 +1848,19 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		trackAttackCooldown();
 
+		// For ranged attacks where the player is right next to the target, the
+		// hitsplat can arrive on the exact same tick the projectile sets off. If
+		// it did, the hitsplat's resolvePendingSample call fired empty because
+		// trackAttackCooldown hadn't created the sample yet. Resolving again here
+		// catches that sample.
+		for (java.util.Map.Entry<Integer, Integer> entry : lastHitsplatTick.entrySet())
+		{
+			if (entry.getValue() == client.getTickCount())
+			{
+				resolvePendingSample(entry.getKey());
+			}
+		}
+
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
 		{
