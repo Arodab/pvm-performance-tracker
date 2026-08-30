@@ -12,6 +12,6 @@ Instead of just telling you how much damage you dealt, this plugin models your e
 - **Exportable Data:** Dumps your session fight data to CSV for further analysis.
 
 ## Credits
-- Special thanks to **GearScape** for the Chambers of Xeric scaling math.
-- Portions of the combat math were ported from the LlemonDuck dps-calculator (BSD-2).
-
+- Special thanks to Kinomoto and zLost for a ton of valuable feedback and ideas for the plugin;
+- Portions of the combat math were ported from the LlemonDuck dps-calculator (BSD-2);
+- Chambers of Xeric scaling math taken from **GearScape**.
