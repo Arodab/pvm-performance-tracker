@@ -40,25 +40,7 @@ final class RaidScaling
 		}
 			// The Nightmare's totems take double from magic. Left out, expected
 			// damage would be half what lands.
-		return isNightmareTotem(npcId) && type == AttackType.MAGIC ? 2 : 1;
-	}
-
-	private static boolean isNightmareTotem(int npcId)
-	{
-		switch (npcId)
-		{
-			case NpcID.NIGHTMARE_TOTEM_1_READY:
-			case NpcID.NIGHTMARE_TOTEM_2_READY:
-			case NpcID.NIGHTMARE_TOTEM_3_READY:
-			case NpcID.NIGHTMARE_TOTEM_4_READY:
-			case NpcID.NIGHTMARE_TOTEM_1_CHARGED:
-			case NpcID.NIGHTMARE_TOTEM_2_CHARGED:
-			case NpcID.NIGHTMARE_TOTEM_3_CHARGED:
-			case NpcID.NIGHTMARE_TOTEM_4_CHARGED:
-				return true;
-			default:
-				return false;
-		}
+		return EncounterGroup.isNightmareTotem(npcId) && type == AttackType.MAGIC ? 2 : 1;
 	}
 
 	/** Whether this is Olm's mage hand, whose magic level the Chambers halve. */
