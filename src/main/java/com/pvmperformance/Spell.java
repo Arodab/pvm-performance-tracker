@@ -157,6 +157,7 @@ enum Spell
 	}
 
 	private static final Map<Integer, Spell> BY_VARBIT = new HashMap<>();
+	private static final Map<String, Spell> BY_DISPLAY_NAME = new HashMap<>();
 
 	static
 	{
@@ -166,6 +167,7 @@ enum Spell
 			{
 				BY_VARBIT.put(spell.varbitValue, spell);
 			}
+			BY_DISPLAY_NAME.put(spell.displayName.toLowerCase(Locale.ROOT), spell);
 		}
 	}
 
@@ -205,13 +207,6 @@ enum Spell
 		{
 			return null;
 		}
-		for (Spell spell : values())
-		{
-			if (spell.displayName.equalsIgnoreCase(name))
-			{
-				return spell;
-			}
-		}
-		return null;
+		return BY_DISPLAY_NAME.get(name.toLowerCase(Locale.ROOT));
 	}
 }
