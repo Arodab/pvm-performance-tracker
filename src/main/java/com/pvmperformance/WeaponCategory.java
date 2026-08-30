@@ -181,7 +181,7 @@ enum WeaponCategory
 	@Getter
 	private final List<AttackStyle> attackStyles;
 
-	private final AttackStyle[] styleByVarp = new AttackStyle[4];
+	private final AttackStyle[] styleByVarp = new AttackStyle[6];
 
 	WeaponCategory(int varbitValue, String gameName, List<AttackStyle> attackStyles)
 	{
