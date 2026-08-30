@@ -976,7 +976,10 @@ public class PvmPerformancePlugin extends Plugin
 		// target or carried items change.
 		switchedByTick.put(client.getTickCount(),
 			!combatCalc.missedGearSwitch(shown != null ? shown.getTargetId() : -1));
-		switchedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
+		if (client.getTickCount() % 5 == 0)
+		{
+			switchedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
+		}
 		// A sample whose attack should long since have landed is dropped, so a
 		// resolve that never comes cannot wait for the next fight's hitsplat.
 		pendingSamples.removeIf(sample -> client.getTickCount() - sample.tick > PENDING_SAMPLE_TICKS);
@@ -989,7 +992,10 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			lastMeleeTick = client.getTickCount();
 		}
-		speedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
+		if (client.getTickCount() % 5 == 0)
+		{
+			speedByTick.keySet().removeIf(t -> client.getTickCount() - t > SWITCH_HISTORY_TICKS);
+		}
 		if (shown != null)
 		{
 			// Pass the target so salve, dragon hunter and the rest can apply.
@@ -1836,14 +1842,20 @@ public class PvmPerformancePlugin extends Plugin
 		// there was none. hasOffensivePrayer reads the server's copy.
 		final boolean upThisTick = combatCalc.hasOffensivePrayer();
 		prayerUpByTick.put(client.getTickCount(), upThisTick);
-		prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
+		if (client.getTickCount() % 5 == 0)
+		{
+			prayerUpByTick.keySet().removeIf(t -> client.getTickCount() - t > PRAYER_HISTORY_TICKS);
+		}
 		trackAttackCooldown();
 
 		final Player me = client.getLocalPlayer();
 		if (me != null && me.getLocalLocation() != null)
 		{
 			recentTiles.put(client.getTickCount(), me.getLocalLocation());
-			recentTiles.keySet().removeIf(t -> client.getTickCount() - t > RECENT_TILES);
+			if (client.getTickCount() % 5 == 0)
+			{
+				recentTiles.keySet().removeIf(t -> client.getTickCount() - t > RECENT_TILES);
+			}
 		}
 
 		// Drop projectiles that have landed so the set doesn't retain them.
