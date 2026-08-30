@@ -939,6 +939,25 @@ class CombatCalc
 		{
 			return named;
 		}
+
+		final String weaponName = weaponName();
+		if (weaponName != null)
+		{
+			final String lower = weaponName.toLowerCase(Locale.ROOT);
+			if (lower.contains("blowpipe") || lower.contains("dart") || lower.contains("knife") || lower.contains("thrownaxe") || lower.contains("chinchompa") || lower.contains("toktz-xil-ul"))
+			{
+				return WeaponCategory.THROWN;
+			}
+			if (lower.contains("crossbow") || lower.contains("c'bow"))
+			{
+				return WeaponCategory.CROSSBOW;
+			}
+			if (lower.contains("bow") || lower.contains("seercull"))
+			{
+				return WeaponCategory.BOW;
+			}
+		}
+
 		return stale ? null
 			: WeaponCategory.forVarbit(client.getVarbitValue(VarbitID.COMBAT_WEAPON_CATEGORY));
 	}
