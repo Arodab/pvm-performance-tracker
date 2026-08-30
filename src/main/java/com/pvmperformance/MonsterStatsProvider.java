@@ -56,6 +56,7 @@ class MonsterStatsProvider
 	// accuracy, no expected damage and no drain, reading as whole stretches of a
 	// raid being ignored.
 	private volatile Map<String, MonsterStats> byName = Collections.emptyMap();
+	private final Map<Integer, MonsterStats> dynamicCache = new java.util.concurrent.ConcurrentHashMap<>();
 
 	@Inject
 	MonsterStatsProvider(OkHttpClient httpClient, Gson gson, ScheduledExecutorService executor,
@@ -83,11 +84,20 @@ class MonsterStatsProvider
 		{
 			return null;
 		}
+		if (dynamicCache.containsKey(npcId))
+		{
+			return dynamicCache.get(npcId);
+		}
 		// The id is unknown, so ask the game its name and look that up. Where a name
 		// covers several versions the first wins, which is the ordinary form, so a
 		// figure may be a little low but is no longer absent.
 		final NPCComposition composition = client.getNpcDefinition(npcId);
-		return composition == null ? null : byName.get(normalise(composition.getName()));
+		MonsterStats resolved = composition == null ? null : byName.get(normalise(composition.getName()));
+		if (resolved != null)
+		{
+			dynamicCache.put(npcId, resolved);
+		}
+		return resolved;
 	}
 
 	private static String normalise(String name)
@@ -197,6 +207,7 @@ class MonsterStatsProvider
 				names.putIfAbsent(normalise(stats.getName()), stats);
 			}
 			byName = names;
+			dynamicCache.clear();
 			log.debug("PvM Performance: loaded {} monster stat entries", map.size());
 		}
 	}
