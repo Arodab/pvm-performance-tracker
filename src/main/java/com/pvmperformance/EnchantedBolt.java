@@ -1,7 +1,7 @@
 package com.pvmperformance;
 
-// The enchanted bolts whose effects change expected damage, with their PvM
-// activation rates. The hard Kandarin diary raises every rate by a tenth.
+// The enchanted bolts whose effects change expected damage, with their PvM activation rates. The hard Kandarin diary
+// raises every rate by a tenth.
 enum EnchantedBolt
 {
 	/** Blood forfeit: 20% of the target's current health, capped, ignoring accuracy. */

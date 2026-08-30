@@ -20,9 +20,8 @@ import net.runelite.client.plugins.specialcounter.SpecialWeapon;
 @Singleton
 class DefenceDrain
 {
-	// A special lands on the tick it is thrown for melee, a few ticks later for
-	// thrown and fired ones. Past this it is forgotten rather than credited to
-	// whatever is hit next.
+	// A special lands on the tick it is thrown for melee, a few ticks later for thrown and fired ones. Past this it is
+	// forgotten rather than credited to whatever is hit next.
 	private static final int MEMORY_TICKS = 4;
 
 	private static final Map<Integer, SpecialWeapon> BY_ITEM_ID = new HashMap<>();
@@ -48,8 +47,8 @@ class DefenceDrain
 	// npc index -> defence levels taken off it.
 	private final Map<Integer, Integer> drained = new HashMap<>();
 
-	// Seeded from the live value rather than left unknown, so the first special
-	// after a reset is measured against something: at -1 it was swallowed.
+	// Seeded from the live value rather than left unknown, so the first special after a reset is measured against
+	// something: at -1 it was swallowed.
 	private int specEnergy = -1;
 	private SpecialWeapon firedWeapon;
 	private int firedTick = Integer.MIN_VALUE;
@@ -81,8 +80,8 @@ class DefenceDrain
 		specEnergy = energy;
 		if (previous < 0)
 		{
-			// First reading since a reset. A full bar cannot have just been
-			// spent, so anything short of it is a special that already went out.
+			// First reading since a reset. A full bar cannot have just been spent, so anything short of it is a special that
+			// already went out.
 			if (energy >= MAX_SPEC_ENERGY)
 			{
 				return;

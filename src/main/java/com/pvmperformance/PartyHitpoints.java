@@ -8,8 +8,7 @@ import net.runelite.api.Client;
 import net.runelite.api.Skill;
 import net.runelite.client.plugins.party.messages.StatusUpdate;
 
-// The highest hitpoints level in the party, which is what Chambers of Xeric
-// scales its monsters by.
+// The highest hitpoints level in the party, which is what Chambers of Xeric scales its monsters by.
 @Singleton
 class PartyHitpoints
 {

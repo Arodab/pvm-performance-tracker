@@ -2,8 +2,8 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-// The offensive prayer a player intends to hold up, chosen in the config
-// and used as the standard the efficiency figure measures against.
+// The offensive prayer a player intends to hold up, chosen in the config and used as the standard the efficiency figure
+// measures against.
 @Getter
 public enum PrayerChoice
 {
@@ -31,9 +31,8 @@ public enum PrayerChoice
 	MYSTIC_LORE("Mystic Lore", 1.10, 1.0, 1.0),
 	MYSTIC_MIGHT("Mystic Might", 1.15, 1.0, 2.0),
 	MYSTIC_VIGOUR("Mystic Vigour", 1.18, 1.0, 3.0),
-	// Augury gained a 4% magic damage boost in May 2024. Without it the prayer
-	// changes only accuracy, and against a target already near 100% it looked
-	// like Augury did nothing at all.
+	// Augury gained a 4% magic damage boost in May 2024. Without it the prayer changes only accuracy, and against a target
+	// already near 100% it looked like Augury did nothing at all.
 	AUGURY("Augury", 1.25, 1.0, 4.0),
 
 	// Ruinous Powers
@@ -49,8 +48,8 @@ public enum PrayerChoice
 	private final String displayName;
 	private final double attackMultiplier;
 	private final double strengthMultiplier;
-	// Magic damage, as a percentage added to the worn total rather than a
-	// multiplier. Only a few prayers give any; for the rest this is zero.
+	// Magic damage, as a percentage added to the worn total rather than a multiplier. Only a few prayers give any; for the
+	// rest this is zero.
 	private final double magicDamagePercent;
 
 	PrayerChoice(String displayName, double attackMultiplier, double strengthMultiplier)

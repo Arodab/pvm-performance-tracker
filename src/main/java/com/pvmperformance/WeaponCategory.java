@@ -8,11 +8,9 @@ import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-// The combat options each weapon category offers, keyed by
-// VarbitID.COMBAT_WEAPON_CATEGORY. With the COM_MODE varplayer this identifies
-// exactly which option is selected rather than guessing from the bonuses.
-// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, with
-// entries corrected against RuneLite's own attack styles plugin (BSD-2).
+// The combat options each weapon category offers, keyed by VarbitID.COMBAT_WEAPON_CATEGORY. With the COM_MODE varplayer
+// this identifies exactly which option is selected rather than guessing from the bonuses. Ported from the LlemonDuck
+// dps-calculator (BSD-2), (c) Paul Norton, with entries corrected against RuneLite's own attack styles plugin (BSD-2).
 enum WeaponCategory
 {
 	UNARMED(0, "Unarmed", Arrays.asList(

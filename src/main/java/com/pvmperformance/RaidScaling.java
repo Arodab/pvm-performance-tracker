@@ -8,14 +8,12 @@ import net.runelite.api.Client;
 import net.runelite.api.gameval.NpcID;
 import net.runelite.api.gameval.VarbitID;
 
-// Raid scaling applied to a monster's levels, in one place because the model
-// and the drain tracker need the same answer. The Chambers arithmetic is taken
-// from the GearScape DPS calculator, the only working record of it; credit is
+// Raid scaling applied to a monster's levels, in one place because the model and the drain tracker need the same
+// answer. The Chambers arithmetic is taken from the GearScape DPS calculator, the only working record of it; credit is
 // owed in the submission. It is the mechanic that is reproduced, not their code.
 final class RaidScaling
 {
-	// The few whose magic level is worth rolling against, and so is scaled with
-	// the rest of them.
+	// The few whose magic level is worth rolling against, and so is scaled with the rest of them.
 	private static final Set<String> MAGIC_SCALED = Collections.unmodifiableSet(new HashSet<>(
 		Arrays.asList("deathly ranger", "abyssal portal", "vespula", "vespine soldier")));
 
@@ -26,8 +24,7 @@ final class RaidScaling
 	{
 	}
 
-	// The share of a hit that reaches the target, for the few that shrug most
-	// of it off.
+	// The share of a hit that reaches the target, for the few that shrug most of it off.
 	static double damageTaken(int npcId, AttackType type)
 	{
 		if (npcId == NpcID.OLM_HAND_RIGHT || npcId == NpcID.OLM_HAND_RIGHT_SPAWNING)
@@ -38,8 +35,7 @@ final class RaidScaling
 		{
 			return type.isMelee() ? 1 : MITIGATED;
 		}
-			// The Nightmare's totems take double from magic. Left out, expected
-			// damage would be half what lands.
+			// The Nightmare's totems take double from magic. Left out, expected damage would be half what lands.
 		return EncounterGroup.isNightmareTotem(npcId) && type == AttackType.MAGIC ? 2 : 1;
 	}
 
@@ -89,8 +85,8 @@ final class RaidScaling
 		return base * (100 + 2 * (raidLevel / 5)) / 100;
 	}
 
-		// Chambers: down by the party's hitpoints, up by its size, then multiplied
-		// for challenge mode. Each step floors and the order changes the answer.
+		// Chambers: down by the party's hitpoints, up by its size, then multiplied for challenge mode. Each step floors and
+		// the order changes the answer.
 	static int chambers(int base, int partySize, int partyHitpoints, double cmMultiplier)
 	{
 		final int party = Math.max(1, Math.min(100, partySize));
@@ -130,9 +126,8 @@ final class RaidScaling
 		final String lower = name.toLowerCase();
 		if (lower.startsWith("tekton") || lower.startsWith("great olm"))
 		{
-				// Olm's head rolls on defence rather than magic, and both hands use
-				// it. GearScape halves the mage hand's; not reproduced, because the
-				// monster data names both claws "Great Olm".
+				// Olm's head rolls on defence rather than magic, and both hands use it. GearScape halves the mage hand's; not
+				// reproduced, because the monster data names both claws "Great Olm".
 			return !lower.contains("head");
 		}
 		for (String scaled : MAGIC_SCALED)

@@ -1,8 +1,7 @@
 package com.pvmperformance;
 
-// The ranged boost a player means to be holding. Only the ranging potion, and
-// its divine form, are worth listing: nothing else outside a raid reaches
-// higher, and the raid doses raise the standard on their own while they run.
+// The ranged boost a player means to be holding. Only the ranging potion, and its divine form, are worth listing:
+// nothing else outside a raid reaches higher, and the raid doses raise the standard on their own while they run.
 public enum RangedBoost
 {
 	NONE("None")

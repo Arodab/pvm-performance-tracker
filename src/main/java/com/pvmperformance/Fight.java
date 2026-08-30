@@ -13,16 +13,14 @@ class Fight
 	private final String targetName;
 	// The room or boss this fight is a part of, or null if it stands alone.
 	private final String groupName;
-	// Overrides the group name where the room alone is too coarse to compare
-	// against itself - Olm's phases. Null unless set.
+	// Overrides the group name where the room alone is too coarse to compare against itself - Olm's phases. Null unless
+	// set.
 	private String encounterLabel;
-	// Stored the wrong way round on purpose: deserialisation fills fields without
-	// running initialisers, so a fight from an older history file gets false,
-	// which has to mean the ordinary case.
+	// Stored the wrong way round on purpose: deserialisation fills fields without running initialisers, so a fight from an
+	// older history file gets false, which has to mean the ordinary case.
 	private final boolean unscored;
-	// The raid this was fought in and which run of it, so the history reads back
-	// as raids without a second file. Null and 0 outside a raid, which is what an
-	// older history file reads as.
+	// The raid this was fought in and which run of it, so the history reads back as raids without a second file. Null and
+	// 0 outside a raid, which is what an older history file reads as.
 	private final String raidName;
 	private final int raidId;
 	private final int targetId;
@@ -34,45 +32,42 @@ class Fight
 	private long lastActivityMillis;
 	private int damageDealt;
 	private int damageTaken;
-	// One attempt per attack thrown, and a hit for each attack that landed
-	// anything. accuracy = hits / attempts.
+	// One attempt per attack thrown, and a hit for each attack that landed anything. accuracy = hits / attempts.
 	private int attempts;
 	private int hits;
-	// Attacks that went out and never resolved, because the target died or
-	// changed form while they were still in the air. See recordAttackNulled.
+	// Attacks that went out and never resolved, because the target died or changed form while they were still in the air.
+	// See recordAttackNulled.
 	private int nulled;
 	private boolean ended;
 	private boolean targetDied;
-	// Whether this fight is the last of its room: the one the boss's loot dropped
-	// on. Not targetDied, which a Hueycoatl sets several times on the way down.
+	// Whether this fight is the last of its room: the one the boss's loot dropped on. Not targetDied, which a Hueycoatl
+	// sets several times on the way down.
 	private boolean closedRoom;
 	private long endMillis;
 
-	// Sampled once per attack rather than snapshotted once for the fight: with a
-	// spec weapon swapped in partway the mean is the actual blend wielded, which
-	// no single snapshot could represent.
+	// Sampled once per attack rather than snapshotted once for the fight: with a spec weapon swapped in partway the mean
+	// is the actual blend wielded, which no single snapshot could represent.
 	private double sumExpectedMaxHit;
 	private int expectedMaxHitSamples;
 	private double sumExpectedAccuracy;
 	private double sumExpectedAverageHit;
-	// Accuracy and average hit need target data, so they can be missing while the
-	// max hit is known, and are counted separately.
+	// Accuracy and average hit need target data, so they can be missing while the max hit is known, and are counted
+	// separately.
 	private int expectedTargetSamples;
 
-	// What the attacks were set up to deal, against what they would have set up
-	// properly. The ratio prices each slip in damage rather than counting alike.
+	// What the attacks were set up to deal, against what they would have set up properly. The ratio prices each slip in
+	// damage rather than counting alike.
 	private int attacksMade;
 	private int attacksPrayed;
 	private int attacksPotted;
-	// Attacks thrown with nothing better available to switch into. The gap to
-	// attacksMade is the number that missed at least one switch.
+	// Attacks thrown with nothing better available to switch into. The gap to attacksMade is the number that missed at
+	// least one switch.
 	private int attacksSwitched;
 	private double sumActualSetup;
 	private double sumIdealSetup;
 
-	// Ticks the weapon was off cooldown with no attack made, against those
-	// elapsed since the first attack. Eating is separated out because it is a
-	// choice with a known cost.
+	// Ticks the weapon was off cooldown with no attack made, against those elapsed since the first attack. Eating is
+	// separated out because it is a choice with a known cost.
 	private int ticksLostEating;
 	private int ticksLostOther;
 	private int combatTicks;
@@ -233,9 +228,8 @@ class Fight
 		return expectedTargetSamples == 0 ? -1 : sumExpectedAverageHit / expectedTargetSamples;
 	}
 
-	// The prayer-dependent half of an attack. Apart from recordAttackMade because
-	// a projectile's prayer is only known when it resolves, and the flag and the
-	// efficiency pair have to come from the same reading.
+	// The prayer-dependent half of an attack. Apart from recordAttackMade because a projectile's prayer is only known when
+	// it resolves, and the flag and the efficiency pair have to come from the same reading.
 	void recordAttackResolved(boolean prayed, boolean switched, double actualSetup, double idealSetup)
 	{
 		if (prayed)
@@ -273,9 +267,8 @@ class Fight
 		attacking = true;
 		combatTicks++;
 		attacksMade++;
-		// One attack, one attempt. Counted here rather than where the damage
-		// arrives, so a spec landing four hitsplats is the single attack it was and
-		// both sides are denominated per attack thrown.
+		// One attack, one attempt. Counted here rather than where the damage arrives, so a spec landing four hitsplats is the
+		// single attack it was and both sides are denominated per attack thrown.
 		attempts++;
 		if (potted)
 		{

@@ -42,8 +42,8 @@ final class DefenceDrainCap
 	{
 		final Map<Integer, Integer> caps = new HashMap<>();
 
-		// Verzik Vitur, in every phase and every mode: her defence cannot be
-		// lowered at all. The transitions are left out, being unattackable.
+		// Verzik Vitur, in every phase and every mode: her defence cannot be lowered at all. The transitions are left out,
+		// being unattackable.
 		for (int id : new int[]{
 			NpcID.VERZIK_INITIAL, NpcID.VERZIK_PHASE1, NpcID.VERZIK_PHASE2, NpcID.VERZIK_PHASE3,
 			NpcID.VERZIK_INITIAL_BASE, NpcID.VERZIK_INITIAL_QUICKSTART,
@@ -57,13 +57,13 @@ final class DefenceDrainCap
 			caps.put(id, 0);
 		}
 
-		// Demonic Brutus. The gameval name is nothing like the wiki's, so these were
-		// matched by id against what the monster data calls them.
+		// Demonic Brutus. The gameval name is nothing like the wiki's, so these were matched by id against what the monster
+		// data calls them.
 		caps.put(NpcID.COWBOSS_HARDMODE, 0);
 		caps.put(NpcID.COWBOSS_HARDMODE_GHOST, 0);
 
-		// Doom of Mokhaiotl: 30 off a defence of 90. Its defence also resets on each
-		// floor of the delve, which is a matter for whatever tracks the drain.
+		// Doom of Mokhaiotl: 30 off a defence of 90. Its defence also resets on each floor of the delve, which is a matter
+		// for whatever tracks the drain.
 		caps.put(NpcID.DOM_BOSS, 30);
 		caps.put(NpcID.DOM_BOSS_SHIELDED, 30);
 		caps.put(NpcID.DOM_BOSS_BURROWED, 30);

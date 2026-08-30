@@ -42,9 +42,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return null;
 		}
 
-		// Expected-only asks for the loadout's figures and nothing else. Otherwise
-		// it is the whole trip, the raid so far, or the room being fought - the room
-		// by default, since a single fight would blink between a room's adds.
+		// Expected-only asks for the loadout's figures and nothing else. Otherwise it is the whole trip, the raid so far, or
+		// the room being fought - the room by default, since a single fight would blink between a room's adds.
 		final boolean expectedOnly = config.overlayExpectedOnly();
 		final SessionTotals session = expectedOnly || !config.overlaySessionTotals()
 			? null : plugin.getSession();
@@ -73,8 +72,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 		}
 
-		// Top half: what the loadout does against this target. These hold still
-		// through a fight, so they read as stats rather than as a running score.
+		// Top half: what the loadout does against this target. These hold still through a fight, so they read as stats rather
+		// than as a running score.
 		final double expAcc = plugin.getExpectedAccuracy();
 		final double specAcc = plugin.getExpectedSpecAccuracy();
 		if (expAcc >= 0)
@@ -99,10 +98,9 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 		}
 
-		// Under Avg hit because it answers the question a bigger average hit
-		// cannot: which of two setups is actually better when they swing at
-		// different speeds. Off the weapon's own cooldown rather than any clock,
-		// so it holds still through a fight like the rest of this half.
+		// Under Avg hit because it answers the question a bigger average hit cannot: which of two setups is actually better
+		// when they swing at different speeds. Off the weapon's own cooldown rather than any clock, so it holds still through
+		// a fight like the rest of this half.
 		final double expDps = plugin.getExpectedDps();
 		if (expDps >= 0)
 		{
@@ -117,9 +115,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return super.render(graphics);
 		}
 
-		// Bottom half: what happened, against what the model expected. The expected
-		// side is a running total of each attack's own figure, so swapping weapons
-		// mid-fight adds each weapon's share.
+		// Bottom half: what happened, against what the model expected. The expected side is a running total of each attack's
+		// own figure, so swapping weapons mid-fight adds each weapon's share.
 		panelComponent.getChildren().add(LineComponent.builder().left("").right("").build());
 
 		final int damage = session != null ? session.getDamageDealt()
@@ -137,9 +134,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 			: raid != null ? raid.getHits() : room.getHits();
 		final double expHits = session != null ? session.getSumExpectedAccuracy()
 			: raid != null ? raid.sumExpectedAccuracy() : room.sumExpectedAccuracy();
-		// Measured hits against what was expected, then the accuracy those two make.
-		// The top half carries the accuracy the LOADOUT should get; this is the one
-		// that happened.
+		// Measured hits against what was expected, then the accuracy those two make. The top half carries the accuracy the
+		// LOADOUT should get; this is the one that happened.
 		final double realAccuracy = session != null ? session.accuracy()
 			: raid != null ? raid.accuracy() : room.accuracy();
 		panelComponent.getChildren().add(LineComponent.builder()
@@ -149,8 +145,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 				: String.valueOf(hits))
 			.build());
 
-		// How well the attacks were set up, with the parts shown only when one of
-		// them slipped, a clean fight needs no breakdown.
+		// How well the attacks were set up, with the parts shown only when one of them slipped, a clean fight needs no
+		// breakdown.
 		final double efficiency = session != null ? session.efficiency()
 			: raid != null ? raid.efficiency() : room.efficiency();
 		if (efficiency >= 0)
@@ -166,8 +162,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 				: raid != null ? raid.getAttacksPrayed() : room.getAttacksPrayed();
 			final int potted = session != null ? session.getAttacksPotted()
 				: raid != null ? raid.getAttacksPotted() : room.getAttacksPotted();
-			// Always shown, both of them. Hiding a counter that reads full makes
-			// it impossible to tell a perfect run from one that is not counting.
+			// Always shown, both of them. Hiding a counter that reads full makes it impossible to tell a perfect run from one
+			// that is not counting.
 			panelComponent.getChildren().add(LineComponent.builder()
 				.left("  prayed")
 				.right(prayed + "/" + made)
@@ -178,8 +174,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 				.build());
 			final int switched = session != null ? session.getAttacksSwitched()
 				: raid != null ? raid.getAttacksSwitched() : room.getAttacksSwitched();
-			// The gap to made is the number of attacks that missed at least one
-			// switch, read the same way as the two lines above it.
+			// The gap to made is the number of attacks that missed at least one switch, read the same way as the two lines above
+			// it.
 			panelComponent.getChildren().add(LineComponent.builder()
 				.left("  switches")
 				.right(switched + "/" + made)

@@ -3,10 +3,8 @@ package com.pvmperformance;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-// One entry of the combat tab: the pairing of an AttackType with a
-// CombatStyle, identified by the value the COM_MODE varplayer takes while
-// it is selected.
-// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton.
+// One entry of the combat tab: the pairing of an AttackType with a CombatStyle, identified by the value the COM_MODE
+// varplayer takes while it is selected. Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton.
 @Getter
 @RequiredArgsConstructor
 class AttackStyle

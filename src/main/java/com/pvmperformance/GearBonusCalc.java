@@ -12,10 +12,9 @@ import net.runelite.api.Skill;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarbitID;
 
-// Resolves the gear effects that multiply the attack roll and the max hit.
-// Multipliers and stacking rules follow the LlemonDuck dps-calculator
-// (BSD-2), (c) Paul Norton, with the newer weapons and the raid-specific
-// rules taken from the wiki.
+// Resolves the gear effects that multiply the attack roll and the max hit. Multipliers and stacking rules follow the
+// LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, with the newer weapons and the raid-specific rules taken from the
+// wiki.
 @Singleton
 class GearBonusCalc
 {
@@ -40,8 +39,8 @@ class GearBonusCalc
 	}
 
 	private final Client client;
-	// Mark of Darkness, from the chat messages that announce it. See
-	// setMarkOfDarkness for why it is not read from a varbit.
+	// Mark of Darkness, from the chat messages that announce it. See setMarkOfDarkness for why it is not read from a
+	// varbit.
 	private boolean markOfDarkness;
 
 	@Inject
@@ -65,12 +64,10 @@ class GearBonusCalc
 
 		GearBonus total = GearBonus.NONE;
 
-		// Salve and the slayer helm deliberately do not stack; salve takes priority.
-		// The dragon hunter wand is the exception to that: alone among the three
-		// dragonbane weapons its effect does not stack with salve at all, though
-		// it does stack with the slayer helm. The wand is kept as much the larger
-		// of the two; which of them the game actually drops is not documented.
-		// UNTESTED IN GAME - the case is a magic attack at Vorkath.
+		// Salve and the slayer helm deliberately do not stack; salve takes priority. The dragon hunter wand is the exception
+		// to that: alone among the three dragonbane weapons its effect does not stack with salve at all, though it does stack
+		// with the slayer helm. The wand is kept as much the larger of the two; which of them the game actually drops is not
+		// documented. UNTESTED IN GAME - the case is a magic attack at Vorkath.
 		final GearBonus salve = wandSuppressesSalve(type, npc, gear)
 			? GearBonus.NONE
 			: salveBonus(type, npc, gear);
@@ -79,8 +76,8 @@ class GearBonusCalc
 		final GearBonus demonbane = demonbaneBonus(type, npc, spell, gear);
 
 		total = total.combine(salve);
-		// The dragon hunter crossbow and scorching bow ADD their damage to the black
-		// mask's rather than multiplying, so those pairs are folded together first.
+		// The dragon hunter crossbow and scorching bow ADD their damage to the black mask's rather than multiplying, so those
+		// pairs are folded together first.
 		if (!blackMask.isNone() && stacksAdditivelyWithBlackMask(gear))
 		{
 			total = total.combine(addDamage(blackMask, dragonHunter.combine(demonbane)));
@@ -119,8 +116,8 @@ class GearBonusCalc
 		{
 			return GearBonus.NONE;
 		}
-		// "(e)" and "(ei)" are enhanced; "(i)" and "(ei)" are imbued. Only imbued
-		// does anything for ranged and magic, so plain enhanced is melee only.
+		// "(e)" and "(ei)" are enhanced; "(i)" and "(ei)" are imbued. Only imbued does anything for ranged and magic, so
+		// plain enhanced is melee only.
 		final boolean enhanced = amulet.contains("(e");
 		final boolean imbued = amulet.contains("i)");
 		if (type.isMelee())
@@ -199,8 +196,7 @@ class GearBonusCalc
 			return GearBonus.NONE;
 		}
 		double accuracy = 0.0;
-		// The uncharged pieces share the name with "(inactive)" appended, so an
-		// exact match is what excludes them.
+		// The uncharged pieces share the name with "(inactive)" appended, so an exact match is what excludes them.
 		if ("Crystal helm".equals(gear.name(EquipmentInventorySlot.HEAD)))
 		{
 			accuracy += 0.05;
@@ -223,9 +219,8 @@ class GearBonusCalc
 		{
 			return GearBonus.NONE;
 		}
-		// The July 2026 update folded the old set effect into the hauberk and
-		// plateskirt, so the pieces are purely additive: 0.5% for the helm, 1% each
-		// for the other two.
+		// The July 2026 update folded the old set effect into the hauberk and plateskirt, so the pieces are purely additive:
+		// 0.5% for the helm, 1% each for the other two.
 		double bonus = 0.0;
 		if (gear.id(EquipmentInventorySlot.HEAD) == ItemID.INQUISITORS_HELM)
 		{
@@ -304,9 +299,8 @@ class GearBonusCalc
 		}
 		if (type == AttackType.MAGIC && weapon == ItemID.DRAGONHUNTER_WAND)
 		{
-			// 75% and 40%, the buffed wand. The reference carries its launch figures,
-			// 50% and 20%, which read 51 in game where the wiki gives 58. The lance
-			// and the crossbow were checked at the same time and both match.
+			// 75% and 40%, the buffed wand. The reference carries its launch figures, 50% and 20%, which read 51 in game where
+			// the wiki gives 58. The lance and the crossbow were checked at the same time and both match.
 			return GearBonus.of(1.75, 1.40);
 		}
 		return GearBonus.NONE;
@@ -412,10 +406,9 @@ class GearBonusCalc
 		}
 		else if (type == AttackType.MAGIC && isDemonbaneSpell(spell))
 		{
-			// Three states, not one. Bare, the spell is 20% accuracy and no damage;
-			// Mark of Darkness doubles the accuracy and brings 25% damage with it;
-			// and a purging staff doubles both again, but only while the Mark is up.
-			// Scaled by demonbane effectiveness afterwards like everything else.
+			// Three states, not one. Bare, the spell is 20% accuracy and no damage; Mark of Darkness doubles the accuracy and
+			// brings 25% damage with it; and a purging staff doubles both again, but only while the Mark is up. Scaled by
+			// demonbane effectiveness afterwards like everything else.
 			if (!markOfDarkness)
 			{
 				raw = GearBonus.of(1.2, 1.0);
@@ -456,9 +449,8 @@ class GearBonusCalc
 			1.0 + (raw.getDamage() - 1.0) * effectiveness);
 	}
 
-	// The keris family deals 33% more to kalphites and scabarites, with a 1/51
-	// chance of tripling it. The triple is reachable, so it counts towards the
-	// max hit, but averages out to a few percent.
+	// The keris family deals 33% more to kalphites and scabarites, with a 1/51 chance of tripling it. The triple is
+	// reachable, so it counts towards the max hit, but averages out to a few percent.
 	private GearBonus kerisBonus(AttackType type, MonsterStatsProvider.MonsterStats npc, Loadout gear)
 	{
 		if (npc == null || !npc.hasAttribute("kalphite") || !type.isMelee())
@@ -489,8 +481,8 @@ class GearBonusCalc
 			|| weapon == ItemID.KERIS_PARTISAN_AMASCUT;
 	}
 
-	// Osmumten's fang has no entry here on purpose: both of its effects need
-	// arithmetic a multiplier cannot express, and both live in CombatCalc.
+	// Osmumten's fang has no entry here on purpose: both of its effects need arithmetic a multiplier cannot express, and
+	// both live in CombatCalc.
 
 	/**
 	 * The twisted bow scales off the target's magic and turns into a penalty
@@ -521,8 +513,7 @@ class GearBonusCalc
 		return (base + linear - quadratic) / 100.0;
 	}
 
-	// Tome of fire boosts fire spells and tome of water water spells, both
-	// from the standard spellbook only.
+	// Tome of fire boosts fire spells and tome of water water spells, both from the standard spellbook only.
 	private GearBonus tomeBonus(AttackType type, Spell spell, Loadout gear)
 	{
 		if (type != AttackType.MAGIC || spell == null || spell.getSpellbook() != Spellbook.STANDARD)
@@ -557,8 +548,8 @@ class GearBonusCalc
 			? GearBonus.symmetric(1.1) : GearBonus.NONE;
 	}
 
-	// The revenant weapons and their upgrades, which add 50% accuracy and
-	// damage against any NPC in the Wilderness and nothing outside it.
+	// The revenant weapons and their upgrades, which add 50% accuracy and damage against any NPC in the Wilderness and
+	// nothing outside it.
 	private GearBonus revenantBonus(AttackType type, Loadout gear)
 	{
 		final String weapon = gear.name(EquipmentInventorySlot.WEAPON);
@@ -566,8 +557,8 @@ class GearBonusCalc
 		{
 			return GearBonus.NONE;
 		}
-		// The sceptre can bash and the mace and bow can manual cast, so the style
-		// has to match the weapon for the passive to apply.
+		// The sceptre can bash and the mace and bow can manual cast, so the style has to match the weapon for the passive to
+		// apply.
 		final boolean matches;
 		switch (type)
 		{
@@ -610,8 +601,7 @@ class GearBonusCalc
 				{
 					return GearBonus.symmetric(0.0);
 				}
-				// Damage only. The wiki gives 17.5% damage and names no accuracy
-				// bonus, where this had it on both.
+				// Damage only. The wiki gives 17.5% damage and names no accuracy bonus, where this had it on both.
 				return weapon.equals("Leaf-bladed battleaxe")
 					? GearBonus.of(1.0, 1.175) : GearBonus.NONE;
 		}

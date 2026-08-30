@@ -1,8 +1,7 @@
 package com.pvmperformance;
 
-// The magic boost a player means to be holding. Figures from the wiki's
-// temporary skill boost tables; the hearts and the brew differ enough that
-// holding one to another's standard would misjudge it by several levels.
+// The magic boost a player means to be holding. Figures from the wiki's temporary skill boost tables; the hearts and
+// the brew differ enough that holding one to another's standard would misjudge it by several levels.
 public enum MagicBoost
 {
 	NONE("None")

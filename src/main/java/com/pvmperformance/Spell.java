@@ -6,9 +6,8 @@ import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-// Combat spells and their base max hits, keyed by the value of
-// VarbitID.AUTOCAST_SPELL while the spell is set to autocast.
-// Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton.
+// Combat spells and their base max hits, keyed by the value of VarbitID.AUTOCAST_SPELL while the spell is set to
+// autocast. Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton.
 @Getter
 @RequiredArgsConstructor
 enum Spell
@@ -69,8 +68,8 @@ enum Spell
 	SKELETAL_GRASP(57, "Skeletal Grasp", 17, Spellbook.ARCEUUS),
 	UNDEAD_GRASP(58, "Undead Grasp", 24, Spellbook.ARCEUUS);
 
-	// Elemental spells rose to the strongest of their tier the caster has
-	// unlocked, in the May 2024 rework: a wind strike at magic 13 hits for 8, not
+	// Elemental spells rose to the strongest of their tier the caster has unlocked, in the May 2024 rework: a wind strike
+	// at magic 13 hits for 8, not
 	// 2. The ladders are the four unlock levels against the max hit they carry.
 	private static final int[] STRIKE_LEVELS = {1, 5, 9, 13};
 	private static final int[] STRIKE_HITS = {2, 4, 6, 8};
@@ -148,8 +147,7 @@ enum Spell
 		return best;
 	}
 
-	// Wind, Water, Earth and Fire only. Saradomin Strike and the god spells
-	// share the suffixes but not the mechanic.
+	// Wind, Water, Earth and Fire only. Saradomin Strike and the god spells share the suffixes but not the mechanic.
 	private static boolean isElemental(String name)
 	{
 		return name.startsWith("Wind ") || name.startsWith("Water ")

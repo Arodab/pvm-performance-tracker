@@ -4,8 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
 
-// One boss or room: the fights that belong together, kept as a list rather
-// than as a second set of counters.
+// One boss or room: the fights that belong together, kept as a list rather than as a second set of counters.
 @Getter
 class Encounter
 {

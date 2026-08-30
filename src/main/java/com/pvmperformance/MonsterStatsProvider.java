@@ -50,11 +50,9 @@ class MonsterStatsProvider
 
 	// npcId -> stats; replaced wholesale after a load, so reads need no lock.
 	private volatile Map<Integer, MonsterStats> byId = Collections.emptyMap();
-	// name -> stats, for the ids the data does not carry. A monster wears several
-	// ids as it idles, walks and fights and the source lists one: Tekton appears
-	// in game as 7542 as well as the 7540 and 7543 listed. Every miss meant no
-	// accuracy, no expected damage and no drain, reading as whole stretches of a
-	// raid being ignored.
+	// name -> stats, for the ids the data does not carry. A monster wears several ids as it idles, walks and fights and
+	// the source lists one: Tekton appears in game as 7542 as well as the 7540 and 7543 listed. Every miss meant no
+	// accuracy, no expected damage and no drain, reading as whole stretches of a raid being ignored.
 	private volatile Map<String, MonsterStats> byName = Collections.emptyMap();
 	private final Map<Integer, MonsterStats> dynamicCache = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -88,9 +86,8 @@ class MonsterStatsProvider
 		{
 			return dynamicCache.get(npcId);
 		}
-		// The id is unknown, so ask the game its name and look that up. Where a name
-		// covers several versions the first wins, which is the ordinary form, so a
-		// figure may be a little low but is no longer absent.
+		// The id is unknown, so ask the game its name and look that up. Where a name covers several versions the first wins,
+		// which is the ordinary form, so a figure may be a little low but is no longer absent.
 		final NPCComposition composition = client.getNpcDefinition(npcId);
 		MonsterStats resolved = composition == null ? null : byName.get(normalise(composition.getName()));
 		if (resolved != null)

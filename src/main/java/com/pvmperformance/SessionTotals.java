@@ -2,8 +2,8 @@ package com.pvmperformance;
 
 import lombok.Getter;
 
-// Running totals for the current trip, so the overlay can show how a session
-// went rather than resetting at each kill. One unlucky kill says little.
+// Running totals for the current trip, so the overlay can show how a session went rather than resetting at each kill.
+// One unlucky kill says little.
 @Getter
 class SessionTotals
 {
@@ -15,22 +15,22 @@ class SessionTotals
 	private int damageDealt;
 	private int attempts;
 	private int hits;
-	// Attacks that went out and never resolved, because the target died or
-	// changed form in flight. Not misses; see Fight.recordAttackNulled.
+	// Attacks that went out and never resolved, because the target died or changed form in flight. Not misses; see
+	// Fight.recordAttackNulled.
 	private int nulled;
 	private int attacksMade;
 	private int attacksPrayed;
 	private int attacksPotted;
-	// Attacks thrown with nothing better available to switch into. The gap to
-	// attacksMade is the number that missed at least one switch.
+	// Attacks thrown with nothing better available to switch into. The gap to attacksMade is the number that missed at
+	// least one switch.
 	private int attacksSwitched;
 	private double sumActualSetup;
 	private double sumIdealSetup;
 	private int ticksLostEating;
 	private int ticksLostOther;
 	private int combatTicks;
-	// Running totals of what each attack was expected to do, so the measured
-	// side can be compared against the sum of every weapon's own contribution.
+	// Running totals of what each attack was expected to do, so the measured side can be compared against the sum of every
+	// weapon's own contribution.
 	private double sumExpectedAccuracy;
 	private double sumExpectedAverageHit;
 
@@ -74,8 +74,7 @@ class SessionTotals
 		noteActivity(now);
 	}
 
-	// Books a tick that passed with the weapon off cooldown and no attack
-	// made.
+	// Books a tick that passed with the weapon off cooldown and no attack made.
 	void recordTickLost(boolean eating)
 	{
 		if (eating)
@@ -179,8 +178,8 @@ class SessionTotals
 			: Math.max(0, lastActivityMillis - firstActivityMillis);
 	}
 
-	// Stamped by the first thing that happens rather than at construction, so the
-	// trip reads no time at all until the first attack.
+	// Stamped by the first thing that happens rather than at construction, so the trip reads no time at all until the
+	// first attack.
 	private void noteActivity(long now)
 	{
 		if (firstActivityMillis == 0)

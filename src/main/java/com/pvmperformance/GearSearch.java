@@ -5,19 +5,17 @@ import net.runelite.api.EquipmentInventorySlot;
 
 // The best gear the player could have been wearing for the weapon in hand.
 //
-// The weapon is taken as given and every other slot judged. Which weapon to
-// bring is where the ambiguity lives - a halberd for reach, a spec weapon held
-// for a phase - and holding it fixed removes every per-boss exception. A player
-// who brought the wrong weapon knows to distrust the figure; one who brought the
-// right weapon and missed the switches is still caught.
+// The weapon is taken as given and every other slot judged. Which weapon to bring is where the ambiguity lives - a
+// halberd for reach, a spec weapon held for a phase - and holding it fixed removes every per-boss exception. A player
+// who brought the wrong weapon knows to distrust the figure; one who brought the right weapon and missed the switches
+// is still caught.
 final class GearSearch
 {
-	// Two passes, so a slot judged early can be reconsidered once a later one
-	// changed what the loadout is worth. The second is cheap insurance.
+	// Two passes, so a slot judged early can be reconsidered once a later one changed what the loadout is worth. The
+	// second is cheap insurance.
 	private static final int MAX_PASSES = 2;
-	// Expected damage is a double, so anything under this is arithmetic noise
-	// rather than a switch worth making. Shared with the caller, which holds an
-	// answer across ticks and needs the same threshold.
+	// Expected damage is a double, so anything under this is arithmetic noise rather than a switch worth making. Shared
+	// with the caller, which holds an answer across ticks and needs the same threshold.
 	static final double MEANINGFUL = 1e-6;
 
 	/** One thing that could go in one slot. */
@@ -58,8 +56,8 @@ final class GearSearch
 			boolean improved = false;
 			for (Candidate candidate : candidates)
 			{
-				// The weapon is not judged, and a two-hander leaves no shield slot -
-				// offering one would be advice the game will not let the player take.
+				// The weapon is not judged, and a two-hander leaves no shield slot - offering one would be advice the game will not
+				// let the player take.
 				if (candidate.slot == EquipmentInventorySlot.WEAPON
 					|| (twoHandedWeapon && candidate.slot == EquipmentInventorySlot.SHIELD))
 				{
