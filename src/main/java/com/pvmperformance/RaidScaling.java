@@ -57,10 +57,13 @@ final class RaidScaling
 		{
 			return tombs(base, toa);
 		}
-		return inChambers(client)
-			? chambers(base, chambersPartySize(client), partyHitpoints,
-				defenceMultiplier(isChallengeMode(client), chambersPartySize(client), name))
-			: base;
+		if (inChambers(client))
+		{
+			final int size = chambersPartySize(client);
+			return chambers(base, size, partyHitpoints,
+				defenceMultiplier(isChallengeMode(client), size, name));
+		}
+		return base;
 	}
 
 	// A monster's magic level as the raid leaves it.
@@ -70,8 +73,9 @@ final class RaidScaling
 		{
 			return base;
 		}
-		final int scaled = chambers(base, chambersPartySize(client), partyHitpoints,
-			defenceMultiplier(isChallengeMode(client), chambersPartySize(client), name));
+		final int size = chambersPartySize(client);
+		final int scaled = chambers(base, size, partyHitpoints,
+			defenceMultiplier(isChallengeMode(client), size, name));
 		// The mage hand rolls on half of it.
 		return isOlmMageHand(npcId) ? scaled / 2 : scaled;
 	}
