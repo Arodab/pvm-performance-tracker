@@ -788,14 +788,17 @@ public class PvmPerformancePlugin extends Plugin
 			(client.getGameCycle() - projectile.getStartCycle()) / CYCLES_PER_TICK);
 		final LocalPoint then = recentTiles.get(client.getTickCount() - ticksAgo);
 		final LocalPoint here = me.getLocalLocation();
-		for (LocalPoint p : new LocalPoint[]{then, here})
+		if (then != null
+			&& Math.abs(projectile.getX1() - then.getX()) <= TILE_SLACK * LOCAL_TILE_SIZE
+			&& Math.abs(projectile.getY1() - then.getY()) <= TILE_SLACK * LOCAL_TILE_SIZE)
 		{
-			if (p != null
-				&& Math.abs(projectile.getX1() - p.getX()) <= TILE_SLACK * LOCAL_TILE_SIZE
-				&& Math.abs(projectile.getY1() - p.getY()) <= TILE_SLACK * LOCAL_TILE_SIZE)
-			{
-				return true;
-			}
+			return true;
+		}
+		if (here != null
+			&& Math.abs(projectile.getX1() - here.getX()) <= TILE_SLACK * LOCAL_TILE_SIZE
+			&& Math.abs(projectile.getY1() - here.getY()) <= TILE_SLACK * LOCAL_TILE_SIZE)
+		{
+			return true;
 		}
 		return false;
 	}
