@@ -13,7 +13,6 @@ import lombok.RequiredArgsConstructor;
 // exactly which option is selected rather than guessing from the bonuses.
 // Ported from the LlemonDuck dps-calculator (BSD-2), (c) Paul Norton, with
 // entries corrected against RuneLite's own attack styles plugin (BSD-2).
-@RequiredArgsConstructor
 enum WeaponCategory
 {
 	UNARMED(0, "Unarmed", Arrays.asList(
@@ -182,6 +181,19 @@ enum WeaponCategory
 	@Getter
 	private final List<AttackStyle> attackStyles;
 
+	private final AttackStyle[] styleByVarp = new AttackStyle[4];
+
+	WeaponCategory(int varbitValue, String gameName, List<AttackStyle> attackStyles)
+	{
+		this.varbitValue = varbitValue;
+		this.gameName = gameName;
+		this.attackStyles = attackStyles;
+		for (AttackStyle style : attackStyles)
+		{
+			styleByVarp[style.getVarpValue()] = style;
+		}
+	}
+
 	/** The category for a COMBAT_WEAPON_CATEGORY varbit value, or null if unmapped. */
 	static WeaponCategory forVarbit(int varbitValue)
 	{
@@ -209,13 +221,10 @@ enum WeaponCategory
 	/** The option selected by a COM_MODE varplayer value, or null if it isn't one of ours. */
 	AttackStyle styleFor(int varpValue)
 	{
-		for (AttackStyle style : attackStyles)
+		if (varpValue < 0 || varpValue >= styleByVarp.length)
 		{
-			if (style.getVarpValue() == varpValue)
-			{
-				return style;
-			}
+			return null;
 		}
-		return null;
+		return styleByVarp[varpValue];
 	}
 }
