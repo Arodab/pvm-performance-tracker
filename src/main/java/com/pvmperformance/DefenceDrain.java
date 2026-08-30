@@ -23,6 +23,21 @@ class DefenceDrain
 	// A special lands on the tick it is thrown for melee, a few ticks later for
 	// thrown and fired ones. Past this it is forgotten rather than credited to
 	// whatever is hit next.
+	private static final int MEMORY_TICKS = 4;
+
+	private static final Map<Integer, SpecialWeapon> BY_ITEM_ID = new HashMap<>();
+
+	static
+	{
+		for (SpecialWeapon weapon : SpecialWeapon.values())
+		{
+			for (int id : weapon.getItemID())
+			{
+				BY_ITEM_ID.put(id, weapon);
+			}
+		}
+	}
+
 	private static final int MAX_SPEC_ENERGY = 1000;
 	private static final int HIT_WINDOW_TICKS = 5;
 
@@ -177,17 +192,7 @@ class DefenceDrain
 		{
 			return null;
 		}
-		for (SpecialWeapon weapon : SpecialWeapon.values())
-		{
-			for (int id : weapon.getItemID())
-			{
-				if (id == weaponId)
-				{
-					return weapon;
-				}
-			}
-		}
-		return null;
+		return BY_ITEM_ID.get(weaponId);
 	}
 
 	private int equippedWeaponId()
