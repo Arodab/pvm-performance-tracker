@@ -60,42 +60,42 @@ class PvmPerformanceOverlay extends OverlayPanel
 			.text(title(session, raid, room, fight))
 			.build());
 
+		final SpecialAttack spec = plugin.getSpecialAttack();
+		final int specMaxHit = plugin.getExpectedSpecMaxHit();
+		final boolean hasSpec = spec != null && specMaxHit > 0;
+
 		final int maxHit = plugin.getExpectedMaxHit();
 		if (maxHit > 0)
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
-				.left("Max hit")
-				.right(String.valueOf(maxHit))
-				.build());
-		}
-
-		final SpecialAttack spec = plugin.getSpecialAttack();
-		final int specMaxHit = plugin.getExpectedSpecMaxHit();
-		if (spec != null && specMaxHit > 0)
-		{
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("Spec max")
-				.right(String.valueOf(specMaxHit))
+				.left(hasSpec ? "Max hit (Spec)" : "Max hit")
+				.right(hasSpec ? String.format("%d (%d)", maxHit, specMaxHit) : String.valueOf(maxHit))
 				.build());
 		}
 
 		// Top half: what the loadout does against this target. These hold still
 		// through a fight, so they read as stats rather than as a running score.
 		final double expAcc = plugin.getExpectedAccuracy();
+		final double specAcc = plugin.getExpectedSpecAccuracy();
 		if (expAcc >= 0)
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
-				.left("Accuracy")
-				.right(String.format("%.1f%%", expAcc * 100))
+				.left(hasSpec ? "Accuracy (Spec)" : "Accuracy")
+				.right(hasSpec && specAcc >= 0 
+					? String.format("%.1f%% (%.1f%%)", expAcc * 100, specAcc * 100) 
+					: String.format("%.1f%%", expAcc * 100))
 				.build());
 		}
 
 		final double expAvgHit = plugin.getExpectedAverageHit();
+		final double specAvgHit = plugin.getExpectedSpecAverageHit();
 		if (expAvgHit >= 0)
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
-				.left("Avg hit")
-				.right(String.format("%.2f", expAvgHit))
+				.left(hasSpec ? "Avg hit (Spec)" : "Avg hit")
+				.right(hasSpec && specAvgHit >= 0 
+					? String.format("%.2f (%.2f)", expAvgHit, specAvgHit) 
+					: String.format("%.2f", expAvgHit))
 				.build());
 		}
 

@@ -2240,9 +2240,19 @@ public class PvmPerformancePlugin extends Plugin
 	}
 
 	/** Max total damage of one special attack activation (0 if the weapon has none). */
-	int getExpectedSpecMaxHit()
+		int getExpectedSpecMaxHit()
 	{
 		return expectedSpecMaxHit;
+	}
+
+	double getExpectedSpecAccuracy()
+	{
+		return expectedSpecAccuracy;
+	}
+
+	double getExpectedSpecAverageHit()
+	{
+		return expectedSpecAverageHit;
 	}
 
 	/** The equipped weapon's special attack, or null if it has none that hits. */
