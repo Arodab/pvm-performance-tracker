@@ -658,6 +658,8 @@ public class PvmPerformancePlugin extends Plugin
 		pendingMineHits.computeIfAbsent(npc.getIndex(), k -> new ArrayList<>())
 			.add(landingTick(projectile));
 		recordAttackObserved(true, npc.getId());
+		log.debug("TRACE projectile ACCEPTED: eventTick={} npcIndex={} npcId={}",
+			client.getTickCount(), npc.getIndex(), npc.getId());
 		// Not always the tick the event surfaces on: the start cycle says when the
 		// projectile was fired, which for a slow one can be a tick earlier.
 		attackOriginTick = startTick(projectile);
@@ -1182,11 +1184,15 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		if (attackObservedLag == MELEE_BOOKING_LAG)
 		{
+			log.debug("TRACE record(direct): tick={} acc={} avg={} max={} target={}",
+				client.getTickCount(), expectedChances, averageHit, maxHit, targetId);
 			fight.recordExpected(maxHit, expectedChances, averageHit);
 			session.recordExpected(expectedChances, averageHit);
 		}
 		else
 		{
+			log.debug("TRACE record(held): tick={} acc={} avg={} max={} target={}",
+				client.getTickCount(), expectedChances, averageHit, maxHit, targetId);
 			pendingSamples.add(new PendingSample(
 				fight.getTargetIndex(), client.getTickCount(), maxHit, expectedChances, averageHit));
 		}
@@ -1225,14 +1231,27 @@ public class PvmPerformancePlugin extends Plugin
 	// A splash counts: it landed for nought, which is a real miss.
 	private void resolvePendingSample(int npcIndex)
 	{
+		if (pendingSamples.isEmpty())
+		{
+			log.debug("TRACE resolve: tick={} npcIndex={} NO SAMPLES QUEUED",
+				client.getTickCount(), npcIndex);
+		}
 		for (int i = 0; i < pendingSamples.size(); i++)
 		{
 			final PendingSample sample = pendingSamples.get(i);
 			if (sample.npcIndex != npcIndex)
 			{
+				log.debug("TRACE resolve: tick={} npcIndex={} SKIP sampleIndex={} (npc={})",
+					client.getTickCount(), npcIndex, sample.npcIndex, sample.tick);
 				continue;
 			}
 			pendingSamples.remove(i);
+			// TRACE, strip once answered: the LAST link. recordExpected silently
+			// discards a sample whose accuracy is negative, so a drop here looks the
+			// same as a sample that arrived fine.
+			log.debug("TRACE record(pending): tick={} npcIndex={} acc={} avg={} max={} currentOpen={}",
+				client.getTickCount(), npcIndex, sample.accuracy, sample.averageHit, sample.maxHit,
+				current != null && !current.isEnded());
 			if (current != null && !current.isEnded())
 			{
 				current.recordExpected(sample.maxHit, sample.accuracy, sample.averageHit);
@@ -1514,6 +1533,8 @@ public class PvmPerformancePlugin extends Plugin
 
 		if (current == null || current.isEnded())
 		{
+			log.debug("TRACE cooldown: tick={} attacked={} currentNull={}",
+				client.getTickCount(), attacked, current == null);
 			attackDueTick = Integer.MIN_VALUE;
 			lastAttackFromProjectile = false;
 			return;
