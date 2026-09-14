@@ -533,10 +533,11 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				combatCalc.noteMagicResolved(npc.getIndex(), hitsplat.getAmount() == 0);
 			}
-			// The TYPE is here because of a pattern in the logs that nothing else explains: pairs of hitsplats on one npc on
-			// one tick carrying the SAME amount - 8 and 8, 5 and 5, 6 and 6 - across three separate kills. Two sources
-			// landing the identical number four times running is not chance, and both are being counted. The type names
-			// what the second one is.
+			// The TYPE, because the amount alone cannot say where a hitsplat came from. Pairs carrying the same number on one
+			// tick looked like one splat arriving twice and were burning claws: three hitsplats to a special, split across
+			// two ticks, which the burst logic already books as the single attack it is. A thrall, a bleed, poison and a max
+			// hit all carry their own type, and telling those apart from a real hit of the player's is the whole question
+			// whenever measured damage and attacks disagree.
 			debug.log("hitsplat %d type %d on %s (npc %d, index %d), landedAttack=%b, fromFlight=%b",
 				hitsplat.getAmount(), hitsplat.getHitsplatType(), current.getTargetName(), npc.getId(), npc.getIndex(),
 				landedAttack, arrivedFromFlight);
@@ -1231,6 +1232,8 @@ public class PvmPerformancePlugin extends Plugin
 			averageHit = specAverageHit;
 			expectedChances = specLandChance;
 		}
+		debug.log("  scored as %s: max %d, chances %.2f, avg %.2f",
+			special ? "a SPECIAL" : "an ordinary attack", maxHit, expectedChances, averageHit);
 		if (attackObservedLag == MELEE_BOOKING_LAG)
 		{
 			fight.recordExpected(maxHit, expectedChances, averageHit);
