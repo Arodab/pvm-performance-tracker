@@ -436,6 +436,35 @@ class CombatCalc
 	}
 
 	/**
+	 * How much of this fight's damage has landed on the target, pushed in by the
+	 * plugin once a tick. Counted per npc rather than taken from the fight,
+	 * since an AoE attack puts damage on several and only this one's counts
+	 * towards what this one has left.
+	 */
+	private int targetDamageTaken;
+
+	void noteTargetDamageTaken(int damage)
+	{
+		this.targetDamageTaken = Math.max(0, damage);
+	}
+
+	/**
+	 * Full hitpoints for a target: the wiki data first, since RuneLite's own
+	 * table has nothing for any Chambers monster, and RuneLite's as the fallback
+	 * for anything the wiki data misses. 0 when neither knows.
+	 */
+	private int targetMaxHitpoints(int npcId)
+	{
+		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		if (npc != null && npc.getHitpoints() > 0)
+		{
+			return npc.getHitpoints();
+		}
+		final Integer known = npcManager.getHealth(npcId);
+		return known == null ? 0 : known;
+	}
+
+	/**
 	 * The most this attack could actually deal: what the target has LEFT.
 	 *
 	 * <p>Overkill, and it is not small over a trip. An attack expecting 25
@@ -448,16 +477,27 @@ class CombatCalc
 	 * same number as the real one and efficiency does not fall on every killing
 	 * blow.
 	 *
-	 * <p>Approximate on purpose. The health bar is a ratio out of a scale, so
-	 * this is the right bucket rather than the right number, and it is a
-	 * ceiling read when the attack goes out - in a group someone else's damage
-	 * can land before yours does, leaving less than this says. Both err the
-	 * same way the uncorrected figure did, only far less.
+	 * <p>COUNTED, not read off the health bar. The bar is a ratio out of a scale
+	 * of about thirty and is only drawn some of the time, and taking a remaining
+	 * figure from it read 3 where 27 was left, then no cap at all four attacks
+	 * later. Full hitpoints minus the damage this fight has put on this npc is
+	 * exact while the player is the only one hitting it.
+	 *
+	 * <p>In a group it overestimates what is left, because other people's damage
+	 * is invisible - which errs towards no cap, and no cap is the side to err
+	 * on: a figure that is a little high is easier to live with than one that
+	 * collapses to a fifth of itself for an attack.
 	 */
 	private int overkillCap(int npcId)
 	{
-		final int remaining = targetCurrentHp(npcId);
-		// Zero means the health is not known at all rather than a target on nothing, so it caps nothing.
+		final int max = targetMaxHitpoints(npcId);
+		if (max <= 0)
+		{
+			return Integer.MAX_VALUE;
+		}
+		final int remaining = max - targetDamageTaken;
+		// At or past zero the count has lost the target - something else killed it, or damage arrived that was not ours -
+		// and a cap of nothing would zero the expected damage. Not knowing caps nothing.
 		return remaining > 0 ? remaining : Integer.MAX_VALUE;
 	}
 
@@ -717,8 +757,10 @@ class CombatCalc
 	 */
 	private int targetCurrentHp(int npcId)
 	{
-		final Integer maxHp = npcManager.getHealth(npcId);
-		if (maxHp == null || maxHp <= 0)
+		// Was RuneLite's table alone, which knows nothing about any Chambers monster - so a ruby bolt in a raid read its
+		// target at no health and paid out nothing. The wiki data covers those.
+		final int maxHp = targetMaxHitpoints(npcId);
+		if (maxHp <= 0)
 		{
 			return 0;
 		}

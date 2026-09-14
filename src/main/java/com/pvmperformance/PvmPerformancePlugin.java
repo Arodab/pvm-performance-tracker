@@ -253,6 +253,10 @@ public class PvmPerformancePlugin extends Plugin
 	// Whether the last attack was proven by a projectile, and so booked two ticks after it went out rather than one. A
 	// switch can leave one weapon's attack in flight while another is in hand.
 	private boolean lastAttackFromProjectile;
+	// How much of MY damage each npc has taken in the fight now open, so the target's remaining health can be counted
+	// rather than read off a health bar that is bucketed into thirtieths and not always drawn. Per npc because one AoE
+	// attack puts damage on several and only the target's own counts towards what the target has left.
+	private final Map<Integer, Integer> damageByIndex = new HashMap<>();
 	// The tick one of my hitsplats last landed on, whichever npc took it. Two in a tick are one attack.
 	private int lastMineHitsplatTick = Integer.MIN_VALUE;
 	// The tick my last attack of any style went out on. Apart from attackDueTick, which is only set once booked: this has
@@ -532,6 +536,7 @@ public class PvmPerformancePlugin extends Plugin
 			debug.log("hitsplat %d on %s (npc %d, index %d), landedAttack=%b, fromFlight=%b",
 				hitsplat.getAmount(), current.getTargetName(), npc.getId(), npc.getIndex(), landedAttack,
 				arrivedFromFlight);
+			damageByIndex.merge(npc.getIndex(), hitsplat.getAmount(), Integer::sum);
 			current.recordDamageDealt(hitsplat.getAmount(), now, landedAttack);
 			if (current.isScored())
 			{
@@ -1026,6 +1031,7 @@ public class PvmPerformancePlugin extends Plugin
 		}
 		if (shown != null)
 		{
+			combatCalc.noteTargetDamageTaken(damageByIndex.getOrDefault(shown.getTargetIndex(), 0));
 			// Pass the target so salve, dragon hunter and the rest can apply.
 			expectedMaxHit = combatCalc.maxHit(shown.getTargetId());
 			expectedAccuracy = combatCalc.hitChance(shown.getTargetId());
@@ -1983,6 +1989,7 @@ public class PvmPerformancePlugin extends Plugin
 			lastHitsplatTick.clear();
 			burstLanded.clear();
 			pendingMineHits.clear();
+			damageByIndex.clear();
 			drain.clear();
 			nightmareBoss = null;
 			targetNpc = null;
@@ -2143,6 +2150,7 @@ public class PvmPerformancePlugin extends Plugin
 			burstBooked.remove(npc.getIndex());
 		}
 		final boolean landed = damage > 0 && burstLanded.add(npc.getIndex());
+		damageByIndex.merge(npc.getIndex(), damage, Integer::sum);
 		current.recordExtraTarget(damage, now, newTarget, landed);
 		if (current.isScored())
 		{
@@ -2268,6 +2276,15 @@ public class PvmPerformancePlugin extends Plugin
 			current.getTargetName(), current.getTargetId(), reason, current.getAttempts(), current.getAttacksMade(),
 			current.getDamageDealt(), current.getHits(), current.getTicksLost(), current.getCombatTicks(),
 			current.getSumExpectedAverageHit());
+		if (died)
+		{
+			// The killing blow is capped by what was left, so the damage put on a target that started full IS its
+			// hitpoints. Logged rather than believed: it is the cheapest check there is on a table being wrong, and the
+			// expected damage now divides by that table.
+			debug.log("KILL %s (npc %d): dealt %d to it, tables say it has %d hitpoints",
+				current.getTargetName(), current.getTargetId(),
+				damageByIndex.getOrDefault(current.getTargetIndex(), 0), current.getMaxHp());
+		}
 		current.end(died, now);
 		// Anything still in the air never landed. Counting what it was expected to deal against the nought it dealt made a
 		// group kill read as underperformance.
@@ -2277,6 +2294,7 @@ public class PvmPerformancePlugin extends Plugin
 		castsAwaiting.clear();
 		combatCalc.forgetConflictionCharge();
 		pendingMineHits.clear();
+		damageByIndex.clear();
 		// Nothing is being fought, so no drain should be read against anything.
 		combatCalc.setTarget(null);
 		targetNpc = null;

@@ -14,6 +14,22 @@ public class CappedAverageTest
 	private static final double EXACT = 1e-9;
 
 	@Test
+	public void theCapIsWhatIsLEFTAndNotAnAverageOfIt()
+	{
+		// The point the cap is often misread on. A 60 max against 10 remaining does not expect 10, and does not expect the
+		// uncapped 30: the rolls under 10 still land where they fall and everything from 10 up becomes a 10.
+		//   rolls 0..9   -> 0..9      sum 45
+		//   rolls 10..60 -> 10 each   sum 510
+		assertEquals(555.0 / 61.0, CombatCalc.cappedAverage(60, 10), EXACT);
+		assertEquals(9.10, CombatCalc.cappedAverage(60, 10), 0.01);
+		// And it can never exceed what is left, whatever the max hit is.
+		for (int max = 10; max <= 120; max += 10)
+		{
+			assertEquals("a cap of 10 must hold at max " + max, true, CombatCalc.cappedAverage(max, 10) <= 10.0);
+		}
+	}
+
+	@Test
 	public void overkillIsTheSameArithmeticAsADamageCap()
 	{
 		// What a killing blow is worth. An attack with a 60 max against a target on 3 hitpoints cannot deal more than 3,

@@ -343,6 +343,7 @@ class MonsterStatsProvider
 				// First version of each id wins; later variants (phases) are ignored for now.
 				map.putIfAbsent(m.id, new MonsterStats(
 					m.name == null ? "" : m.name, m.size,
+					m.skills.hitpoints,
 					m.skills.defence, m.skills.magic,
 					m.offensive == null ? 0 : m.offensive.magic,
 					m.defensive.stab, m.defensive.slash, m.defensive.crush,
@@ -374,6 +375,13 @@ class MonsterStatsProvider
 		private final String name;
 		/** Tiles across, which the colossal blade scales its damage on. */
 		private final int size;
+		/**
+		 * Full hitpoints. RuneLite's own table is the usual source for these and
+		 * has nothing at all for the Chambers - maxHp read -1 on all 364 fights of
+		 * one raid export - so this is what makes a remaining-health figure
+		 * possible in a raid.
+		 */
+		private final int hitpoints;
 		private final int defenceLevel;
 		private final int magicLevel;
 		/** The monster's offensive magic bonus, which the twisted bow also scales on. */
@@ -394,10 +402,11 @@ class MonsterStatsProvider
 		/** How many points of it, 0 when there is none. */
 		private final int weaknessSeverity;
 
-		MonsterStats(String name, int size, int defenceLevel, int magicLevel, int offensiveMagic, int defStab,
-			int defSlash, int defCrush, int defMagic, int defRanged, String weaknessElement,
+		MonsterStats(String name, int size, int hitpoints, int defenceLevel, int magicLevel, int offensiveMagic,
+			int defStab, int defSlash, int defCrush, int defMagic, int defRanged, String weaknessElement,
 			int weaknessSeverity, Set<String> attributes)
 		{
+			this.hitpoints = hitpoints;
 			this.weaknessElement = weaknessElement;
 			this.weaknessSeverity = weaknessSeverity;
 			this.name = name;
@@ -441,6 +450,8 @@ class MonsterStatsProvider
 			@SerializedName("def")
 			int defence;
 			int magic;
+			@SerializedName("hp")
+			int hitpoints;
 		}
 
 		static class Offensive
