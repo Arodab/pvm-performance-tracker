@@ -1,6 +1,7 @@
 package com.pvmperformance;
 
 import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import javax.inject.Inject;
 import net.runelite.client.ui.overlay.OverlayPanel;
@@ -11,8 +12,25 @@ import net.runelite.client.util.QuantityFormatter;
 
 class PvmPerformanceOverlay extends OverlayPanel
 {
+	/**
+	 * The panel is only as wide as it needs to be. A single fight's lines fit
+	 * the standard width; a whole trip's do not - "Damage 83,955 / 100,811"
+	 * wrapped onto a second line and the box became a wall of half sentences.
+	 * Measured every frame from the text actually about to be drawn, since what
+	 * is on it changes with the mode, the loadout and the size of the numbers.
+	 */
+	private static final int MIN_WIDTH = 129;
+	/** Past this a long name is better wrapped than allowed to cross the screen. */
+	private static final int MAX_WIDTH = 400;
+	/** The panel's own border, plus the gap that keeps the two columns apart. */
+	private static final int PADDING = 14;
+
 	private final PvmPerformancePlugin plugin;
 	private final PvmPerformanceConfig config;
+
+	// Set at the top of each render and used by line(); the overlay is drawn on one thread.
+	private FontMetrics metrics;
+	private int contentWidth;
 
 	@Inject
 	PvmPerformanceOverlay(PvmPerformancePlugin plugin, PvmPerformanceConfig config)
@@ -20,8 +38,6 @@ class PvmPerformanceOverlay extends OverlayPanel
 		this.plugin = plugin;
 		this.config = config;
 		setPosition(OverlayPosition.TOP_LEFT);
-		// The default width wraps the longer "actual (exp ...)" values onto a second line.
-		setPreferredSize(new Dimension(160, 0));
 	}
 
 	@Override
@@ -32,8 +48,19 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return null;
 		}
 
+		metrics = graphics.getFontMetrics();
+		contentWidth = 0;
+
 		final Fight fight = plugin.getDisplayFight();
 		if (fight == null)
+		{
+			return null;
+		}
+		// A finished fight is left up so the kill can be read, but it was left up FOREVER: the last fight of a trip sat on
+		// screen until the next one, which outside a boss trip is the rest of the session. It now goes when the fight
+		// timeout says the fighting is over, which is the same clock that ended the fight itself.
+		if (fight.isEnded()
+			&& System.currentTimeMillis() - fight.getEndMillis() > config.fightTimeoutTicks() * 600L)
 		{
 			return null;
 		}
@@ -55,8 +82,10 @@ class PvmPerformanceOverlay extends OverlayPanel
 			return null;
 		}
 
+		final String heading = title(session, raid, room, fight);
+		contentWidth = Math.max(contentWidth, metrics.stringWidth(heading));
 		panelComponent.getChildren().add(TitleComponent.builder()
-			.text(title(session, raid, room, fight))
+			.text(heading)
 			.build());
 
 		final SpecialAttack spec = plugin.getSpecialAttack();
@@ -66,10 +95,8 @@ class PvmPerformanceOverlay extends OverlayPanel
 		final int maxHit = plugin.getExpectedMaxHit();
 		if (maxHit > 0)
 		{
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left(hasSpec ? "Max hit (Spec)" : "Max hit")
-				.right(hasSpec ? String.format("%d (%d)", maxHit, specMaxHit) : String.valueOf(maxHit))
-				.build());
+			line(hasSpec ? "Max hit (Spec)" : "Max hit",
+				hasSpec ? String.format("%d (%d)", maxHit, specMaxHit) : String.valueOf(maxHit));
 		}
 
 		// Top half: what the loadout does against this target. These hold still through a fight, so they read as stats rather
@@ -78,24 +105,16 @@ class PvmPerformanceOverlay extends OverlayPanel
 		final double specAcc = plugin.getExpectedSpecAccuracy();
 		if (expAcc >= 0)
 		{
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left(hasSpec ? "Accuracy (Spec)" : "Accuracy")
-				.right(hasSpec && specAcc >= 0 
-					? String.format("%.1f%% (%.1f%%)", expAcc * 100, specAcc * 100) 
-					: String.format("%.1f%%", expAcc * 100))
-				.build());
+			line(hasSpec ? "Accuracy (Spec)" : "Accuracy",
+				hasSpec && specAcc >= 0 ? String.format("%.1f%% (%.1f%%)", expAcc * 100, specAcc * 100) : String.format("%.1f%%", expAcc * 100));
 		}
 
 		final double expAvgHit = plugin.getExpectedAverageHit();
 		final double specAvgHit = plugin.getExpectedSpecAverageHit();
 		if (expAvgHit >= 0)
 		{
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left(hasSpec ? "Avg hit (Spec)" : "Avg hit")
-				.right(hasSpec && specAvgHit >= 0 
-					? String.format("%.2f (%.2f)", expAvgHit, specAvgHit) 
-					: String.format("%.2f", expAvgHit))
-				.build());
+			line(hasSpec ? "Avg hit (Spec)" : "Avg hit",
+				hasSpec && specAvgHit >= 0 ? String.format("%.2f (%.2f)", expAvgHit, specAvgHit) : String.format("%.2f", expAvgHit));
 		}
 
 		// Under Avg hit because it answers the question a bigger average hit cannot: which of two setups is actually better
@@ -104,10 +123,7 @@ class PvmPerformanceOverlay extends OverlayPanel
 		final double expDps = plugin.getExpectedDps();
 		if (expDps >= 0)
 		{
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("DPS")
-				.right(String.format("%.2f", expDps))
-				.build());
+			line("DPS", String.format("%.2f", expDps));
 		}
 
 		if (expectedOnly)
@@ -117,33 +133,33 @@ class PvmPerformanceOverlay extends OverlayPanel
 
 		// Bottom half: what happened, against what the model expected. The expected side is a running total of each attack's
 		// own figure, so swapping weapons mid-fight adds each weapon's share.
-		panelComponent.getChildren().add(LineComponent.builder().left("").right("").build());
+		line("", "");
 
 		final int damage = session != null ? session.getDamageDealt()
 			: raid != null ? raid.getDamageDealt() : room.getDamageDealt();
 		final double expDamage = session != null ? session.getSumExpectedAverageHit()
 			: raid != null ? raid.sumExpectedAverageHit() : room.sumExpectedAverageHit();
-		panelComponent.getChildren().add(LineComponent.builder()
-			.left("Damage")
-			.right(expDamage > 0
-				? String.format("%s / %.0f", QuantityFormatter.formatNumber(damage), expDamage)
-				: QuantityFormatter.formatNumber(damage))
-			.build());
+		line("Damage",
+			expDamage > 0 ? String.format("%s / %.0f", QuantityFormatter.formatNumber(damage), expDamage) : QuantityFormatter.formatNumber(damage));
 
 		final int hits = session != null ? session.getHits()
 			: raid != null ? raid.getHits() : room.getHits();
-		final double expHits = session != null ? session.getSumExpectedAccuracy()
-			: raid != null ? raid.sumExpectedAccuracy() : room.sumExpectedAccuracy();
 		// Measured hits against what was expected, then the accuracy those two make. The top half carries the accuracy the
 		// LOADOUT should get; this is the one that happened.
 		final double realAccuracy = session != null ? session.accuracy()
 			: raid != null ? raid.accuracy() : room.accuracy();
-		panelComponent.getChildren().add(LineComponent.builder()
-			.left("Hits")
-			.right(expHits > 0
-				? String.format("%d / %.1f (%.0f%%)", hits, expHits, realAccuracy * 100)
-				: String.valueOf(hits))
-			.build());
+		// Landed against what was EXPECTED to land, which is the comparison this plugin is for. How many were thrown is
+		// already on screen under Efficiency, where prayed, potted and switches all divide by it, so spending this line on
+		// it would only repeat that. The percentage is the real one - landed over thrown - so the two figures beside it
+		// and the number below it always agree.
+		//
+		// With an AoE weapon both halves are per npc reached: five adds caught by one throw are five chances, and the
+		// expected side is the sum of their five accuracies.
+		final double expHits = session != null ? session.getSumExpectedAccuracy()
+			: raid != null ? raid.sumExpectedAccuracy() : room.sumExpectedAccuracy();
+		line("Hits", expHits > 0
+			? String.format("%d / %.1f (%.0f%%)", hits, expHits, realAccuracy * 100)
+			: String.valueOf(hits));
 
 		// How well the attacks were set up, with the parts shown only when one of them slipped, a clean fight needs no
 		// breakdown.
@@ -151,10 +167,7 @@ class PvmPerformanceOverlay extends OverlayPanel
 			: raid != null ? raid.efficiency() : room.efficiency();
 		if (efficiency >= 0)
 		{
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("Efficiency")
-				.right(String.format("%.0f%%", efficiency * 100))
-				.build());
+			line("Efficiency", String.format("%.0f%%", efficiency * 100));
 
 			final int made = session != null ? session.getAttacksMade()
 				: raid != null ? raid.getAttacksMade() : room.getAttacksMade();
@@ -164,22 +177,13 @@ class PvmPerformanceOverlay extends OverlayPanel
 				: raid != null ? raid.getAttacksPotted() : room.getAttacksPotted();
 			// Always shown, both of them. Hiding a counter that reads full makes it impossible to tell a perfect run from one
 			// that is not counting.
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("  prayed")
-				.right(prayed + "/" + made)
-				.build());
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("  potted")
-				.right(potted + "/" + made)
-				.build());
+			line("  prayed", prayed + "/" + made);
+			line("  potted", potted + "/" + made);
 			final int switched = session != null ? session.getAttacksSwitched()
 				: raid != null ? raid.getAttacksSwitched() : room.getAttacksSwitched();
 			// The gap to made is the number of attacks that missed at least one switch, read the same way as the two lines above
 			// it.
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("  switches")
-				.right(switched + "/" + made)
-				.build());
+			line("  switches", switched + "/" + made);
 		}
 
 		final double lostShare = session != null ? session.ticksLostShare()
@@ -188,23 +192,33 @@ class PvmPerformanceOverlay extends OverlayPanel
 		{
 			final int lost = session != null ? session.getTicksLost()
 				: raid != null ? raid.getTicksLost() : room.getTicksLost();
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("Ticks lost")
-				.right(String.format("%d (%.0f%%)", lost, lostShare * 100))
-				.build());
+			line("Ticks lost", String.format("%d (%.0f%%)", lost, lostShare * 100));
 
 			final int eating = session != null ? session.getTicksLostEating()
 				: raid != null ? raid.getTicksLostEating() : room.getTicksLostEating();
 			if (eating > 0)
 			{
-				panelComponent.getChildren().add(LineComponent.builder()
-					.left("  to eating")
-					.right(String.valueOf(eating))
-					.build());
+				line("  to eating", String.valueOf(eating));
 			}
 		}
 
+		panelComponent.setPreferredSize(new Dimension(
+			Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, contentWidth + PADDING)), 0));
 		return super.render(graphics);
+	}
+
+	/**
+	 * One row, measured as it is added. Both halves are drawn on the same line
+	 * with the right one flush to the edge, so the row needs the sum of them.
+	 */
+	private void line(String left, String right)
+	{
+		contentWidth = Math.max(contentWidth,
+			metrics.stringWidth(left == null ? "" : left) + metrics.stringWidth(right == null ? "" : right));
+		panelComponent.getChildren().add(LineComponent.builder()
+			.left(left)
+			.right(right)
+			.build());
 	}
 
 	/**

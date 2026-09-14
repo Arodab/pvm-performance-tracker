@@ -30,7 +30,8 @@ public class CsvRowTest
 	@Test
 	public void theHeaderNamesEveryColumnOnce()
 	{
-		assertEquals(28, COLUMNS);
+		// attempts and targets are both there now: one throw of chinchompas is one attempt and several targets.
+		assertEquals(29, COLUMNS);
 	}
 
 	@Test

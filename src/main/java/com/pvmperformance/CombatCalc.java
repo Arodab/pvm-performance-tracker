@@ -16,6 +16,7 @@ import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
+import net.runelite.api.NPCComposition;
 import net.runelite.api.Prayer;
 import net.runelite.api.Skill;
 import net.runelite.api.widgets.Widget;
@@ -434,11 +435,112 @@ class CombatCalc
 		return magicHitChance(style, npc, gear, npcId, spec);
 	}
 
+	/**
+	 * Void applied where the game applies it: to the EFFECTIVE LEVEL, before the
+	 * attack roll or the max hit is worked out from it, and truncated there.
+	 *
+	 * <p>It used to be a multiplier on the finished figure, which is the same
+	 * boost and a different number - the two round in different places and land
+	 * a point apart. A blowpipe in elite void read a max of 33 where the game
+	 * gives 34.
+	 *
+	 * <p>11/10 everywhere, except the elite set's ranged damage at 9/8 and the
+	 * mage helm's accuracy at 29/20. Magic DAMAGE is not a level scaling at all
+	 * - the elite set's 5% is a damage bonus and stays with the others.
+	 */
+	private int voidScaled(int effectiveLevel, AttackType type, boolean damage)
+	{
+		final int tier = GearBonusCalc.voidTier(type, gear());
+		if (tier == GearBonusCalc.VOID_NONE)
+		{
+			return effectiveLevel;
+		}
+		if (type == AttackType.MAGIC)
+		{
+			return damage ? effectiveLevel : effectiveLevel * 29 / 20;
+		}
+		if (type == AttackType.RANGED && damage && tier == GearBonusCalc.VOID_ELITE)
+		{
+			return effectiveLevel * 9 / 8;
+		}
+		return effectiveLevel * 11 / 10;
+	}
+
 	/** How much of a hit the target keeps, for the few that shrug most of it off. */
 	private double mitigation(int npcId)
 	{
 		return RaidScaling.damageTaken(npcId, attackStyle().getAttackType())
-			* corporealBeastMitigation(npcId);
+			* corporealBeastMitigation(npcId)
+			* guardianMultiplier(npcId);
+	}
+
+	/**
+	 * The Chambers' guardians, which a pickaxe chips at and nothing else
+	 * touches. Mod Ash gives the modifier as
+	 * {@code (50 + Mining level + pickaxe's level req) / 150}, applied to the
+	 * damage already rolled - so it lands here with the other target-specific
+	 * shares of a hit rather than in the max hit's own arithmetic, and Void and
+	 * the rest are inside the figure it scales.
+	 *
+	 * <p>Not exact, and deliberately so: the game truncates EACH rolled hit,
+	 * where scaling the average truncates once. That flatters the average by up
+	 * to half a point, which is smaller than the party scaling either side of
+	 * it and is the same approximation every other multiplier here makes.
+	 *
+	 * <p>The base Mining level, not the boosted one. The wiki notes the dragon
+	 * pickaxe special gives no useful speed increase, which is what a boost of
+	 * three worth 2% would look like either way, so this follows the wiki's own
+	 * calculator rather than guessing at the live level.
+	 */
+	private double guardianMultiplier(int npcId)
+	{
+		if (!EncounterGroup.isGuardian(npcId))
+		{
+			return 1;
+		}
+		// Everything else is reduced to zero, the dragon warhammer's special excepted - and that one lands its drain before
+		// the damage is zeroed, so it is a defence effect rather than a hit and is not undone by this.
+		if (!attackStyle().getAttackType().isMelee() || weaponCategory() != WeaponCategory.PICKAXE)
+		{
+			return 0;
+		}
+		return (50.0 + client.getRealSkillLevel(Skill.MINING) + pickaxeLevelRequirement(weaponName())) / 150.0;
+	}
+
+	/**
+	 * The level requirement the guardian formula reads off a pickaxe. Dragon and
+	 * everything above it share 61 - the crystal pickaxe included, which Mod Ash
+	 * confirmed rather than taking its own 71 - so the table names only what
+	 * sits below that and the default carries the rest, variants and all.
+	 */
+	static int pickaxeLevelRequirement(String weaponName)
+	{
+		final String name = weaponName == null ? "" : weaponName.toLowerCase(Locale.ROOT);
+		if (name.contains("bronze") || name.contains("iron"))
+		{
+			return 1;
+		}
+		if (name.contains("steel"))
+		{
+			return 6;
+		}
+		if (name.contains("black"))
+		{
+			return 11;
+		}
+		if (name.contains("mithril"))
+		{
+			return 21;
+		}
+		if (name.contains("adamant"))
+		{
+			return 31;
+		}
+		if (name.contains("rune") || name.contains("gilded"))
+		{
+			return 41;
+		}
+		return 61;
 	}
 
 	/**
@@ -663,8 +765,8 @@ class CombatCalc
 	private double meleeHitChance(AttackStyle style, AttackType type,
 		MonsterStatsProvider.MonsterStats npc, double gear, SpecialAttack spec)
 	{
-		final int effAtk = (int) Math.floor(boostedLevel(Skill.ATTACK) * meleeAccuracyPrayer())
-			+ style.attackLevelBonus() + 8;
+		final int effAtk = voidScaled((int) Math.floor(boostedLevel(Skill.ATTACK) * meleeAccuracyPrayer())
+			+ style.attackLevelBonus() + 8, type, false);
 		final int attRoll = scaled(attackRoll(effAtk, attackBonus(type), gear), spec);
 		final int defBonus = type == AttackType.STAB ? npc.getDefStab()
 			: type == AttackType.SLASH ? npc.getDefSlash() : npc.getDefCrush();
@@ -680,13 +782,13 @@ class CombatCalc
 	private double magicHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc, double gear,
 		int npcId, SpecialAttack spec)
 	{
-		final int effMagic = (int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
-			+ style.attackLevelBonus() + 9;
+		final int effMagic = voidScaled((int) Math.floor(boostedLevel(Skill.MAGIC) * magicAccuracyPrayer())
+			+ style.attackLevelBonus() + 9, AttackType.MAGIC, false);
 		// Elemental weakness is worth as much accuracy as it is damage, a point each, and multiplies the roll as the gear
 		// effects do.
 		final int attRoll = scaled(attackRoll(effMagic, attackBonus(AttackType.MAGIC),
 			gear * (1.0 + elementalWeakness(npcId) / 100.0)), spec);
-		final int magic = RaidScaling.magic(client, npcId, npc.getMagicLevel(), npc.getName(),
+		final int magic = RaidScaling.magic(client, npc.getMagicLevel(), npc.getName(),
 			partyHitpoints.highest());
 		final int defRoll = (magic + 9) * (npc.getDefMagic() + 64);
 		if (!hasConflictionGauntlets())
@@ -788,8 +890,8 @@ class CombatCalc
 	private double rangedHitChance(AttackStyle style, MonsterStatsProvider.MonsterStats npc,
 		double gear, SpecialAttack spec)
 	{
-		final int effRanged = (int) Math.floor(boostedLevel(Skill.RANGED) * rangedAccuracyPrayer())
-			+ style.attackLevelBonus() + 8;
+		final int effRanged = voidScaled((int) Math.floor(boostedLevel(Skill.RANGED) * rangedAccuracyPrayer())
+			+ style.attackLevelBonus() + 8, AttackType.RANGED, false);
 		final int attRoll = scaled(attackRoll(effRanged, attackBonus(AttackType.RANGED), gear), spec);
 		final int defRoll = (defenceLevel(npc) + 9) * (npc.getDefRanged() + 64);
 		return hitChanceFrom(attRoll, defRoll);
@@ -1381,12 +1483,53 @@ class CombatCalc
 		{
 			return 1;
 		}
-		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
-		if (npc == null || npc.getSize() < 2)
+		return scytheHits(targetSize(npcId));
+	}
+
+	/**
+	 * A scythe swing against a target this many tiles across: three hits from
+	 * 3x3 up, two against a 2x2, one against anything smaller.
+	 */
+	static int scytheHits(int size)
+	{
+		return size >= 3 ? 3 : size == 2 ? 2 : 1;
+	}
+
+	/**
+	 * How many tiles across the target is, asked of the GAME rather than of the
+	 * wiki data. The client knows this exactly and for every monster, where the
+	 * data knows it only for the ids it happens to list and is sometimes plainly
+	 * wrong about them - the Chambers guardian is recorded as size 0.
+	 *
+	 * <p>It decides how many times a scythe hits, so getting it from a dataset
+	 * that can be silent cost the extra hits on every monster the data misses:
+	 * a scythe on Olm's hands, which are 5 tiles across and take three hits,
+	 * was reading as one.
+	 *
+	 * <p>The live NPC first, since only it can answer for a monster that changes
+	 * form; then the id's own definition; and the data last, which is now only
+	 * reached with no client to ask.
+	 */
+	private int targetSize(int npcId)
+	{
+		if (targetNpc != null && targetNpc.getId() == npcId)
 		{
-			return 1;
+			final NPCComposition composition = targetNpc.getTransformedComposition();
+			if (composition != null && composition.getSize() > 0)
+			{
+				return composition.getSize();
+			}
 		}
-		return npc.getSize() >= 3 ? 3 : 2;
+		if (npcId >= 0)
+		{
+			final NPCComposition definition = client.getNpcDefinition(npcId);
+			if (definition != null && definition.getSize() > 0)
+			{
+				return definition.getSize();
+			}
+		}
+		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		return npc == null ? 1 : npc.getSize();
 	}
 
 	private boolean isScytheEquipped()
@@ -1871,7 +2014,9 @@ class CombatCalc
 		{
 			return 0;
 		}
-		final int effective = (int) Math.floor(level * meleePrayer()) + attackStyle().strengthLevelBonus() + 8;
+		final int effective = voidScaled(
+			(int) Math.floor(level * meleePrayer()) + attackStyle().strengthLevelBonus() + 8,
+			attackStyle().getAttackType(), true);
 		return maxHitFromStrength(effective, equipmentBonus(true));
 	}
 
@@ -1882,11 +2027,13 @@ class CombatCalc
 		{
 			return 0;
 		}
-		final int effective = (int) Math.floor(level * rangedPrayer()) + attackStyle().strengthLevelBonus() + 8;
+		final int effective = voidScaled(
+			(int) Math.floor(level * rangedPrayer()) + attackStyle().strengthLevelBonus() + 8,
+			AttackType.RANGED, true);
 		return maxHitFromStrength(effective, equipmentBonus(false));
 	}
 
-	private static int maxHitFromStrength(int effectiveStrength, int strengthBonus)
+	static int maxHitFromStrength(int effectiveStrength, int strengthBonus)
 	{
 		return (effectiveStrength * (strengthBonus + 64) + 320) / 640;
 	}
@@ -2441,6 +2588,12 @@ class CombatCalc
 		}
 		// Raised if something stronger is up, never lowered: taking the standard from what the player happens to hold would
 		// let one who took nothing read as perfectly dosed.
+		//
+		// The boost ACTUALLY up is one of those things, whatever it is. Only two are recognised by name below, and an
+		// imbued heart is neither - so a slayer task barraged with one up had a real magic level above the ideal one, which
+		// is meant to be a ceiling. The efficiency it feeds then read over 100%. Raising, never lowering, so a decayed or
+		// undrunk dose still shows up as the damage it costs.
+		boost = Math.max(boost, client.getBoostedSkillLevel(skill) - base);
 		if (client.getVarbitValue(VarbitID.STATRENEWAL_POTION_TIMER) > 0)
 		{
 			boost = Math.max(boost, base * 16 / 100 + 11);

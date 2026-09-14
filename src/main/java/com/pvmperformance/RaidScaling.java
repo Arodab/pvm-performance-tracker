@@ -39,12 +39,6 @@ final class RaidScaling
 		return EncounterGroup.isNightmareTotem(npcId) && type == AttackType.MAGIC ? 2 : 1;
 	}
 
-	/** Whether this is Olm's mage hand, whose magic level the Chambers halve. */
-	static boolean isOlmMageHand(int npcId)
-	{
-		return npcId == NpcID.OLM_HAND_RIGHT || npcId == NpcID.OLM_HAND_RIGHT_SPAWNING;
-	}
-
 	/** A monster's defence level as the raid it stands in leaves it. */
 	static int defence(Client client, int base, String name, int partyHitpoints)
 	{
@@ -63,17 +57,19 @@ final class RaidScaling
 	}
 
 	// A monster's magic level as the raid leaves it.
-	static int magic(Client client, int npcId, int base, String name, int partyHitpoints)
+	static int magic(Client client, int base, String name, int partyHitpoints)
 	{
 		if (!inChambers(client) || !scalesMagic(name))
 		{
 			return base;
 		}
 		final int size = chambersPartySize(client);
-		final int scaled = chambers(base, size, partyHitpoints,
+		// The mage hand rolls on half its magic, and the monster data ALREADY carries that: the two claws are identical in
+		// every other stat and the right one is listed at 87 against the left's 175, which is that half. Halving here as
+		// well quartered it, and a quartered defensive roll reads as accuracy the attack does not have - so the halving
+		// lives in the data now, and the halving that used to sit here is gone with it.
+		return chambers(base, size, partyHitpoints,
 			defenceMultiplier(isChallengeMode(client), size, name));
-		// The mage hand rolls on half of it.
-		return isOlmMageHand(npcId) ? scaled / 2 : scaled;
 	}
 
 	/**
@@ -126,8 +122,10 @@ final class RaidScaling
 		final String lower = name.toLowerCase();
 		if (lower.startsWith("tekton") || lower.startsWith("great olm"))
 		{
-				// Olm's head rolls on defence rather than magic, and both hands use it. GearScape halves the mage hand's; not
-				// reproduced, because the monster data names both claws "Great Olm".
+				// Olm's head rolls on defence rather than magic, and both hands use it. The head cannot be told apart here -
+				// the monster data names all three parts "Great Olm" and drops the version that separates them - so this
+				// reads as true for the head as well. Harmless while nothing rolls against the head's magic, and the note is
+				// left because it is the id, not the name, that will have to answer it.
 			return !lower.contains("head");
 		}
 		for (String scaled : MAGIC_SCALED)

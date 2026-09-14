@@ -98,4 +98,26 @@ public class EncounterGroupTest
 		assertFalse(EncounterGroup.sameGroup(NpcIds.OLM_HEAD, NpcIds.OLM_LEFT));
 		assertTrue(EncounterGroup.sameGroup(NpcIds.OLM_LEFT, NpcIds.OLM_RIGHT));
 	}
+
+	@Test
+	public void theWardensEnergySiphonsAreAMechanicAndNotAFight()
+	{
+		// The skulls in phase two. Each was opening its own fight and then holding the overlay, in the middle of a raid.
+		assertTrue(EncounterGroup.isIgnored(net.runelite.api.gameval.NpcID.TOA_WARDENS_ENERGY));
+		// The wardens themselves are still fought.
+		assertFalse(EncounterGroup.isIgnored(net.runelite.api.gameval.NpcID.TOA_WARDEN_ELIDINIS_PHASE2_MAGE));
+		assertFalse(EncounterGroup.isIgnored(net.runelite.api.gameval.NpcID.TOA_WARDEN_TUMEKEN_PHASE2_MAGE));
+	}
+
+	@Test
+	public void theHueycoatlsSeerIsSceneryAndIsNeverTracked()
+	{
+		// It stands in that fight and is not part of it. A single point of damage lands on it on the phase change and
+		// reads as the player's, which was enough to open a fight, book an attack and count a kill - nine of each in one
+		// trip. Named here rather than left to the fightable test, which can only ask the game and was got past once.
+		assertTrue(EncounterGroup.isIgnored(net.runelite.api.gameval.NpcID.HUEY_SEER));
+		// The snake itself is still tracked, in every part.
+		assertFalse(EncounterGroup.isIgnored(net.runelite.api.gameval.NpcID.HUEY_HEAD));
+		assertFalse(EncounterGroup.isIgnored(net.runelite.api.gameval.NpcID.HUEY_BODY_PART));
+	}
 }

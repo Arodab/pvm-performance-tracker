@@ -243,7 +243,16 @@ final class EncounterGroup
 			// Hueycoatl scenery rather than the snake: the head's respawn placeholder, the tail's projectile, and the phase two
 			// health bar pillar.
 			NpcID.HUEY_HEAD_RESPAWN_PLACEHOLDER, NpcID.HUEY_TAIL_PROJECTILE,
-			NpcID.HUEY_P2_PILLAR_HEADBAR_INVIS)));
+			NpcID.HUEY_P2_PILLAR_HEADBAR_INVIS,
+			// The Wardens' energy siphons - the skulls in phase two. They are a mechanic to be broken, not a thing to be
+			// scored against: each one opens its own fight and then sits on the overlay in place of the raid you are in.
+			NpcID.TOA_WARDENS_ENERGY,
+			// And the seer, which stands in that fight and is not part of it. Something on the phase change puts a single
+			// point of damage on it that isMine() reports as the player's, and that opened a fight, booked an attack and
+			// counted a kill: nine of each in one trip against an npc nobody had touched. Named outright rather than left
+			// to the fightable test, because that test can only ask what the game says about it and the answer was enough
+			// to get through once already.
+			NpcID.HUEY_SEER)));
 	}
 
 	/**
@@ -309,6 +318,22 @@ final class EncounterGroup
 	static boolean isDefeated(int npcId)
 	{
 		return DEFEATED.contains(npcId);
+	}
+
+	/**
+	 * The Chambers' stone guardians, which only a pickaxe can hurt. All four ids
+	 * on purpose: the gamevals read as left, right and their two dead forms,
+	 * while the wiki's calculator reads the same four as a normal and a
+	 * challenge mode pair. Both cannot be right and the disagreement is not
+	 * settled here, so the whole block is claimed - the two that are the dead
+	 * forms are already unattackable, and a multiplier on a corpse costs
+	 * nothing, where a missing one on the live guardian silently drops the
+	 * pickaxe rule in whichever mode is misread.
+	 */
+	static boolean isGuardian(int npcId)
+	{
+		return npcId == NpcID.RAIDS_STONEGUARDIANS_LEFT || npcId == NpcID.RAIDS_STONEGUARDIANS_RIGHT
+			|| npcId == NpcID.RAIDS_STONEGUARDIANS_LEFT_DEAD || npcId == NpcID.RAIDS_STONEGUARDIANS_RIGHT_DEAD;
 	}
 
 	private static final Set<Integer> DEFEATED = Collections.unmodifiableSet(

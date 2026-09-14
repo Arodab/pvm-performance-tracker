@@ -61,6 +61,24 @@ class Encounter
 	}
 
 	/**
+	 * Whether anything in this room has been attacked yet. Latched rather than
+	 * counted, so the answer is the same after the fight that did it has been
+	 * replaced - which is the whole point of asking the room instead of the
+	 * fight - and so it costs nothing on a room holding hundreds of them.
+	 */
+	private boolean engaged;
+
+	void noteAttack()
+	{
+		engaged = true;
+	}
+
+	boolean isEngaged()
+	{
+		return engaged;
+	}
+
+	/**
 	 * Whether anything has been thrown in this room yet. A fight opens on merely
 	 * looking at something, so a room with no attempts is one nothing happened in.
 	 */
@@ -143,10 +161,24 @@ class Encounter
 		return total;
 	}
 
+	/** Npcs this room's attacks reached, which accuracy divides by. */
+	int getTargets()
+	{
+		int total = 0;
+		for (Fight fight : fights)
+		{
+			if (fight.isScored())
+			{
+				total += fight.resolvedTargets();
+			}
+		}
+		return total;
+	}
+
 	double accuracy()
 	{
-		final int attempts = getAttempts();
-		return attempts == 0 ? 0 : (double) getHits() / attempts;
+		final int targets = getTargets();
+		return targets == 0 ? 0 : (double) getHits() / targets;
 	}
 
 	double averageHit()

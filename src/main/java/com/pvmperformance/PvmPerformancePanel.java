@@ -128,12 +128,21 @@ class PvmPerformancePanel extends PluginPanel
 			+ "Tracked fight history is untouched");
 		resetTrip.addActionListener(e -> plugin.resetSession());
 
+		// Its own row rather than a fourth column: four buttons across a side panel leaves each of them too narrow to read,
+		// and this one is pressed after something looked wrong rather than as part of the routine.
+		final JButton saveLog = new JButton("Save debug log");
+		saveLog.setToolTipText("Write the last few thousand lines of what the tracker saw to a file, "
+			+ "with the loadout and settings that produced them. Press it when a figure looks wrong");
+		saveLog.addActionListener(e -> plugin.saveDebugLog());
+
 		final JPanel buttons = new JPanel(new GridLayout(1, 3, 6, 0));
 		buttons.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		buttons.add(exportAll);
 		buttons.add(resetTrip);
 		buttons.add(clear);
 		fullWidth(header, buttons);
+		header.add(Box.createVerticalStrut(4));
+		fullWidth(header, saveLog);
 		header.add(Box.createVerticalStrut(4));
 
 		bossOnly.setBackground(ColorScheme.DARK_GRAY_COLOR);

@@ -64,10 +64,20 @@ class Raid
 		return total;
 	}
 
+	int getTargets()
+	{
+		int total = 0;
+		for (Encounter encounter : encounters)
+		{
+			total += encounter.getTargets();
+		}
+		return total;
+	}
+
 	double accuracy()
 	{
-		final int attempts = getAttempts();
-		return attempts == 0 ? 0 : (double) getHits() / attempts;
+		final int targets = getTargets();
+		return targets == 0 ? 0 : (double) getHits() / targets;
 	}
 
 	int getHits()

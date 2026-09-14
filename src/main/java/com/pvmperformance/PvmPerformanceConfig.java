@@ -162,11 +162,28 @@ public interface PvmPerformanceConfig extends Config
 	@ConfigItem(
 		keyName = "fightTimeoutTicks",
 		name = "Fight timeout (ticks)",
-		description = "End the current fight after this many game ticks with no damage dealt",
+		description = "End the current fight after this many game ticks with no damage dealt. Also how long a finished "
+			+ "fight stays on the overlay: at 100 that is a minute after the kill",
 		position = 11
 	)
 	default int fightTimeoutTicks()
 	{
-		return 10;
+		// Ten was too eager. A fight is not over because nothing landed for six seconds - a safespot, a phase, a walk back
+		// into range - and every fight it ended early took its ticks with it.
+		return 100;
+	}
+
+	@ConfigItem(
+		keyName = "debugLogging",
+		name = "Debug logging",
+		description = "Stream everything the tracker sees - fights, attacks, hitsplats, every tick and why it counted - "
+			+ "to a file beside the CSV exports, for as long as it is on. You usually do not need this: the side panel's "
+			+ "Save debug log button writes out the last few thousand lines whenever you ask, with no warning needed. "
+			+ "Use this one for a session spent chasing something, or when the client is crashing",
+		position = 12
+	)
+	default boolean debugLogging()
+	{
+		return false;
 	}
 }

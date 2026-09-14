@@ -23,6 +23,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.NPCComposition;
+import net.runelite.api.gameval.NpcID;
 import net.runelite.client.RuneLite;
 import net.runelite.client.util.Text;
 import okhttp3.Call;
@@ -47,6 +48,7 @@ class MonsterStatsProvider
 	private final Gson gson;
 	private final ScheduledExecutorService executor;
 	private final Client client;
+	private final DebugLog debug;
 
 	// npcId -> stats; replaced wholesale after a load, so reads need no lock.
 	private volatile Map<Integer, MonsterStats> byId = Collections.emptyMap();
@@ -56,19 +58,153 @@ class MonsterStatsProvider
 	private volatile Map<String, MonsterStats> byName = Collections.emptyMap();
 	private final Map<Integer, MonsterStats> dynamicCache = new java.util.concurrent.ConcurrentHashMap<>();
 
+	// Ids already reported to the debug log, so an unknown monster says so once rather than on every attack.
+	private final Set<Integer> logged = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
 	@Inject
 	MonsterStatsProvider(OkHttpClient httpClient, Gson gson, ScheduledExecutorService executor,
-		Client client)
+		Client client, DebugLog debug)
 	{
 		this.httpClient = httpClient;
 		this.gson = gson;
 		this.executor = executor;
 		this.client = client;
+		this.debug = debug;
 	}
 
 	void startUp()
 	{
 		executor.execute(this::loadOrFetch);
+	}
+
+	/**
+	 * Ids the wiki's data does not carry, pointed at the entry that describes
+	 * the same thing.
+	 *
+	 * <p>The data is keyed on whichever id the wiki happened to record, which is
+	 * routinely NOT the id a monster wears while it is being fought: the Great
+	 * Olm is listed only under the forms he wears while RISING, Verzik's first
+	 * phase under the form she sits in before it starts, Tekton under the one he
+	 * waits in at his anvil, and a nylocas under the form it walks in rather
+	 * than the one it settles into. Every one of those meant no stats at all
+	 * while the thing was actually being fought.
+	 *
+	 * <p>The name fallback below is not a substitute where a monster's versions
+	 * DISAGREE, and these are exactly the ones that do. It takes whichever
+	 * version the map holds first, so it can answer Verzik's third phase with
+	 * her first phase's 20 defence, a normal Tekton with the enraged one's
+	 * defensive bonuses, or a big nylocas with a small one's - and a size with
+	 * it, which decides how many times a scythe hits. Each line here was checked
+	 * against the entry it points at.
+	 *
+	 * <p>The rule for adding to this: an id belongs here when the data lists the
+	 * same monster under a different id AND its versions differ. Where the
+	 * versions agree, the name fallback is already right and a line here is only
+	 * noise.
+	 */
+	private static final Map<Integer, Integer> ALIASES = buildAliases();
+
+	private static Map<Integer, Integer> buildAliases()
+	{
+		final Map<Integer, Integer> aliases = new HashMap<>();
+
+		// The Great Olm, listed only under the ids he wears while rising. The three parts are nothing alike - the head takes
+		// 200s across stab, slash and crush where the melee claw takes 50s, and the mage claw's magic defence is 50 against
+		// the melee claw's 200 - so the name fallback would be wrong about two targets in three.
+		aliases.put(NpcID.OLM_HAND_RIGHT, NpcID.OLM_HAND_RIGHT_SPAWNING);
+		aliases.put(NpcID.OLM_HAND_RIGHT_DYING, NpcID.OLM_HAND_RIGHT_SPAWNING);
+		aliases.put(NpcID.OLM_HAND_LEFT, NpcID.OLM_HAND_LEFT_SPAWNING);
+		aliases.put(NpcID.OLM_HAND_LEFT_DYING, NpcID.OLM_HAND_LEFT_SPAWNING);
+		aliases.put(NpcID.OLM_HEAD, NpcID.OLM_HEAD_SPAWNING);
+
+		// The Chambers guardians. Only the left one is listed, as "Guardian (Chambers of Xeric)" - which is not what the
+		// game calls it, so the name fallback cannot reach it either and the right guardian had no stats at all.
+		aliases.put(NpcID.RAIDS_STONEGUARDIANS_RIGHT, NpcID.RAIDS_STONEGUARDIANS_LEFT);
+		aliases.put(NpcID.RAIDS_STONEGUARDIANS_LEFT_DEAD, NpcID.RAIDS_STONEGUARDIANS_LEFT);
+		aliases.put(NpcID.RAIDS_STONEGUARDIANS_RIGHT_DEAD, NpcID.RAIDS_STONEGUARDIANS_LEFT);
+
+		// Verzik's first phase. The data's "Phase 1" is the form she sits in before the fight; the one she is fought in is
+		// the next id along. Her phases are the widest disagreement in the whole dataset - defence 20, 200 and 150, and
+		// sizes 5, 3 and 7 - so answering P1 with P2's figures is not a rounding error.
+		aliases.put(NpcID.VERZIK_PHASE1, NpcID.VERZIK_INITIAL);
+		aliases.put(NpcID.VERZIK_PHASE1_HARD, NpcID.VERZIK_INITIAL_HARD);
+		aliases.put(NpcID.VERZIK_PHASE1_STORY, NpcID.VERZIK_INITIAL_STORY);
+
+		// Xarpus is listed once per mode, under the id of his final phase. The first two phases - lying still, and feeding
+		// on the exhumeds - are their own ids and are fought.
+		aliases.put(NpcID.TOB_XARPUS_STATIC, NpcID.TOB_XARPUS_COMBAT);
+		aliases.put(NpcID.TOB_XARPUS_FEEDING, NpcID.TOB_XARPUS_COMBAT);
+		aliases.put(NpcID.TOB_XARPUS_STATIC_HARD, NpcID.TOB_XARPUS_COMBAT_HARD);
+		aliases.put(NpcID.TOB_XARPUS_FEEDING_HARD, NpcID.TOB_XARPUS_COMBAT_HARD);
+		aliases.put(NpcID.TOB_XARPUS_STATIC_STORY, NpcID.TOB_XARPUS_COMBAT_STORY);
+		aliases.put(NpcID.TOB_XARPUS_FEEDING_STORY, NpcID.TOB_XARPUS_COMBAT_STORY);
+
+		// Tekton, listed under the form he waits in and the one he walks back in when enraged. Enraged is a different
+		// monster to hit: 280, 290 and 180 against the standard 155, 165 and 105.
+		aliases.put(NpcID.RAIDS_TEKTON_WALKING_STANDARD, NpcID.RAIDS_TEKTON_WAITING);
+		aliases.put(NpcID.RAIDS_TEKTON_FIGHTING_STANDARD, NpcID.RAIDS_TEKTON_WAITING);
+		aliases.put(NpcID.RAIDS_TEKTON_FIGHTING_ENRAGED, NpcID.RAIDS_TEKTON_WALKING_ENRAGED);
+
+		// A second-phase warden alternates between a mage and a ranged form; only the mage one is listed, and they are the
+		// same monster.
+		aliases.put(NpcID.TOA_WARDEN_ELIDINIS_PHASE2_RANGE, NpcID.TOA_WARDEN_ELIDINIS_PHASE2_MAGE);
+		aliases.put(NpcID.TOA_WARDEN_TUMEKEN_PHASE2_RANGE, NpcID.TOA_WARDEN_TUMEKEN_PHASE2_MAGE);
+
+		// The Nylocas, listed under the form each walks in and never the one it settles into to fight - which is the form
+		// most of them are killed in. Big and small differ in defence, twenty against one, and in SIZE, which is what says
+		// whether a scythe hits twice or once.
+		aliases.put(NpcID.TOB_NYLOCAS_FIGHTING_MELEE, NpcID.TOB_NYLOCAS_INCOMING_MELEE);
+		aliases.put(NpcID.TOB_NYLOCAS_FIGHTING_RANGED, NpcID.TOB_NYLOCAS_INCOMING_RANGED);
+		aliases.put(NpcID.TOB_NYLOCAS_FIGHTING_MAGIC, NpcID.TOB_NYLOCAS_INCOMING_MAGIC);
+		aliases.put(NpcID.TOB_NYLOCAS_BIG_FIGHTING_MELEE, NpcID.TOB_NYLOCAS_BIG_INCOMING_MELEE);
+		aliases.put(NpcID.TOB_NYLOCAS_BIG_FIGHTING_RANGED, NpcID.TOB_NYLOCAS_BIG_INCOMING_RANGED);
+		aliases.put(NpcID.TOB_NYLOCAS_BIG_FIGHTING_MAGIC, NpcID.TOB_NYLOCAS_BIG_INCOMING_MAGIC);
+		aliases.put(NpcID.TOB_NYLOCAS_FIGHTING_MELEE_STORY, NpcID.TOB_NYLOCAS_INCOMING_MELEE_STORY);
+		aliases.put(NpcID.TOB_NYLOCAS_FIGHTING_RANGED_STORY, NpcID.TOB_NYLOCAS_INCOMING_RANGED_STORY);
+		aliases.put(NpcID.TOB_NYLOCAS_FIGHTING_MAGIC_STORY, NpcID.TOB_NYLOCAS_INCOMING_MAGIC_STORY);
+		aliases.put(NpcID.TOB_NYLOCAS_BIG_FIGHTING_MELEE_STORY, NpcID.TOB_NYLOCAS_BIG_INCOMING_MELEE_STORY);
+		aliases.put(NpcID.TOB_NYLOCAS_BIG_FIGHTING_RANGED_STORY, NpcID.TOB_NYLOCAS_BIG_INCOMING_RANGED_STORY);
+		aliases.put(NpcID.TOB_NYLOCAS_BIG_FIGHTING_MAGIC_STORY, NpcID.TOB_NYLOCAS_BIG_INCOMING_MAGIC_STORY);
+
+		// The Maiden wears an id per health threshold, and outside normal mode none of them is listed. Entry mode is a
+		// different monster - 80 defence against 200 - so the mode has to be kept even though the thresholds do not matter.
+		aliases.put(NpcID.TOB_MAIDEN_70_HARD, NpcID.TOB_MAIDEN_100_HARD);
+		aliases.put(NpcID.TOB_MAIDEN_50_HARD, NpcID.TOB_MAIDEN_100_HARD);
+		aliases.put(NpcID.TOB_MAIDEN_30_HARD, NpcID.TOB_MAIDEN_100_HARD);
+		aliases.put(NpcID.TOB_MAIDEN_70_STORY, NpcID.TOB_MAIDEN_100_STORY);
+		aliases.put(NpcID.TOB_MAIDEN_50_STORY, NpcID.TOB_MAIDEN_100_STORY);
+		aliases.put(NpcID.TOB_MAIDEN_30_STORY, NpcID.TOB_MAIDEN_100_STORY);
+
+		// The Chambers rooms that hold several copies of one monster list only the FIRST copy. The shamans matter most: the
+		// data calls the listed one "Lizardman shaman (Chambers of Xeric)", which is not what the game calls it, so the two
+		// unlisted shamans fell through to the plain "Lizardman shaman" of the open world - 140 defence in place of 210.
+		aliases.put(NpcID.RAIDS_LIZARDSHAMAN_B, NpcID.RAIDS_LIZARDSHAMAN_A);
+		aliases.put(NpcID.RAIDS_LIZARDSHAMAN_BLOCKER, NpcID.RAIDS_LIZARDSHAMAN_A);
+
+		// The large muttadile out of the water. The wiki's own page gives the large one as "7561,7563" and lists it under
+		// the first, so the fought id is unlisted and the fallback could answer it with the small one's 138 defence - and
+		// with size 3 in place of 5, which is a scythe hit.
+		aliases.put(NpcID.RAIDS_DOGODILE, NpcID.RAIDS_DOGODILE_SUBMERGED);
+
+		// The Nylocas boss is listed under the form it spawns in, never the three it fights in.
+		aliases.put(NpcID.NYLOCAS_BOSS_MELEE, NpcID.NYLOCAS_BOSS_SPAWNING);
+		aliases.put(NpcID.NYLOCAS_BOSS_RANGED, NpcID.NYLOCAS_BOSS_SPAWNING);
+		aliases.put(NpcID.NYLOCAS_BOSS_MAGIC, NpcID.NYLOCAS_BOSS_SPAWNING);
+		aliases.put(NpcID.NYLOCAS_BOSS_MELEE_HARD, NpcID.NYLOCAS_BOSS_SPAWNING_HARD);
+		aliases.put(NpcID.NYLOCAS_BOSS_RANGED_HARD, NpcID.NYLOCAS_BOSS_SPAWNING_HARD);
+		aliases.put(NpcID.NYLOCAS_BOSS_MAGIC_HARD, NpcID.NYLOCAS_BOSS_SPAWNING_HARD);
+		aliases.put(NpcID.NYLOCAS_BOSS_MELEE_STORY, NpcID.NYLOCAS_BOSS_SPAWNING_STORY);
+		aliases.put(NpcID.NYLOCAS_BOSS_RANGED_STORY, NpcID.NYLOCAS_BOSS_SPAWNING_STORY);
+		aliases.put(NpcID.NYLOCAS_BOSS_MAGIC_STORY, NpcID.NYLOCAS_BOSS_SPAWNING_STORY);
+
+		return Collections.unmodifiableMap(aliases);
+	}
+
+	/** The id whose entry stands in for this one, or -1 where none does. */
+	static int aliasFor(int npcId)
+	{
+		final Integer alias = ALIASES.get(npcId);
+		return alias == null ? -1 : alias;
 	}
 
 	MonsterStats get(int npcId)
@@ -77,6 +213,15 @@ class MonsterStatsProvider
 		if (exact != null)
 		{
 			return exact;
+		}
+		final Integer alias = ALIASES.get(npcId);
+		if (alias != null)
+		{
+			final MonsterStats aliased = byId.get(alias);
+			if (aliased != null)
+			{
+				return aliased;
+			}
 		}
 		if (npcId < 0 || byName.isEmpty())
 		{
@@ -89,10 +234,22 @@ class MonsterStatsProvider
 		// The id is unknown, so ask the game its name and look that up. Where a name covers several versions the first wins,
 		// which is the ordinary form, so a figure may be a little low but is no longer absent.
 		final NPCComposition composition = client.getNpcDefinition(npcId);
-		MonsterStats resolved = composition == null ? null : byName.get(normalise(composition.getName()));
+		final String name = composition == null ? null : composition.getName();
+		MonsterStats resolved = composition == null ? null : byName.get(normalise(name));
 		if (resolved != null)
 		{
 			dynamicCache.put(npcId, resolved);
+		}
+		if (debug.isOn() && logged.add(npcId))
+		{
+			// Both halves are worth a line. A miss means no accuracy and no expected damage against this target at all; a
+			// name match means the figures came from whichever version of that name the data happened to hold first, which
+			// is right for a monster that walks and fights under several ids and wrong for one whose forms differ.
+			debug.log(resolved == null
+					? "NO MONSTER STATS for npc %d ('%s'): no id, no alias and no name match - nothing will be expected "
+						+ "against this target"
+					: "monster stats for npc %d ('%s') resolved by NAME, not by id",
+				npcId, name);
 		}
 		return resolved;
 	}
@@ -205,6 +362,7 @@ class MonsterStatsProvider
 			}
 			byName = names;
 			dynamicCache.clear();
+			logged.clear();
 			log.debug("PvM Performance: loaded {} monster stat entries", map.size());
 		}
 	}

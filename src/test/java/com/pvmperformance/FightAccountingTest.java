@@ -38,6 +38,37 @@ public class FightAccountingTest
 	}
 
 	@Test
+	public void aRoomThatHasBeenFoughtInCountsItsNextFightFromTheFirstTick()
+	{
+		// The hole this closes. A room whose fights are one attack each - chinning a pile of adds, or a target that dies and
+		// is replaced - never got past the "walking to a boss is not wasted time" exemption, because each new fight arrived
+		// with nothing attacked yet. A real tightrope room booked 8 lost ticks against the 1354 that passed.
+		final Fight fresh = fight(NpcIds.GOBLIN);
+		fresh.recordTickLost(false, false);
+		fresh.recordTickSpent(false);
+		assertEquals("the FIRST fight in a room still gets the walk for free", 0, fresh.getCombatTicks());
+
+		final Fight next = fight(NpcIds.GOBLIN);
+		next.recordTickLost(false, true);
+		next.recordTickSpent(true);
+		assertEquals(2, next.getCombatTicks());
+		assertEquals(1, next.getTicksLost());
+		assertEquals(0.5, next.ticksLostShare(), 0.0001);
+	}
+
+	@Test
+	public void theRoomsExemptionDoesNotDoubleCountAFightThatHasAttacked()
+	{
+		// Once the fight has attacked in its own right the flag changes nothing, so a room-level yes cannot inflate a fight
+		// that was already counting.
+		final Fight f = fought(NpcIds.GOBLIN, 5);
+		f.recordTickLost(false, true);
+		f.recordTickSpent(true);
+		assertEquals(3, f.getCombatTicks());
+		assertEquals(1, f.getTicksLost());
+	}
+
+	@Test
 	public void aTickOnCooldownIsSpentAndNotLost()
 	{
 		final Fight f = fought(NpcIds.GOBLIN, 5);
@@ -126,5 +157,31 @@ public class FightAccountingTest
 		final Fight labelled = fight(NpcIds.OLM_LEFT);
 		labelled.setEncounterLabel("Great Olm (hands) - acid");
 		assertEquals("Great Olm (hands) - acid", labelled.encounterName());
+	}
+
+	@Test
+	public void efficiencyCanNeverExceedWhatWasAvailable()
+	{
+		// An ice barrage read 107%. The ratio is the setup used against the best one available, and the setup used is
+		// always one of the available ones, so anything over 100% means an input to the "ideal" was under-reading - the
+		// boost, in that case, since an imbued heart is not one of the two the model recognised by name.
+		final Fight f = fight(NpcIds.GOBLIN);
+		f.recordAttackMade(false);
+		// What the booking now passes: the ideal is never below the actual.
+		final double actual = 7.81;
+		final double best = 7.31;
+		f.recordAttackResolved(false, true, actual, Math.max(best, actual));
+		assertEquals(1.0, f.efficiency(), 1e-9);
+		assertTrue(f.efficiency() <= 1.0);
+	}
+
+	@Test
+	public void aSetupShortOfTheIdealStillReadsShort()
+	{
+		// And the clamp must not flatter anyone: a real shortfall is untouched.
+		final Fight f = fight(NpcIds.GOBLIN);
+		f.recordAttackMade(false);
+		f.recordAttackResolved(false, true, 7.5, Math.max(10.0, 7.5));
+		assertEquals(0.75, f.efficiency(), 1e-9);
 	}
 }

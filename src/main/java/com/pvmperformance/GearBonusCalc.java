@@ -154,7 +154,24 @@ class GearBonusCalc
 		return head.endsWith("(i)") ? BLACK_MASK_RANGED_MAGIC : GearBonus.NONE;
 	}
 
-	private GearBonus voidBonus(AttackType type, Loadout gear)
+	/** No void set for this style. */
+	static final int VOID_NONE = 0;
+	/** Void knight top and robe, with the helm the style asks for. */
+	static final int VOID_REGULAR = 1;
+	/** The elite top and robe, which are worth more on ranged and on magic damage. */
+	static final int VOID_ELITE = 2;
+
+	/**
+	 * Which void set is worn for this style, or {@link #VOID_NONE}.
+	 *
+	 * <p>The multipliers themselves are NOT here, and that is the point. Void
+	 * scales the EFFECTIVE LEVEL - trunc(level * 11 / 10), and 9/8 for elite
+	 * ranged damage - before the roll and the max hit are worked out from it.
+	 * Applied to the finished figure instead, as it was, the arithmetic lands a
+	 * point either side: a blowpipe read 33 where the game gives 34. See
+	 * {@code CombatCalc.voidScaled}, which is where it is applied now.
+	 */
+	static int voidTier(AttackType type, Loadout gear)
 	{
 		final String body = gear.name(EquipmentInventorySlot.BODY);
 		final String legs = gear.name(EquipmentInventorySlot.LEGS);
@@ -162,28 +179,28 @@ class GearBonusCalc
 		final String head = gear.name(EquipmentInventorySlot.HEAD);
 		if (body == null || legs == null || gloves == null || head == null)
 		{
-			return GearBonus.NONE;
+			return VOID_NONE;
 		}
 		final boolean elite = body.startsWith("Elite void top") && legs.startsWith("Elite void robe");
 		final boolean regular = body.startsWith("Void knight top") && legs.startsWith("Void knight robe");
 		if ((!elite && !regular) || !gloves.startsWith("Void knight gloves"))
 		{
-			return GearBonus.NONE;
+			return VOID_NONE;
 		}
 		// The helm has to match the style being used for the set to do anything.
-		switch (type)
-		{
-			case MAGIC:
-				// Regular mage void is accuracy only; elite adds 5% damage.
-				return head.startsWith("Void mage helm")
-					? GearBonus.of(1.45, elite ? 1.05 : 1.0) : GearBonus.NONE;
-			case RANGED:
-				return head.startsWith("Void ranger helm")
-					? GearBonus.of(1.1, elite ? 1.125 : 1.1) : GearBonus.NONE;
-			default:
-				return head.startsWith("Void melee helm")
-					? GearBonus.symmetric(1.1) : GearBonus.NONE;
-		}
+		final boolean helm = type == AttackType.MAGIC ? head.startsWith("Void mage helm")
+			: type == AttackType.RANGED ? head.startsWith("Void ranger helm")
+			: head.startsWith("Void melee helm");
+		return !helm ? VOID_NONE : elite ? VOID_ELITE : VOID_REGULAR;
+	}
+
+	private GearBonus voidBonus(AttackType type, Loadout gear)
+	{
+		// Everything void does to the accuracy and to melee and ranged damage is a scaling of the effective level and lives
+		// in CombatCalc now. What is left here is the elite set's 5% MAGIC damage, which is a damage bonus rather than a
+		// level, and so belongs with the other multipliers.
+		return type == AttackType.MAGIC && voidTier(type, gear) == VOID_ELITE
+			? GearBonus.of(1.0, 1.05) : GearBonus.NONE;
 	}
 
 	/** Crystal armour only does anything alongside a crystal bow or bow of faerdhinen. */

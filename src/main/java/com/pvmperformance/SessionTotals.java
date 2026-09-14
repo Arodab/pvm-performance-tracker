@@ -14,6 +14,7 @@ class SessionTotals
 	private int kills;
 	private int damageDealt;
 	private int attempts;
+	private int targets;
 	private int hits;
 	// Attacks that went out and never resolved, because the target died or changed form in flight. Not misses; see
 	// Fight.recordAttackNulled.
@@ -49,6 +50,7 @@ class SessionTotals
 		kills = 0;
 		damageDealt = 0;
 		attempts = 0;
+		targets = 0;
 		hits = 0;
 		nulled = 0;
 		attacksMade = 0;
@@ -114,6 +116,7 @@ class SessionTotals
 		attacksMade++;
 		combatTicks++;
 		attempts++;
+		targets++;
 		if (potted)
 		{
 			attacksPotted++;
@@ -125,15 +128,36 @@ class SessionTotals
 		nulled++;
 	}
 
-	/** Attacks that actually got an answer, which is what accuracy divides by. */
+	/** See {@code Fight.recordExtraTarget}: another npc caught by one throw. */
+	void recordExtraTarget(int damage, boolean newTarget, boolean landed, long now)
+	{
+		damageDealt += damage;
+		if (newTarget)
+		{
+			targets++;
+		}
+		if (landed)
+		{
+			hits++;
+		}
+		noteActivity(now);
+	}
+
+	/** Attacks that actually got an answer, which is what the damage divides by. */
 	int resolvedAttempts()
 	{
 		return Math.max(0, attempts - nulled);
 	}
 
+	/** Npcs reached; see {@code Fight.resolvedTargets}. Never reduced by the nulled attacks. */
+	int resolvedTargets()
+	{
+		return targets;
+	}
+
 	double accuracy()
 	{
-		final int resolved = resolvedAttempts();
+		final int resolved = resolvedTargets();
 		return resolved == 0 ? 0 : (double) hits / resolved;
 	}
 
