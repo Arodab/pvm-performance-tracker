@@ -14,6 +14,19 @@ public class CappedAverageTest
 	private static final double EXACT = 1e-9;
 
 	@Test
+	public void overkillIsTheSameArithmeticAsADamageCap()
+	{
+		// What a killing blow is worth. An attack with a 60 max against a target on 3 hitpoints cannot deal more than 3,
+		// so the expectation is the capped average and not half of 60 - the difference is what was being counted as damage
+		// the setup failed to produce, once per kill.
+		assertEquals(30.0, CombatCalc.cappedAverage(60, 60), EXACT);
+		// Rolls 0..3 keep their value, 4..60 all land on 3: (6 + 57*3) / 61.
+		assertEquals(177.0 / 61.0, CombatCalc.cappedAverage(60, 3), EXACT);
+		// Just under 3, where the uncapped figure said 30. Ten times over, on the last attack of every kill.
+		assertEquals(2.90, CombatCalc.cappedAverage(60, 3), 0.01);
+	}
+
+	@Test
 	public void aCapAboveTheMaxChangesNothing()
 	{
 		assertEquals(30.0, CombatCalc.cappedAverage(60, 9999), EXACT);

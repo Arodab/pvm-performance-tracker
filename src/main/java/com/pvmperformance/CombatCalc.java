@@ -436,6 +436,32 @@ class CombatCalc
 	}
 
 	/**
+	 * The most this attack could actually deal: what the target has LEFT.
+	 *
+	 * <p>Overkill, and it is not small over a trip. An attack expecting 25
+	 * against something on 3 hitpoints deals 3, and the difference was counted
+	 * as damage the setup failed to produce - once per kill, which over 323
+	 * Hueycoatls came to about half an average hit each and several thousand
+	 * damage of phantom underperformance.
+	 *
+	 * <p>Applied inside {@code averageHit}, so the ideal setup is capped by the
+	 * same number as the real one and efficiency does not fall on every killing
+	 * blow.
+	 *
+	 * <p>Approximate on purpose. The health bar is a ratio out of a scale, so
+	 * this is the right bucket rather than the right number, and it is a
+	 * ceiling read when the attack goes out - in a group someone else's damage
+	 * can land before yours does, leaving less than this says. Both err the
+	 * same way the uncorrected figure did, only far less.
+	 */
+	private int overkillCap(int npcId)
+	{
+		final int remaining = targetCurrentHp(npcId);
+		// Zero means the health is not known at all rather than a target on nothing, so it caps nothing.
+		return remaining > 0 ? remaining : Integer.MAX_VALUE;
+	}
+
+	/**
 	 * Void applied where the game applies it: to the EFFECTIVE LEVEL, before the
 	 * attack roll or the max hit is worked out from it, and truncated there.
 	 *
@@ -599,7 +625,7 @@ class CombatCalc
 		{
 			return -1;
 		}
-		final int cap = damageCap(npcId);
+		final int cap = Math.min(damageCap(npcId), overkillCap(npcId));
 		// A scythe swing is several hits, each rolling its own accuracy and damage, so one attack is expected to deal their
 		// sum. Each max is half the one before ROUNDED DOWN, which is why this walks them rather than multiplying by 1.75: a
 		// 51 max is 51, 25, 12, which is 88 and not 89.25.
