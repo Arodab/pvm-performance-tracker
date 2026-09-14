@@ -38,7 +38,14 @@ tasks.register('run', JavaExec) {
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = pluginMainClass
 
-	jvmArgs "-ea"
+	// -ea is required: ExternalPluginManager.loadBuiltin refuses to run without it.
+	//
+	// -da for the GPU plugin is required too, for the opposite reason. Its model sorter asserts that a face's sort
+	// distance lands inside the model's own diameter, and on some models it does not - a rendering edge case that is a
+	// no-op in a normal client, because assertions are off there, and a hard AssertionError on the client thread here,
+	// which takes the whole dev client down mid-fight. Not ours to fix and not worth losing a trip to; the assertion is
+	// only silenced for that one package, so everything -ea is actually there to catch still fires.
+	jvmArgs "-ea", "-da:net.runelite.client.plugins.gpu..."
 	args "--developer-mode", "--debug"
 }
 
