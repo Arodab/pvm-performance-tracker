@@ -533,9 +533,13 @@ public class PvmPerformancePlugin extends Plugin
 			{
 				combatCalc.noteMagicResolved(npc.getIndex(), hitsplat.getAmount() == 0);
 			}
-			debug.log("hitsplat %d on %s (npc %d, index %d), landedAttack=%b, fromFlight=%b",
-				hitsplat.getAmount(), current.getTargetName(), npc.getId(), npc.getIndex(), landedAttack,
-				arrivedFromFlight);
+			// The TYPE is here because of a pattern in the logs that nothing else explains: pairs of hitsplats on one npc on
+			// one tick carrying the SAME amount - 8 and 8, 5 and 5, 6 and 6 - across three separate kills. Two sources
+			// landing the identical number four times running is not chance, and both are being counted. The type names
+			// what the second one is.
+			debug.log("hitsplat %d type %d on %s (npc %d, index %d), landedAttack=%b, fromFlight=%b",
+				hitsplat.getAmount(), hitsplat.getHitsplatType(), current.getTargetName(), npc.getId(), npc.getIndex(),
+				landedAttack, arrivedFromFlight);
 			damageByIndex.merge(npc.getIndex(), hitsplat.getAmount(), Integer::sum);
 			current.recordDamageDealt(hitsplat.getAmount(), now, landedAttack);
 			if (current.isScored())
