@@ -76,8 +76,6 @@ import net.runelite.client.hiscore.HiscoreSkill;
 import net.runelite.client.hiscore.HiscoreSkillType;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.party.events.UserPart;
-import net.runelite.client.plugins.party.messages.StatusUpdate;
 import net.runelite.client.plugins.specialcounter.SpecialCounterUpdate;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
@@ -214,9 +212,6 @@ public class PvmPerformancePlugin extends Plugin
 
 	@Inject
 	private DefenceDrain drain;
-
-	@Inject
-	private PartyHitpoints partyHitpoints;
 
 	@Inject
 	private GearBonusCalc gearBonuses;
@@ -433,7 +428,6 @@ public class PvmPerformancePlugin extends Plugin
 		burstLanded.clear();
 		pendingMineHits.clear();
 		drain.clear();
-		partyHitpoints.clear();
 		nightmareBoss = null;
 		targetNpc = null;
 		debug.stop();
@@ -1402,23 +1396,6 @@ public class PvmPerformancePlugin extends Plugin
 		{
 			drain.onSpecialCounterUpdate(event, targetNpc);
 		}
-	}
-
-	/**
-	 * The party's hitpoints levels from the party plugin's broadcasts, which is
-	 * where the Chambers scaling term comes from: the game gives only the
-	 * player's own level, and raiding beside a higher one made it wrong.
-	 */
-	@Subscribe
-	public void onStatusUpdate(StatusUpdate event)
-	{
-		partyHitpoints.onStatusUpdate(event);
-	}
-
-	@Subscribe
-	public void onUserPart(UserPart event)
-	{
-		partyHitpoints.forget(event.getMemberId());
 	}
 
 	/**

@@ -1,61 +1,48 @@
 package com.pvmperformance;
 
-import java.util.HashMap;
-import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.Skill;
-import net.runelite.client.plugins.party.messages.StatusUpdate;
+import net.runelite.client.party.PartyMember;
+import net.runelite.client.party.PartyService;
 
 // The highest hitpoints level in the party, which is what Chambers of Xeric scales its monsters by.
 @Singleton
 class PartyHitpoints
 {
 	private final Client client;
-
-	// party member id -> the maximum hitpoints they last reported.
-	private final Map<Long, Integer> reported = new HashMap<>();
+	private final PartyService partyService;
 
 	@Inject
-	PartyHitpoints(Client client)
+	PartyHitpoints(Client client, PartyService partyService)
 	{
 		this.client = client;
+		this.partyService = partyService;
 	}
 
 	/**
-	 * Takes a member's maximum hitpoints from a party status update. The updates
-	 * carry only what has changed, so most say nothing about hitpoints and every
-	 * field has to be read as possibly absent.
+	 * The highest hitpoints level known, never below the player's own.
+	 *
+	 * <p>Read straight off the party service's members, which RuneLite keeps up
+	 * to date from each member's broadcasts. The old StatusUpdate message this
+	 * used to listen for was removed from the client, and with it the plugin no
+	 * longer compiled. A member who has not reported yet reads as zero, which
+	 * the own-level floor already covers; one who leaves drops out of the list.
 	 */
-	void onStatusUpdate(StatusUpdate update)
-	{
-		final Integer max = update.getHealthMax();
-		if (max != null && max > 0)
-		{
-			reported.put(update.getMemberId(), max);
-		}
-	}
-
-	void forget(long memberId)
-	{
-		reported.remove(memberId);
-	}
-
-	void clear()
-	{
-		reported.clear();
-	}
-
-	/** The highest hitpoints level known, never below the player's own. */
 	int highest()
 	{
 		int highest = client.getRealSkillLevel(Skill.HITPOINTS);
-		for (Integer max : reported.values())
+		if (!partyService.isInParty())
 		{
-			if (max > highest)
+			return highest;
+		}
+		for (PartyMember member : partyService.getMembers())
+		{
+			final int base = member.getStatBase(Skill.HITPOINTS);
+			if (base > highest)
 			{
-				highest = max;
+				highest = base;
 			}
 		}
 		return highest;
