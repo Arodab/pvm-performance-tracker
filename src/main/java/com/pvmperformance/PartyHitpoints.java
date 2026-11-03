@@ -1,58 +1,53 @@
 package com.pvmperformance;
 
-import java.util.HashMap;
-import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.Skill;
-import net.runelite.client.plugins.party.messages.StatusUpdate;
+import net.runelite.client.party.PartyDataService;
+import net.runelite.client.party.PartyMember;
+import net.runelite.client.party.PartyService;
+import net.runelite.client.plugins.Plugin;
 
 // The highest hitpoints level in the party, which is what Chambers of Xeric scales its monsters by.
 @Singleton
 class PartyHitpoints
 {
 	private final Client client;
-
-	// party member id -> the maximum hitpoints they last reported.
-	private final Map<Long, Integer> reported = new HashMap<>();
+	private final PartyService partyService;
+	private final PartyDataService partyDataService;
 
 	@Inject
-	PartyHitpoints(Client client)
+	PartyHitpoints(Client client, PartyService partyService, PartyDataService partyDataService)
 	{
 		this.client = client;
+		this.partyService = partyService;
+		this.partyDataService = partyDataService;
 	}
 
 	/**
-	 * Takes a member's maximum hitpoints from a party status update. The updates
-	 * carry only what has changed, so most say nothing about hitpoints and every
-	 * field has to be read as possibly absent.
+	 * Asks the party to share hitpoints levels. Since RuneLite 1.13.4 nothing is
+	 * broadcast unless some plugin subscribes to it, so this no longer leans on
+	 * the party plugin being switched on - and it also sends ours to the others.
 	 */
-	void onStatusUpdate(StatusUpdate update)
+	void start(Plugin plugin)
 	{
-		final Integer max = update.getHealthMax();
-		if (max != null && max > 0)
-		{
-			reported.put(update.getMemberId(), max);
-		}
+		partyDataService.subscribe(plugin, Skill.HITPOINTS);
 	}
 
-	void forget(long memberId)
+	void stop(Plugin plugin)
 	{
-		reported.remove(memberId);
-	}
-
-	void clear()
-	{
-		reported.clear();
+		partyDataService.unsubscribe(plugin, Skill.HITPOINTS);
 	}
 
 	/** The highest hitpoints level known, never below the player's own. */
 	int highest()
 	{
 		int highest = client.getRealSkillLevel(Skill.HITPOINTS);
-		for (Integer max : reported.values())
+		for (PartyMember member : partyService.getMembers())
 		{
+			// The party service keeps each member's last reported levels, with 0 until one has arrived.
+			final int max = member.getStatBase(Skill.HITPOINTS);
 			if (max > highest)
 			{
 				highest = max;
