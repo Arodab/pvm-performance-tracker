@@ -155,6 +155,24 @@ enum WeaponCategory
 		new AttackStyle(1, "Lunge", AttackType.STAB, CombatStyle.AGGRESSIVE),
 		new AttackStyle(2, "Pound", AttackType.CRUSH, CombatStyle.AGGRESSIVE),
 		new AttackStyle(3, "Block", AttackType.STAB, CombatStyle.DEFENSIVE)
+	)),
+
+	// The Fractured Archive's two (October 2026). Their COMBAT_WEAPON_CATEGORY values are not known yet, so these are
+	// found by the combat tab's name alone and the varbit keys are placeholders no real value can match.
+	//
+	// The Obligator. Smash is entered under both 2 and 3: with no Block option it is either the third slot, as on the
+	// bludgeon, or keeps Block's slot, and ::loadout naming Smash on either settles which.
+	EXTENDING_CHAIN_MACE(-1, "Extending Chain Mace", Arrays.asList(
+		new AttackStyle(0, "Thrust", AttackType.CRUSH, CombatStyle.ACCURATE),
+		new AttackStyle(1, "Thrust", AttackType.CRUSH, CombatStyle.AGGRESSIVE),
+		new AttackStyle(2, "Smash", AttackType.CRUSH, CombatStyle.AGGRESSIVE),
+		new AttackStyle(3, "Smash", AttackType.CRUSH, CombatStyle.AGGRESSIVE)
+	)),
+	// Zorya's tome, laid out like a powered staff.
+	POWERED_BOOK(-2, "Powered Book", Arrays.asList(
+		new AttackStyle(0, "Accurate", AttackType.MAGIC, CombatStyle.ACCURATE),
+		new AttackStyle(1, "Accurate", AttackType.MAGIC, CombatStyle.ACCURATE),
+		new AttackStyle(3, "Longrange", AttackType.MAGIC, CombatStyle.LONGRANGE)
 	));
 
 	private static final Map<Integer, WeaponCategory> BY_VARBIT = new HashMap<>();

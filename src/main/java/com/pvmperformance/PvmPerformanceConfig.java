@@ -21,6 +21,18 @@ public interface PvmPerformanceConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showSidePanel",
+		name = "Show side panel",
+		description = "Show the PvM Performance Tracker button in the sidebar. Fights are still tracked and saved "
+			+ "while it is hidden",
+		position = 1
+	)
+	default boolean showSidePanel()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "overlayBossesOnly",
 		name = "Overlay: bosses only",
 		description = "Only show the overlay while fighting a boss (from the hiscores list)",

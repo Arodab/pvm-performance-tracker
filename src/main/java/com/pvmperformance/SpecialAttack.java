@@ -147,6 +147,9 @@ enum SpecialAttack
 
 	// Magic
 	EYE_OF_AYAK(ItemID.EYE_OF_AYAK, "Soul Rend", 2, 1, 1.30),
+	// +150% accuracy and +60% damage. A flow that lands also buffs the tome's next three attacks the same way, which
+	// CombatCalc reads off the stack varp, along with the flow thrown while buffed adding the two.
+	ZORYAS_TOME(ItemID.ZORYAS_TOME, "Zorya's flow", 5, 2, 1.60),
 	ACCURSED_SCEPTRE(ItemID.WILD_CAVE_ACCURSED_CHARGED, "Condemn", 3, 2, 1.0),
 	PURGING_STAFF(ItemID.PURGING_STAFF, "Scatter ashes", 1, 1, 1.0),
 	// Invocate scales off the magic level like the volatile staff, and its own max is worked out in CombatCalc for the

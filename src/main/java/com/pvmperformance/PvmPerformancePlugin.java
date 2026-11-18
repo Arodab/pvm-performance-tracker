@@ -400,7 +400,10 @@ public class PvmPerformancePlugin extends Plugin
 			.priority(7)
 			.panel(panel)
 			.build();
-		clientToolbar.addNavigation(navButton);
+		if (config.showSidePanel())
+		{
+			clientToolbar.addNavigation(navButton);
+		}
 
 		executor.execute(this::loadHistory);
 		monsterStats.startUp();
@@ -441,7 +444,23 @@ public class PvmPerformancePlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (!PvmPerformanceConfig.GROUP.equals(event.getGroup()) || !"debugLogging".equals(event.getKey()))
+		if (!PvmPerformanceConfig.GROUP.equals(event.getGroup()))
+		{
+			return;
+		}
+		if ("showSidePanel".equals(event.getKey()))
+		{
+			if (config.showSidePanel())
+			{
+				clientToolbar.addNavigation(navButton);
+			}
+			else
+			{
+				clientToolbar.removeNavigation(navButton);
+			}
+			return;
+		}
+		if (!"debugLogging".equals(event.getKey()))
 		{
 			return;
 		}
@@ -1872,6 +1891,7 @@ public class PvmPerformancePlugin extends Plugin
 	public void onGameTick(GameTick tick)
 	{
 		RaidScaling.setTombsRaidLevel(gearBonuses.tombsRaidLevel());
+		combatCalc.noteTick();
 		trackRaid(System.currentTimeMillis());
 		startFightOnTarget();
 		// Both before the attack is booked. The expected figures must describe the loadout that threw it, and the cast

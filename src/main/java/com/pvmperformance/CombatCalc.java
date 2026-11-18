@@ -149,6 +149,10 @@ class CombatCalc
 	private final ConflictionCharge charge = new ConflictionCharge();
 	private BlowpipeDart cachedDart;
 	private ItemEquipmentStats cachedDartStats;
+	// Zorya's tome's buffed attacks, on this tick and the one before. The attack that spends the last one can already read
+	// nought on the tick it goes out, so the tick before answers for it.
+	private int zoryaStacks;
+	private int zoryaStacksBefore;
 
 	@Inject
 	CombatCalc(Client client, ItemManager itemManager, MonsterStatsProvider monsters,
@@ -654,13 +658,104 @@ class CombatCalc
 			|| name.contains("thunder khopesh");
 	}
 
+	/** Once a tick, before anything asks for a figure. */
+	void noteTick()
+	{
+		zoryaStacksBefore = zoryaStacks;
+		zoryaStacks = client.getVarpValue(VarPlayerID.ZORYAS_TOME_STACKS);
+	}
+
+	/**
+	 * Whether the tome's attack is one of the buffed ones a landed Zorya's flow
+	 * leaves behind: +150% accuracy, +60% damage and a 2 tick cooldown.
+	 */
+	private boolean zoryaEmpowered()
+	{
+		return weaponItemId() == ItemID.ZORYAS_TOME && activeManualCast() == null
+			&& (zoryaStacks > 0 || zoryaStacksBefore > 0);
+	}
+
+	// Damage an ordinary attack gets on top of its max hit: the tome's buffed attacks, and the charged Obligator's thrust
+	// against a target wide enough to fill more than one of its three tiles.
+	private double ordinaryDamageMultiplier(int npcId)
+	{
+		if (zoryaEmpowered())
+		{
+			return 1.60;
+		}
+		return isObligatorChargedThrust() ? obligatorSizeMultiplier(targetSize(npcId)) : 1.0;
+	}
+
+	private boolean isObligatorStyle(String styleName)
+	{
+		final int weapon = weaponItemId();
+		return (weapon == ItemID.OBLIGATOR || weapon == ItemID.OBLIGATOR_UNCHARGED)
+			&& styleName.equals(attackStyle().getDisplayName());
+	}
+
+	// Only the charged thrust: smash is a plain 3 tick hit, and an uncharged Obligator only pierces.
+	private boolean isObligatorChargedThrust()
+	{
+		return weaponItemId() == ItemID.OBLIGATOR && isObligatorStyle("Thrust");
+	}
+
+	/**
+	 * Wiki: the charged thrust deals 20% more to a monster occupying two of its
+	 * three tiles and 40% more to one occupying all three.
+	 */
+	static double obligatorSizeMultiplier(int size)
+	{
+		return size >= 3 ? 1.40 : size == 2 ? 1.20 : 1.0;
+	}
+
+	/**
+	 * How many damage rolls the charged thrust makes, keeping the best. Wiki: two,
+	 * plus one for each of stab and slash defence that is higher than crush.
+	 */
+	static int obligatorRolls(int defStab, int defSlash, int defCrush)
+	{
+		return 2 + (defStab > defCrush ? 1 : 0) + (defSlash > defCrush ? 1 : 0);
+	}
+
+	private int obligatorRolls(int npcId)
+	{
+		if (!isObligatorChargedThrust())
+		{
+			return 1;
+		}
+		final MonsterStatsProvider.MonsterStats npc = monsters.get(npcId);
+		return npc == null ? 2 : obligatorRolls(npc.getDefStab(), npc.getDefSlash(), npc.getDefCrush());
+	}
+
+	/**
+	 * The average of the best of several damage rolls, each 0 to trueMax, held to
+	 * the cap. The best reaches at least k unless every roll falls below it, so the
+	 * average is the sum over k of 1 - (k / (max + 1))^rolls. With one roll this is
+	 * {@link #cappedAverage(int, int)}.
+	 */
+	static double bestOfAverage(int trueMax, int rolls, int cap)
+	{
+		if (trueMax <= 0)
+		{
+			return 0;
+		}
+		final int top = Math.min(trueMax, cap);
+		double total = 0;
+		for (int k = 1; k <= top; k++)
+		{
+			total += 1.0 - Math.pow((double) k / (trueMax + 1), rolls);
+		}
+		return total;
+	}
+
 	double averageHit(int npcId)
 	{
 		final double accuracy = hitChance(npcId);
 		// Averages, not best cases: a keris crit or an ahrim's proc raises the max hit but only lifts sustained damage by a
 		// few percent.
 		final double averageMax = (baseMaxHit() * gearBonus(npcId).getExpectedDamage()
-			+ colossalBladeBonus(npcId) + elementalWeaknessBonus(npcId)) * mitigation(npcId);
+			+ colossalBladeBonus(npcId) + elementalWeaknessBonus(npcId)) * ordinaryDamageMultiplier(npcId)
+			* mitigation(npcId);
 		if (accuracy < 0 || averageMax <= 0)
 		{
 			return -1;
@@ -671,9 +766,12 @@ class CombatCalc
 		// 51 max is 51, 25, 12, which is 88 and not 89.25.
 		double ordinary = 0;
 		double max = averageMax;
+		final int rolls = obligatorRolls(npcId);
 		for (int hit = 0; hit < hitsPerAttack(npcId); hit++)
 		{
-			ordinary += cap == Integer.MAX_VALUE
+			ordinary += rolls > 1
+				? accuracy * bestOfAverage((int) max, rolls, cap)
+				: cap == Integer.MAX_VALUE
 				? accuracy * (max / 2.0)
 				: accuracy * cappedAverage((int) max, cap);
 			max = Math.floor(max / 2.0);
@@ -684,7 +782,9 @@ class CombatCalc
 		{
 			return ordinary;
 		}
-		final double procChance = bolt.chance(hasKandarinHardDiary());
+		// The ascension crossbows trigger enchanted bolts half as often.
+		final double procChance = bolt.chance(hasKandarinHardDiary())
+			* (weaponItemId() == ItemID.ASCENSION_CROSSBOWS ? 0.5 : 1.0);
 		switch (bolt)
 		{
 			case RUBY:
@@ -854,7 +954,7 @@ class CombatCalc
 			+ style.attackLevelBonus() + 9, AttackType.MAGIC, false);
 		// Elemental weakness is worth as much accuracy as it is damage, a point each, and multiplies the roll as the gear
 		// effects do.
-		final int attRoll = scaled(attackRoll(effMagic, attackBonus(AttackType.MAGIC),
+		final int attRoll = magicScaled(attackRoll(effMagic, attackBonus(AttackType.MAGIC),
 			gear * (1.0 + elementalWeakness(npcId) / 100.0)), spec);
 		final int magic = RaidScaling.magic(client, npc.getMagicLevel(), npc.getName(),
 			partyHitpoints.highest());
@@ -970,6 +1070,20 @@ class CombatCalc
 	 * negative, and hitChanceFrom then returns a negative chance, which callers
 	 * read as "no figure". Casting from melee gear reaches it easily.
 	 */
+	/**
+	 * A magic attack roll scaled by its special, and by the tome's buff. A buffed
+	 * attack has the flow's own +150%, and a flow thrown while buffed adds the two
+	 * for +300% (wiki).
+	 */
+	private int magicScaled(int attackRoll, SpecialAttack spec)
+	{
+		if (!zoryaEmpowered())
+		{
+			return scaled(attackRoll, spec);
+		}
+		return spec == SpecialAttack.ZORYAS_TOME ? attackRoll * 4 : SpecialAttack.ZORYAS_TOME.scaleAttackRoll(attackRoll);
+	}
+
 	/** The special's scaling of a finished attack roll, or the roll unchanged. */
 	private static int scaled(int attackRoll, SpecialAttack spec)
 	{
@@ -1040,6 +1154,10 @@ class CombatCalc
 		if (prayerActive(Prayer.RP_DECIMATE))
 		{
 			return 1.30;
+		}
+		if (prayerActive(Prayer.ZEAL))
+		{
+			return 1.25;
 		}
 		if (prayerActive(Prayer.RP_ANCIENT_STRENGTH))
 		{
@@ -1440,7 +1558,12 @@ class CombatCalc
 		final AttackStyle style = attackStyle();
 		if (style.getAttackType() == AttackType.MAGIC)
 		{
-			return castSpeedTicks(ticks);
+			return zoryaEmpowered() ? 2 : castSpeedTicks(ticks);
+		}
+		// The Obligator is listed at 5 ticks, which is its thrust; smash swings every 3.
+		if (isObligatorStyle("Smash"))
+		{
+			return 3;
 		}
 		// Rapid fires a tick sooner; it is the only style that alters attack speed.
 		return style.getCombatStyle() == CombatStyle.RAPID ? Math.max(1, ticks - 1) : ticks;
@@ -1456,8 +1579,8 @@ class CombatCalc
 		final WeaponCategory category = weaponCategory();
 		// A manual cast runs on the spell's clock even from a powered staff, so a trident being barraged off is 5 ticks.
 		// Recognising the staff by name matters here too: by category alone an unmapped one got the spell clock.
-		final boolean ownAttack = poweredStaffMaxHit() > 0
-			|| category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER;
+		final boolean ownAttack = poweredStaffMaxHit() > 0 || category == WeaponCategory.POWERED_STAFF
+			|| category == WeaponCategory.POWERED_BOOK || category == WeaponCategory.SALAMANDER;
 		if (activeManualCast() == null && ownAttack)
 		{
 			return weaponTicks;
@@ -1479,7 +1602,7 @@ class CombatCalc
 	int maxHit(int npcId)
 	{
 		// What actually lands, which against Olm's hands is a third of it when the style is the wrong one for that hand.
-		final int first = (int) (unmitigatedMaxHit(npcId) * mitigation(npcId));
+		final int first = (int) ((int) (unmitigatedMaxHit(npcId) * ordinaryDamageMultiplier(npcId)) * mitigation(npcId));
 		final int cap = damageCap(npcId);
 		// The most ONE ATTACK can deal, which for a scythe is all its hits: a 51 max against a 3x3 is 51 + 25 + 12, since the
 		// halving rounds down at every step. The cap is per hit, being a limit on what one blow may land.
@@ -1813,7 +1936,7 @@ class CombatCalc
 		final SpecialAttack spec = specialAttack();
 		// The unmitigated hit: the caller applies mitigation, and taking it from maxHit() as well would apply Olm's third
 		// twice over.
-		return spec == null ? 0 : spec.maxTotal(unmitigatedMaxHit(npcId));
+		return spec == null ? 0 : spec.maxTotal((int) (unmitigatedMaxHit(npcId) * zoryaStackedFlowShare(spec)));
 	}
 
 	/**
@@ -1888,7 +2011,7 @@ class CombatCalc
 		final double expectedShare = bonus.getDamage() > 0
 			? bonus.getExpectedDamage() / bonus.getDamage()
 			: 1.0;
-		final double scale = mitigation(npcId) * expectedShare;
+		final double scale = mitigation(npcId) * expectedShare * zoryaStackedFlowShare(spec);
 		// Every other special is capped like an ordinary hit: the phase exempts the Dawnbringer's, not specials in general,
 		// so a godsword there is still held to ten a hitsplat.
 		final int cap = damageCap(npcId);
@@ -1910,6 +2033,15 @@ class CombatCalc
 			: unmitigatedSpecialAttackMaxHit(npcId);
 		return specAverage(spec.hitMaxima((int) (base * scale)), accuracy, spec.minFraction(),
 			spec.flatMinimum(), cap);
+	}
+
+	/**
+	 * A Zorya's flow thrown while buffed adds the buff's +60% to its own for
+	 * +120%, which is this much on top of the table's 1.6.
+	 */
+	private double zoryaStackedFlowShare(SpecialAttack spec)
+	{
+		return spec == SpecialAttack.ZORYAS_TOME && zoryaEmpowered() ? 2.2 / 1.6 : 1.0;
 	}
 
 	/**
@@ -2118,19 +2250,40 @@ class CombatCalc
 		final Spell manual = activeManualCast();
 		if (manual != null)
 		{
-			return manual.maxHitAt(boostedLevel(Skill.MAGIC));
+			return spellMaxHit(manual);
 		}
 		if (poweredStaffMaxHit() > 0)
 		{
 			return 0;
 		}
 		final WeaponCategory category = weaponCategory();
-		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
+		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.POWERED_BOOK
+			|| category == WeaponCategory.SALAMANDER)
 		{
 			return 0;
 		}
 		final Spell spell = autocastSpell();
-		return spell == null ? 0 : spell.maxHitAt(boostedLevel(Skill.MAGIC));
+		return spell == null ? 0 : spellMaxHit(spell);
+	}
+
+	/**
+	 * A spell's base max hit, with the +2 a Fractured Archive fragment adds to
+	 * its element once broken. Wiki: added before magic damage and elemental
+	 * weakness, so both scale it.
+	 */
+	private int spellMaxHit(Spell spell)
+	{
+		return spell.maxHitAt(boostedLevel(Skill.MAGIC)) + elementalFragmentBonus(spell);
+	}
+
+	private int elementalFragmentBonus(Spell spell)
+	{
+		final int unlocked = spell.isElement("Fire") ? VarbitID.TFA_MOTE_FIRE_UNLOCKED
+			: spell.isElement("Water") ? VarbitID.TFA_MOTE_WATER_UNLOCKED
+			: spell.isElement("Earth") ? VarbitID.TFA_MOTE_EARTH_UNLOCKED
+			: spell.isElement("Wind") ? VarbitID.TFA_MOTE_AIR_UNLOCKED
+			: -1;
+		return unlocked >= 0 && client.getVarbitValue(unlocked) == 1 ? 2 : 0;
 	}
 
 	/**
@@ -2176,7 +2329,7 @@ class CombatCalc
 		final Spell manual = activeManualCast();
 		if (manual != null)
 		{
-			return applyMagicDamage(manual.maxHitAt(boostedLevel(Skill.MAGIC)), manual);
+			return applyMagicDamage(spellMaxHit(manual), manual);
 		}
 		// A staff recognised by name fires its own attack. Tested before the weapon category, so it still holds when the
 		// category varbit is one this plugin has no entry for, relying on the category meant an unmapped one fell through and
@@ -2187,14 +2340,15 @@ class CombatCalc
 			return applyMagicDamage(staff, null);
 		}
 		final WeaponCategory category = weaponCategory();
-		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.SALAMANDER)
+		if (category == WeaponCategory.POWERED_STAFF || category == WeaponCategory.POWERED_BOOK
+			|| category == WeaponCategory.SALAMANDER)
 		{
 			// A powered staff never casts the autocast spell, so one that isn't recognised is unknown rather than spell-shaped.
 			return 0;
 		}
 		final Spell spell = autocastSpell();
 		return spell == null ? 0
-			: applyMagicDamage(spell.maxHitAt(boostedLevel(Skill.MAGIC)), spell);
+			: applyMagicDamage(spellMaxHit(spell), spell);
 	}
 
 	/**
@@ -2276,6 +2430,10 @@ class CombatCalc
 		if (lower.startsWith("eye of ayak"))
 		{
 			return Math.max(1, seas - 1);
+		}
+		if (lower.startsWith("zorya's tome"))
+		{
+			return Math.max(1, seas - 5);
 		}
 		if (lower.startsWith("warped sceptre"))
 		{
@@ -2393,6 +2551,18 @@ class CombatCalc
 				elementalWeakness(npcId), elementalWeaknessBonus(npcId)));
 		}
 
+		if (weaponItemId() == ItemID.ZORYAS_TOME)
+		{
+			lines.add(String.format("Zorya's tome: buffed attacks %d (last tick %d), this attack %s",
+				zoryaStacks, zoryaStacksBefore, zoryaEmpowered() ? "BUFFED" : "plain"));
+		}
+		if (isObligatorStyle("Thrust") || isObligatorStyle("Smash"))
+		{
+			lines.add(String.format("Obligator: %s, %s, best of %d damage rolls, size x%.1f",
+				attackStyle().getDisplayName(), weaponItemId() == ItemID.OBLIGATOR ? "charged" : "uncharged",
+				obligatorRolls(npcId), ordinaryDamageMultiplier(npcId)));
+		}
+
 		// Which prayers are actually up, by name. "prayed 0/n" with augury held all fight turned out to be Mystic Lore really
 		// being on, and the figures named the prayer only to someone who knew the table.
 		final StringBuilder up = new StringBuilder();
@@ -2485,6 +2655,10 @@ class CombatCalc
 		if (mode != REAL)
 		{
 			return prayerGoal().getStrengthMultiplier();
+		}
+		if (prayerActive(Prayer.ZEAL))
+		{
+			return 1.28;
 		}
 		if (prayerActive(Prayer.RP_DECIMATE))
 		{

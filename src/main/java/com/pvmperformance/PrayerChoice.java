@@ -18,6 +18,8 @@ public enum PrayerChoice
 	INCREDIBLE_REFLEXES("Incredible Reflexes", 1.15, 1.0),
 	CHIVALRY("Chivalry", 1.15, 1.18),
 	PIETY("Piety", 1.20, 1.23),
+	// The Fractured Archive's upgrade to Piety, unlocked with the Horn of Bran.
+	ZEAL("Zeal", 1.25, 1.28),
 
 	// Ranged
 	SHARP_EYE("Sharp Eye", 1.05, 1.05),
